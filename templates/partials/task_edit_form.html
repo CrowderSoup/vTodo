@@ -22,6 +22,18 @@
              placeholder="work, urgent, design"
              style="width: 100%; padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem;">
     </div>
+    <div style="margin-bottom: .5rem;">
+      <label style="font-size: .75rem; color: var(--muted); display: block; margin-bottom: .2rem;">Recurrence (days)</label>
+      <div style="display: flex; gap: .5rem; align-items: center;">
+        <input type="number" name="recurrence_days" value="{{ task.recurrence_days|default:'' }}" min="1" placeholder="e.g. 7"
+               style="width: 6rem; padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem;">
+        <select name="recurrence_from"
+                style="padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem;">
+          <option value="completion" {% if task.recurrence_from == "completion" %}selected{% endif %}>after completion</option>
+          <option value="due_date" {% if task.recurrence_from == "due_date" %}selected{% endif %}>after due date</option>
+        </select>
+      </div>
+    </div>
     <div style="display: flex; gap: .5rem; justify-content: flex-end;">
       <button type="button"
               hx-get="{% url 'boards:task-detail' task.pk %}"

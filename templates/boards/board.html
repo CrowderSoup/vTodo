@@ -4,6 +4,7 @@
 
 {% block content %}
 <div style="padding: 1rem;">
+  <div id="board-filter">{% include "boards/_filter_bar.html" %}</div>
   <div id="board-content" class="board-columns">
     {% include "boards/_columns.html" %}
   </div>

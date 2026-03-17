@@ -1,8 +1,21 @@
 {% for column, tasks, default_status in columns_with_tasks %}
-<div class="board-column">
+<div class="board-column" data-column-id="{{ column.pk }}">
   <div class="column-header">
+    <span class="col-drag-handle" draggable="true" data-column-id="{{ column.pk }}" title="Drag to reorder">⠿</span>
     <strong>{{ column.label }}</strong>
     <span class="column-badge">{{ tasks|length }}</span>
+    <div class="column-actions">
+      <button class="col-actions-btn" title="Column actions" onclick="this.nextElementSibling.classList.toggle('open')">⋯</button>
+      <div class="col-actions-menu">
+        <button hx-post="{% url 'boards:column-archive' column.pk %}"
+                hx-target="#board-content"
+                hx-swap="innerHTML"
+                hx-confirm="Archive all {{ tasks|length }} card{% if tasks|length != 1 %}s{% endif %} in &ldquo;{{ column.label }}&rdquo;?"
+                onclick="this.closest('.col-actions-menu').classList.remove('open')">
+          Archive all cards
+        </button>
+      </div>
+    </div>
   </div>
 
   <div class="task-list" id="col-tasks-{{ column.pk }}" data-default-status="{{ default_status }}">

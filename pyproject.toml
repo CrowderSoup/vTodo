@@ -13,6 +13,10 @@ dependencies = [
     "requests>=2.31",
     "mf2py>=2.0.1",
     "django-environ>=0.11",
+    "djangorestframework>=3.16.1",
+    "drf-spectacular>=0.29.0",
+    "mcp>=1.0",
+    "markdown>=3.10.2",
 ]
 
 [dependency-groups]

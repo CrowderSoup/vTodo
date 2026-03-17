@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "vtodo": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "python", "-m", "mcp_server"],
+      "env": {
+        "VTODO_API_URL": "http://localhost:8000"
+      }
+    }
+  }
+}

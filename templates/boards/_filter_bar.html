@@ -1,0 +1,33 @@
+<div style="display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem;">
+  <form id="board-filter-form"
+        hx-post="{% url 'boards:board-filter' %}"
+        hx-target="#board-content"
+        hx-swap="innerHTML"
+        hx-trigger="change"
+        style="display: contents;">
+    <select id="board-filter-due" name="due"
+            style="padding: .3rem .5rem; font-size: .875rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--input-bg); color: var(--text); cursor: pointer; width: fit-content;">
+      <option value="">Any date</option>
+      <option value="overdue" {% if active_filter.due == "overdue" %}selected{% endif %}>Overdue</option>
+      <option value="today" {% if active_filter.due == "today" %}selected{% endif %}>Due today</option>
+      <option value="this_week" {% if active_filter.due == "this_week" %}selected{% endif %}>Due this week</option>
+    </select>
+    {% for tag in active_filter.tags %}
+    <label style="display: inline-flex; align-items: center; gap: .25rem; font-size: .75rem; padding: .15rem .5rem;
+                  background: var(--text); color: var(--bg);
+                  border: 1px solid var(--text); border-radius: 9999px; cursor: pointer; user-select: none;">
+      <input type="checkbox" name="tags" value="{{ tag }}" checked style="display: none;">
+      {{ tag }} ×
+    </label>
+    {% endfor %}
+  </form>
+  {% if active_filter.tags or active_filter.due %}
+  <form hx-post="{% url 'boards:board-filter' %}"
+        hx-target="#board-content"
+        hx-swap="innerHTML"
+        style="display: contents;">
+    <button type="submit"
+            style="font-size: .8rem; color: var(--muted); padding: .3rem .5rem;">× Clear</button>
+  </form>
+  {% endif %}
+</div>

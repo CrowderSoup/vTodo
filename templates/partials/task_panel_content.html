@@ -1,0 +1,53 @@
+<div class="task-panel-header">
+  <h2>{{ task.title }}</h2>
+  <button class="task-panel-close" onclick="closeTaskPanel()" title="Close">×</button>
+</div>
+<div class="task-panel-body">
+  <div class="task-panel-meta">
+    <span style="font-size: .75rem; padding: .1rem .5rem; background: var(--badge-bg); border: 1px solid var(--border); border-radius: 9999px; color: var(--muted);">{{ task.status }}</span>
+    <span style="font-size: .75rem; color: var(--very-muted);">#{{ task.pk }}</span>
+    {% if task.due_date %}<span style="font-size: .75rem; color: var(--muted);">Due {{ task.due_date }}</span>{% endif %}
+    {% if task.recurrence_days %}<span style="font-size: .75rem; color: var(--muted);">↻ Every {{ task.recurrence_days }} day{{ task.recurrence_days|pluralize }}</span>{% endif %}
+  </div>
+  {% if task.tags %}
+  <div style="display: flex; flex-wrap: wrap; gap: .25rem; margin-bottom: .75rem;">
+    {% for tag in task.tags %}
+    <span style="font-size: .7rem; padding: .1rem .4rem; background: var(--badge-bg); border: 1px solid var(--border); border-radius: 9999px; color: var(--muted);">{{ tag }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if notes_html %}
+  <div class="task-panel-notes">{{ notes_html|safe }}</div>
+  {% else %}
+  <p style="color: var(--muted); font-size: .875rem; margin: 0;">No notes yet. Click Edit to add some.</p>
+  {% endif %}
+</div>
+<div class="task-panel-footer">
+  <div style="flex: 1; display: flex; align-items: center; gap: .5rem;">
+    {% if not task.completed_at %}
+    <button hx-post="{% url 'boards:task-move' task.pk %}"
+            hx-vals='{"new_status": "{{ done_slug }}"}'
+            hx-target="#board-content"
+            hx-swap="innerHTML"
+            hx-on::after-request="closeTaskPanel()"
+            style="font-size: .8rem;">✓ Mark complete</button>
+    {% else %}
+    <button hx-post="{% url 'boards:task-move' task.pk %}"
+            hx-vals='{"new_status": "{{ active_slug }}"}'
+            hx-target="#board-content"
+            hx-swap="innerHTML"
+            hx-on::after-request="closeTaskPanel()"
+            style="font-size: .8rem;">↩ Move to active</button>
+    {% endif %}
+    <button hx-post="{% url 'boards:task-delete' task.pk %}"
+            hx-target="#task-{{ task.pk }}"
+            hx-swap="outerHTML"
+            hx-on::after-request="closeTaskPanel()"
+            hx-confirm="Delete &ldquo;{{ task.title|escapejs }}&rdquo;?"
+            style="font-size: .8rem; color: var(--muted);">Delete</button>
+  </div>
+  <button hx-get="{% url 'boards:task-panel-edit' task.pk %}"
+          hx-target="#task-panel-content"
+          hx-swap="innerHTML"
+          style="font-size: .8rem;">Edit</button>
+</div>
