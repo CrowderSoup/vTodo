@@ -1,3 +1,5 @@
+import json
+import markdown as md
 from datetime import date, timedelta
 
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -42,10 +44,28 @@ def _status_context(user):
     return statuses, done_slug, active_slug
 
 
-def _build_board_context(user):
+def _build_board_context(user, session=None):
     board = get_object_or_404(Board, user=user)
     columns = list(board.columns.all())
-    tasks = list(Task.objects.filter(user=user).order_by("order", "created_at"))
+
+    board_filter = (session.get("board_filter") or {}) if session else {}
+    filter_tags = board_filter.get("tags", [])
+    filter_due = board_filter.get("due", "").strip()
+
+    tasks = list(Task.objects.filter(user=user, is_archived=False).order_by("order", "created_at"))
+
+    if filter_tags:
+        tasks = [t for t in tasks if all(tag in t.tags for tag in filter_tags)]
+    if filter_due:
+        today = date.today()
+        if filter_due == "overdue":
+            tasks = [t for t in tasks if t.due_date and t.due_date < today]
+        elif filter_due == "today":
+            tasks = [t for t in tasks if t.due_date == today]
+        elif filter_due == "this_week":
+            end = today + timedelta(days=7)
+            tasks = [t for t in tasks if t.due_date and today <= t.due_date <= end]
+
     statuses, done_slug, active_slug = _status_context(user)
 
     claimed = set()
@@ -64,13 +84,74 @@ def _build_board_context(user):
         "statuses": statuses,
         "done_slug": done_slug,
         "active_slug": active_slug,
+        "active_filter": {"tags": filter_tags, "due": filter_due},
     }
 
 
 class BoardView(LoginRequiredMixin, View):
     def get(self, request):
-        context = _build_board_context(request.user)
+        context = _build_board_context(request.user, request.session)
         return render(request, "boards/board.html", context)
+
+
+class BoardFilterView(LoginRequiredMixin, View):
+    def post(self, request):
+        tags = request.POST.getlist("tags")
+        due = request.POST.get("due", "").strip()
+        request.session["board_filter"] = {"tags": tags, "due": due}
+        request.session.modified = True
+        context = _build_board_context(request.user, request.session)
+        return render(request, "boards/_filter_response.html", context)
+
+
+class BoardFilterAddTagView(LoginRequiredMixin, View):
+    """Add a single tag to the active filter without replacing existing ones."""
+
+    def post(self, request):
+        tag = request.POST.get("tag", "").strip()
+        board_filter = request.session.get("board_filter") or {}
+        current_tags = board_filter.get("tags", [])
+        due = board_filter.get("due", "")
+        if tag and tag not in current_tags:
+            current_tags = current_tags + [tag]
+        request.session["board_filter"] = {"tags": current_tags, "due": due}
+        context = _build_board_context(request.user, request.session)
+        return render(request, "boards/_filter_response.html", context)
+
+
+class ColumnReorderView(LoginRequiredMixin, View):
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+            order = data.get("order", [])
+        except (json.JSONDecodeError, AttributeError):
+            return HttpResponse(status=400)
+
+        board = get_object_or_404(Board, user=request.user)
+        columns = {c.pk: c for c in board.columns.all()}
+        for i, pk in enumerate(order):
+            if pk in columns:
+                columns[pk].order = i
+                columns[pk].save(update_fields=["order"])
+
+        return HttpResponse(status=204)
+
+
+class TaskReorderView(LoginRequiredMixin, View):
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+            order = data.get("order", [])
+        except (json.JSONDecodeError, AttributeError):
+            return HttpResponse(status=400)
+
+        tasks = {t.pk: t for t in Task.objects.filter(user=request.user, pk__in=order)}
+        for i, pk in enumerate(order):
+            if pk in tasks:
+                tasks[pk].order = i
+                tasks[pk].save(update_fields=["order"])
+
+        return HttpResponse(status=204)
 
 
 class TaskCreateView(LoginRequiredMixin, View):
@@ -105,12 +186,20 @@ class TaskUpdateView(LoginRequiredMixin, View):
         tags_raw = request.POST.get("tags", "")
         tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
 
+        recurrence_days_raw = request.POST.get("recurrence_days", "").strip()
+        recurrence_days = int(recurrence_days_raw) if recurrence_days_raw.isdigit() else None
+        recurrence_from = request.POST.get("recurrence_from", Task.RECURRENCE_FROM_COMPLETION)
+        if recurrence_from not in (Task.RECURRENCE_FROM_COMPLETION, Task.RECURRENCE_FROM_DUE_DATE):
+            recurrence_from = Task.RECURRENCE_FROM_COMPLETION
+
         if title:
             task.title = title
         task.notes = notes
         task.due_date = due_date
         task.tags = tags
-        task.save(update_fields=["title", "notes", "due_date", "tags", "updated_at"])
+        task.recurrence_days = recurrence_days
+        task.recurrence_from = recurrence_from
+        task.save(update_fields=["title", "notes", "due_date", "tags", "recurrence_days", "recurrence_from", "updated_at"])
 
         statuses, done_slug, active_slug = _status_context(request.user)
         return render(request, "partials/task_card.html", {
@@ -134,11 +223,14 @@ class TaskMoveView(LoginRequiredMixin, View):
         is_done = TaskStatus.objects.filter(user=request.user, slug=new_status, is_done=True).exists()
         if is_done and not task.completed_at:
             task.completed_at = timezone.now()
-        elif not is_done:
-            task.completed_at = None
-        task.save(update_fields=["status", "completed_at", "updated_at"])
+            task.save(update_fields=["status", "completed_at", "updated_at"])
+            task.spawn_recurrence(completion_date=task.completed_at.date())
+        else:
+            if not is_done:
+                task.completed_at = None
+            task.save(update_fields=["status", "completed_at", "updated_at"])
 
-        context = _build_board_context(request.user)
+        context = _build_board_context(request.user, request.session)
         return render(request, "boards/_columns.html", context)
 
 
@@ -147,6 +239,29 @@ class TaskDeleteView(LoginRequiredMixin, View):
         task = get_object_or_404(Task, pk=pk, user=request.user)
         task.delete()
         return HttpResponse("")
+
+
+class ColumnArchiveView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        board = get_object_or_404(Board, user=request.user)
+        column = get_object_or_404(Column, pk=pk, board=board)
+
+        # Mirror the claimed-task logic from _build_board_context to find exactly
+        # which tasks are visible in this column.
+        all_tasks = list(Task.objects.filter(user=request.user, is_archived=False).order_by("order", "created_at"))
+        claimed = set()
+        to_archive = []
+        for col in board.columns.all():
+            for task in all_tasks:
+                if task.pk not in claimed and _task_matches_column(task, col.filter_config):
+                    if col.pk == column.pk:
+                        to_archive.append(task.pk)
+                    claimed.add(task.pk)
+
+        Task.objects.filter(pk__in=to_archive).update(is_archived=True)
+
+        context = _build_board_context(request.user, request.session)
+        return render(request, "boards/_columns.html", context)
 
 
 class TaskDetailView(LoginRequiredMixin, View):
@@ -169,3 +284,62 @@ class TaskEditView(LoginRequiredMixin, View):
     def get(self, request, pk):
         task = get_object_or_404(Task, pk=pk, user=request.user)
         return render(request, "partials/task_edit_form.html", {"task": task})
+
+
+class TaskPanelView(LoginRequiredMixin, View):
+    """Return the panel read-mode content."""
+
+    def get(self, request, pk):
+        task = get_object_or_404(Task, pk=pk, user=request.user)
+        statuses, done_slug, active_slug = _status_context(request.user)
+        return render(request, "partials/task_panel_content.html", {
+            "task": task,
+            "notes_html": md.markdown(task.notes, extensions=["fenced_code", "tables"]) if task.notes else "",
+            "statuses": statuses,
+            "done_slug": done_slug,
+            "active_slug": active_slug,
+        })
+
+
+class TaskPanelEditView(LoginRequiredMixin, View):
+    """Return the panel edit-mode content."""
+
+    def get(self, request, pk):
+        task = get_object_or_404(Task, pk=pk, user=request.user)
+        return render(request, "partials/task_panel_edit.html", {"task": task})
+
+
+class TaskPanelUpdateView(LoginRequiredMixin, View):
+    """Save task from the panel; returns updated panel read-mode + OOB card update."""
+
+    def post(self, request, pk):
+        task = get_object_or_404(Task, pk=pk, user=request.user)
+        title = request.POST.get("title", "").strip()
+        notes = request.POST.get("notes", "")
+        due_date = request.POST.get("due_date") or None
+        tags_raw = request.POST.get("tags", "")
+        tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
+
+        recurrence_days_raw = request.POST.get("recurrence_days", "").strip()
+        recurrence_days = int(recurrence_days_raw) if recurrence_days_raw.isdigit() else None
+        recurrence_from = request.POST.get("recurrence_from", Task.RECURRENCE_FROM_COMPLETION)
+        if recurrence_from not in (Task.RECURRENCE_FROM_COMPLETION, Task.RECURRENCE_FROM_DUE_DATE):
+            recurrence_from = Task.RECURRENCE_FROM_COMPLETION
+
+        if title:
+            task.title = title
+        task.notes = notes
+        task.due_date = due_date
+        task.tags = tags
+        task.recurrence_days = recurrence_days
+        task.recurrence_from = recurrence_from
+        task.save(update_fields=["title", "notes", "due_date", "tags", "recurrence_days", "recurrence_from", "updated_at"])
+
+        statuses, done_slug, active_slug = _status_context(request.user)
+        return render(request, "partials/task_panel_update_response.html", {
+            "task": task,
+            "notes_html": md.markdown(task.notes, extensions=["fenced_code", "tables"]) if task.notes else "",
+            "statuses": statuses,
+            "done_slug": done_slug,
+            "active_slug": active_slug,
+        })

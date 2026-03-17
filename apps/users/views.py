@@ -2,6 +2,7 @@ from datetime import time
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views import View
@@ -118,3 +119,20 @@ class ColumnDeleteView(LoginRequiredMixin, View):
         column.delete()
         columns = board.columns.all()
         return render(request, "users/_column_list.html", {"columns": columns})
+
+
+class ApiTokenView(LoginRequiredMixin, View):
+    def get(self, request):
+        from rest_framework.authtoken.models import Token
+
+        token, _ = Token.objects.get_or_create(user=request.user)
+        return render(request, "users/_api_token.html", {"api_token": token.key})
+
+
+class ApiTokenRegenerateView(LoginRequiredMixin, View):
+    def post(self, request):
+        from rest_framework.authtoken.models import Token
+
+        Token.objects.filter(user=request.user).delete()
+        token = Token.objects.create(user=request.user)
+        return render(request, "users/_api_token.html", {"api_token": token.key})

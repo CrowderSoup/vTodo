@@ -1,14 +1,23 @@
-<article class="task-card" id="task-{{ task.pk }}" draggable="true" data-task-id="{{ task.pk }}">
-  {# Clicking the title opens the inline edit form #}
-  <button class="task-title-btn"
-          hx-get="{% url 'boards:task-edit' task.pk %}"
-          hx-target="#task-{{ task.pk }}"
-          hx-swap="outerHTML"
-          title="Click to edit">{{ task.title }}</button>
+<article class="task-card" id="task-{{ task.pk }}" draggable="true" data-task-id="{{ task.pk }}"{% if oob_swap %} hx-swap-oob="true"{% endif %}>
+  <div style="display: flex; align-items: flex-start; gap: .25rem; margin-bottom: .25rem;">
+    {# Clicking the title opens the detail panel #}
+    <button class="task-title-btn"
+            hx-get="{% url 'boards:task-panel' task.pk %}"
+            hx-target="#task-panel-content"
+            hx-swap="innerHTML"
+            hx-on::after-request="openTaskPanel()"
+            style="margin-bottom: 0;"
+            title="Click to view">{{ task.title }}</button>
+    <span style="font-size: .65rem; color: var(--very-muted); flex-shrink: 0; padding-top: .15rem; user-select: none;">#{{ task.pk }}</span>
+  </div>
   {% if task.tags %}
   <div style="display: flex; flex-wrap: wrap; gap: .25rem; margin-bottom: .35rem;">
     {% for tag in task.tags %}
-    <span style="font-size: .7rem; padding: .1rem .4rem; background: var(--badge-bg); border: 1px solid var(--border); border-radius: 9999px; color: var(--muted);">{{ tag }}</span>
+    <button hx-post="{% url 'boards:board-filter-add-tag' %}"
+            hx-target="#board-content"
+            hx-swap="innerHTML"
+            hx-vals='{"tag": "{{ tag }}"}'
+            style="font-size: .7rem; padding: .1rem .4rem; background: var(--badge-bg); border: 1px solid var(--border); border-radius: 9999px; color: var(--muted); cursor: pointer;">{{ tag }}</button>
     {% endfor %}
   </div>
   {% endif %}
@@ -17,6 +26,9 @@
   {% endif %}
   {% if task.due_date %}
   <div style="font-size: .75rem; color: var(--very-muted);">Due {{ task.due_date }}</div>
+  {% endif %}
+  {% if task.recurrence_days %}
+  <div style="font-size: .7rem; color: var(--very-muted);">↻ Every {{ task.recurrence_days }} day{{ task.recurrence_days|pluralize }}</div>
   {% endif %}
   <div class="task-card-actions">
     {# Move to column select #}

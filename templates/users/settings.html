@@ -65,6 +65,20 @@
     <button type="submit" style="padding: .625rem 1.5rem; font-size: 1rem;">Save settings</button>
   </form>
 
+  {# ── API Token ──────────────────────────────────────────────────── #}
+  <hr style="border: none; border-top: 1px solid var(--border); margin: 2.5rem 0;">
+
+  <section style="margin-bottom: 2rem;">
+    <h2 style="font-size: 1.1rem; margin-bottom: 1rem;">API Token</h2>
+    <p style="font-size: .8rem; color: var(--muted); margin-bottom: 1rem;">
+      Use this token to authenticate with the <a href="/api/docs/">REST API</a>.
+    </p>
+    <div id="api-token-section"
+         hx-get="{% url 'users:api-token' %}"
+         hx-trigger="load">
+    </div>
+  </section>
+
   {# ── Task Statuses ─────────────────────────────────────────────── #}
   <hr style="border: none; border-top: 1px solid var(--border); margin: 2.5rem 0;">
 

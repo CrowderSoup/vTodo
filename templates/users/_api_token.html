@@ -1,0 +1,12 @@
+{% if api_token %}
+<div style="display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;">
+  <code style="flex: 1; min-width: 0; word-break: break-all; padding: .375rem .5rem; font-size: .875rem;">{{ api_token }}</code>
+  <form method="post" action="{% url 'users:api-token-regenerate' %}">
+    {% csrf_token %}
+    <button type="submit" style="font-size: .875rem; padding: .375rem .75rem;">Regenerate</button>
+  </form>
+</div>
+<p style="font-size: .8rem; color: var(--muted); margin-top: .5rem;">
+  Use this token in API requests: <code>Authorization: Token {{ api_token }}</code>
+</p>
+{% endif %}

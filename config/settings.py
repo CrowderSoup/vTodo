@@ -35,7 +35,28 @@ INSTALLED_APPS = [
     # Third party
     "django_htmx",
     "whitenoise.runserver_nostatic",
+    "rest_framework",
+    "rest_framework.authtoken",
+    "drf_spectacular",
+    "apps.api.apps.ApiConfig",
 ]
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.TokenAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "vtodo API",
+    "DESCRIPTION": "REST API for the vtodo personal task manager.",
+    "VERSION": "1.0.0",
+}
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
