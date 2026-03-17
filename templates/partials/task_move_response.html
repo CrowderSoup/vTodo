@@ -1,0 +1,5 @@
+{# Main content is empty — replaces (removes) the card from its current column position. #}
+{# OOB swap appends the card into the new column's task list. #}
+<div id="tasks-{{ task.status }}" hx-swap-oob="beforeend">
+  {% include "partials/task_card.html" %}
+</div>

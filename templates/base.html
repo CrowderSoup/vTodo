@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}vtodo{% endblock %}</title>
+  <link rel="stylesheet" href="https://unpkg.com/@knadh/oat/oat.min.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+  <style>
+    /* ── Theme variables ───────────────────────────────────────── */
+    :root {
+      --bg:          #ffffff;
+      --bg-card:     #f9fafb;
+      --text:        #111827;
+      --border:      #e5e7eb;
+      --muted:       #6b7280;
+      --very-muted:  #9ca3af;
+      --badge-bg:    #f3f4f6;
+      --input-bg:    #ffffff;
+    }
+    [data-theme="dark"] {
+      --bg:          #111827;
+      --bg-card:     #1f2937;
+      --text:        #f9fafb;
+      --border:      #374151;
+      --muted:       #9ca3af;
+      --very-muted:  #6b7280;
+      --badge-bg:    #374151;
+      --input-bg:    #1f2937;
+    }
+
+    /* ── Base ───────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; }
+    body   { background: var(--bg); color: var(--text); margin: 0; font-family: system-ui, sans-serif; }
+    a      { color: inherit; }
+    button, select, input, textarea {
+      font-family: inherit;
+      font-size: inherit;
+      color: var(--text);
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: .375rem;
+    }
+    button { cursor: pointer; padding: .3rem .6rem; }
+    button:hover { opacity: .85; }
+
+    /* ── Nav ────────────────────────────────────────────────────── */
+    .nav-bar {
+      display: flex; align-items: center; gap: 1rem;
+      padding: .75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .nav-bar a { text-decoration: none; font-weight: 500; }
+    .nav-bar .nav-spacer { flex: 1; }
+    .nav-bar form { margin: 0; }
+
+    /* ── Flash messages ─────────────────────────────────────────── */
+    .flash-messages { padding: .5rem 1rem; }
+    .flash-messages [role="alert"] {
+      padding: .5rem .75rem; border-radius: .375rem; margin-bottom: .25rem;
+      background: var(--badge-bg); border: 1px solid var(--border);
+    }
+
+    /* ── Board layout ───────────────────────────────────────────── */
+    .board-columns {
+      display: flex; gap: 1rem; overflow-x: auto;
+      align-items: flex-start; padding-bottom: 1rem;
+    }
+    .board-column { flex: 0 0 280px; min-width: 0; }
+    .column-header {
+      display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem;
+    }
+    .column-badge {
+      font-size: .75rem; color: var(--very-muted);
+      background: var(--badge-bg); padding: .1rem .4rem;
+      border-radius: 9999px; border: 1px solid var(--border);
+    }
+    .task-list { min-height: 60px; }
+
+    /* ── Task cards ─────────────────────────────────────────────── */
+    .task-card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: .5rem; padding: .625rem .75rem;
+      margin-bottom: .5rem;
+    }
+    .task-card--editing { padding: .75rem; }
+    .task-title-btn {
+      background: none; border: none; padding: 0;
+      font-weight: 500; text-align: left; width: 100%;
+      cursor: pointer; color: var(--text);
+      margin-bottom: .25rem; border-radius: .25rem;
+    }
+    .task-title-btn:hover { text-decoration: underline; opacity: 1; }
+    .task-card-actions {
+      display: flex; gap: .3rem; justify-content: flex-end;
+      align-items: center; margin-top: .5rem;
+    }
+
+    /* ── Add-task form ──────────────────────────────────────────── */
+    .add-task-form {
+      margin-top: .5rem; display: flex; gap: .25rem;
+    }
+    .add-task-form input[type="text"] {
+      flex: 1; padding: .375rem .5rem; font-size: .875rem;
+      background: var(--input-bg); border-color: var(--border);
+    }
+
+    /* ── Drag and drop ──────────────────────────────────────────── */
+    .task-card[draggable="true"] { cursor: grab; }
+    .task-card[draggable="true"]:active { cursor: grabbing; }
+    .task-card.dragging { opacity: .4; }
+    .task-list.drag-over {
+      background: var(--badge-bg);
+      border-radius: .5rem;
+      outline: 2px dashed var(--border);
+      outline-offset: 2px;
+    }
+
+    /* ── Theme toggle button ────────────────────────────────────── */
+    #theme-toggle {
+      font-size: .8rem; padding: .25rem .6rem;
+      background: var(--badge-bg); border-color: var(--border);
+      color: var(--muted); border-radius: .375rem;
+    }
+    #theme-toggle:hover { color: var(--text); opacity: 1; }
+  </style>
+  {# Apply saved theme before first paint to avoid flash #}
+  <script>
+    (function () {
+      var t = localStorage.getItem('vtodo-theme');
+      if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+</head>
+<body>
+  {% if user.is_authenticated %}
+  <nav class="nav-bar">
+    <strong>vtodo</strong>
+    <a href="{% url 'boards:board' %}">Board</a>
+    <a href="{% url 'users:settings' %}">Settings</a>
+    <span class="nav-spacer"></span>
+    {% if user.avatar_url %}<img src="{{ user.avatar_url }}" alt="" width="28" height="28" style="border-radius: 50%; object-fit: cover; vertical-align: middle; border: 1px solid var(--border);">{% endif %}
+    {% if user.display_name %}<span style="color: var(--muted); font-size: .9rem;">{{ user.display_name }}</span>{% endif %}
+    <button id="theme-toggle" onclick="vtodoToggleTheme()" title="Toggle light/dark mode">
+      <span id="theme-label">Dark</span>
+    </button>
+    <form method="post" action="{% url 'indieauth:logout' %}">
+      {% csrf_token %}
+      <button type="submit">Log out</button>
+    </form>
+  </nav>
+  {% endif %}
+
+  {% if messages %}
+  <div class="flash-messages">
+    {% for message in messages %}
+    <div role="alert">{{ message }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+    // ── CSRF for HTMX ──────────────────────────────────────────────
+    document.addEventListener('htmx:configRequest', function (evt) {
+      var m = document.cookie.match(/csrftoken=([^;]+)/);
+      if (m) evt.detail.headers['X-CSRFToken'] = m[1];
+    });
+
+    // ── Drag and drop ─────────────────────────────────────────────
+    document.addEventListener('dragstart', function (e) {
+      var card = e.target.closest('.task-card[draggable]');
+      if (!card) return;
+      e.dataTransfer.setData('text/plain', card.dataset.taskId);
+      e.dataTransfer.effectAllowed = 'move';
+      // Use setTimeout so the class is applied after the drag image is captured
+      setTimeout(function () { card.classList.add('dragging'); }, 0);
+    });
+
+    document.addEventListener('dragend', function (e) {
+      var card = e.target.closest('.task-card[draggable]');
+      if (card) card.classList.remove('dragging');
+      document.querySelectorAll('.task-list.drag-over').forEach(function (l) {
+        l.classList.remove('drag-over');
+      });
+    });
+
+    document.addEventListener('dragover', function (e) {
+      var list = e.target.closest('.task-list');
+      if (!list) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      document.querySelectorAll('.task-list.drag-over').forEach(function (l) {
+        if (l !== list) l.classList.remove('drag-over');
+      });
+      list.classList.add('drag-over');
+    });
+
+    document.addEventListener('dragleave', function (e) {
+      var list = e.target.closest('.task-list');
+      if (list && !list.contains(e.relatedTarget)) {
+        list.classList.remove('drag-over');
+      }
+    });
+
+    document.addEventListener('drop', function (e) {
+      var list = e.target.closest('.task-list');
+      if (!list) return;
+      e.preventDefault();
+      list.classList.remove('drag-over');
+
+      var taskId    = e.dataTransfer.getData('text/plain');
+      var newStatus = list.dataset.defaultStatus;
+
+      // Skip if dropped onto the same column
+      var card = document.getElementById('task-' + taskId);
+      if (card && card.closest('.task-list') === list) return;
+
+      htmx.ajax('POST', '/board/tasks/' + taskId + '/move/', {
+        target: '#board-content',
+        swap:   'innerHTML',
+        values: { new_status: newStatus }
+      });
+    });
+
+    // ── Theme toggle ───────────────────────────────────────────────
+    function vtodoToggleTheme() {
+      var html  = document.documentElement;
+      var isDark = html.getAttribute('data-theme') === 'dark';
+      var next  = isDark ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('vtodo-theme', next);
+      vtodoUpdateToggleLabel();
+    }
+
+    function vtodoUpdateToggleLabel() {
+      var lbl = document.getElementById('theme-label');
+      if (!lbl) return;
+      var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      lbl.textContent = isDark ? 'Light' : 'Dark';
+    }
+
+    // Set initial label once DOM is ready
+    document.addEventListener('DOMContentLoaded', vtodoUpdateToggleLabel);
+  </script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,25 @@
+{% for column, tasks, default_status in columns_with_tasks %}
+<div class="board-column">
+  <div class="column-header">
+    <strong>{{ column.label }}</strong>
+    <span class="column-badge">{{ tasks|length }}</span>
+  </div>
+
+  <div class="task-list" id="col-tasks-{{ column.pk }}" data-default-status="{{ default_status }}">
+    {% for task in tasks %}
+    {% include "partials/task_card.html" %}
+    {% endfor %}
+  </div>
+
+  <form class="add-task-form"
+        hx-post="{% url 'boards:task-create' %}"
+        hx-target="#col-tasks-{{ column.pk }}"
+        hx-swap="beforeend"
+        hx-on::after-request="this.reset()">
+    {% csrf_token %}
+    <input type="hidden" name="status" value="{{ default_status }}">
+    <input type="text" name="title" placeholder="Add a task…">
+    <button type="submit" title="Add task">+</button>
+  </form>
+</div>
+{% endfor %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Enter code — vtodo{% endblock %}
+
+{% block content %}
+<div style="max-width: 420px; margin: 4rem auto; padding: 0 1rem;">
+  <h1 style="margin-bottom: .5rem;">Check your email</h1>
+  <p style="color: var(--muted); margin-bottom: 1.5rem;">
+    We sent a 6-digit code to <strong>{{ email }}</strong>.
+    It expires in 15 minutes.
+  </p>
+
+  <form method="post" action="{% url 'emailauth:verify' %}">
+    {% csrf_token %}
+    <div style="margin-bottom: 1rem;">
+      <label for="code" style="display: block; margin-bottom: .25rem; font-weight: 500;">Login code</label>
+      <input type="text" id="code" name="code"
+             inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+             placeholder="000000" autofocus required
+             style="width: 100%; padding: .5rem; font-size: 1.5rem; letter-spacing: .25em; text-align: center;">
+    </div>
+    <button type="submit" style="width: 100%; padding: .625rem; font-size: 1rem;">
+      Sign in
+    </button>
+  </form>
+
+  <p style="margin-top: 1rem; text-align: center; color: var(--muted); font-size: .9rem;">
+    <a href="{% url 'indieauth:login' %}#email">Request a new code</a>
+  </p>
+</div>
+{% endblock %}

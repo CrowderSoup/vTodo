@@ -1,0 +1,53 @@
+<article class="task-card" id="task-{{ task.pk }}" draggable="true" data-task-id="{{ task.pk }}">
+  {# Clicking the title opens the inline edit form #}
+  <button class="task-title-btn"
+          hx-get="{% url 'boards:task-edit' task.pk %}"
+          hx-target="#task-{{ task.pk }}"
+          hx-swap="outerHTML"
+          title="Click to edit">{{ task.title }}</button>
+  {% if task.tags %}
+  <div style="display: flex; flex-wrap: wrap; gap: .25rem; margin-bottom: .35rem;">
+    {% for tag in task.tags %}
+    <span style="font-size: .7rem; padding: .1rem .4rem; background: var(--badge-bg); border: 1px solid var(--border); border-radius: 9999px; color: var(--muted);">{{ tag }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if task.notes %}
+  <div style="font-size: .875rem; color: var(--muted); margin-bottom: .25rem;">{{ task.notes|truncatechars:80 }}</div>
+  {% endif %}
+  {% if task.due_date %}
+  <div style="font-size: .75rem; color: var(--very-muted);">Due {{ task.due_date }}</div>
+  {% endif %}
+  <div class="task-card-actions">
+    {# Move to column select #}
+    <select name="new_status"
+            hx-post="{% url 'boards:task-move' task.pk %}"
+            hx-trigger="change"
+            hx-target="#board-content"
+            hx-swap="innerHTML"
+            style="font-size: .75rem; padding: .15rem .3rem; border: 1px solid var(--border); border-radius: .25rem; background: var(--bg); color: var(--text); cursor: pointer;">
+      {% for status in statuses %}
+      <option value="{{ status.slug }}" {% if task.status == status.slug %}selected{% endif %}>{{ status.name }}</option>
+      {% endfor %}
+    </select>
+    {# Quick-complete / undo #}
+    {% if not task.completed_at %}
+    <button title="Mark complete"
+            hx-post="{% url 'boards:task-move' task.pk %}"
+            hx-vals='{"new_status": "{{ done_slug }}"}'
+            hx-target="#board-content"
+            hx-swap="innerHTML">✓</button>
+    {% else %}
+    <button title="Move back to active"
+            hx-post="{% url 'boards:task-move' task.pk %}"
+            hx-vals='{"new_status": "{{ active_slug }}"}'
+            hx-target="#board-content"
+            hx-swap="innerHTML">↩</button>
+    {% endif %}
+    <button title="Delete task"
+            hx-post="{% url 'boards:task-delete' task.pk %}"
+            hx-target="#task-{{ task.pk }}"
+            hx-swap="outerHTML"
+            hx-confirm="Delete &ldquo;{{ task.title|escapejs }}&rdquo;?">×</button>
+  </div>
+</article>

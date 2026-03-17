@@ -1,0 +1,22 @@
+{% for column in columns %}
+<div style="display: flex; align-items: flex-start; gap: .5rem; padding: .4rem 0; border-bottom: 1px solid var(--border);">
+  <div style="flex: 1; font-size: .875rem;">
+    <strong>{{ column.label }}</strong>
+    <div style="font-size: .75rem; color: var(--muted); margin-top: .15rem;">
+      {% with statuses=column.filter_config.statuses tags=column.filter_config.tags due=column.filter_config.due %}
+      {% if statuses %}Statuses: {{ statuses|join:", " }}{% endif %}
+      {% if tags %} &middot; Tags: {{ tags|join:", " }}{% endif %}
+      {% if due %} &middot; Due: {{ due }}{% endif %}
+      {% if not statuses and not tags and not due %}All tasks{% endif %}
+      {% endwith %}
+    </div>
+  </div>
+  <button hx-post="{% url 'users:column-delete' column.pk %}"
+          hx-target="#column-list"
+          hx-swap="innerHTML"
+          hx-confirm="Delete column &ldquo;{{ column.label|escapejs }}&rdquo;?"
+          style="font-size: .75rem; color: var(--muted); border-color: var(--border);">×</button>
+</div>
+{% empty %}
+<p style="font-size: .875rem; color: var(--muted);">No columns yet.</p>
+{% endfor %}

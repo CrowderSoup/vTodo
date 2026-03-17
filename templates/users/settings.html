@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}Settings — vtodo{% endblock %}
+
+{% block content %}
+<div style="max-width: 560px; margin: 2rem auto; padding: 0 1rem;">
+  <h1 style="margin-bottom: 1.5rem;">Settings</h1>
+
+  <form method="post" action="{% url 'users:settings' %}">
+    {% csrf_token %}
+
+    <fieldset style="border: none; padding: 0; margin-bottom: 2rem;">
+      <legend style="font-weight: 600; font-size: 1.1rem; margin-bottom: 1rem; padding: 0;">Profile</legend>
+
+      <div style="margin-bottom: 1rem;">
+        <label for="display_name" style="display: block; margin-bottom: .25rem; font-weight: 500;">Display name</label>
+        <input type="text" id="display_name" name="display_name"
+               value="{{ user.display_name }}"
+               style="width: 100%; padding: .5rem;">
+      </div>
+
+      <div style="margin-bottom: 1rem;">
+        <label for="avatar_url" style="display: block; margin-bottom: .25rem; font-weight: 500;">Avatar URL</label>
+        <input type="url" id="avatar_url" name="avatar_url"
+               value="{{ user.avatar_url }}"
+               placeholder="https://example.com/avatar.jpg"
+               style="width: 100%; padding: .5rem;">
+      </div>
+    </fieldset>
+
+    <fieldset style="border: none; padding: 0; margin-bottom: 2rem;">
+      <legend style="font-weight: 600; font-size: 1.1rem; margin-bottom: 1rem; padding: 0;">Daily Summary</legend>
+
+      <div style="display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem;">
+        <input type="checkbox" id="daily_summary_enabled" name="daily_summary_enabled"
+               {% if user.daily_summary_enabled %}checked{% endif %}
+               style="width: 1rem; height: 1rem;">
+        <label for="daily_summary_enabled" style="font-weight: 500;">Enable daily summary post</label>
+      </div>
+
+      {% if not user.has_micropub %}
+      <p style="font-size: .875rem; color: var(--muted); margin-bottom: 1rem;">
+        Daily summaries are posted via Micropub. Sign in with your IndieAuth identity
+        and grant <code>publish</code> scope to enable this feature.
+      </p>
+      {% endif %}
+
+      <div style="margin-bottom: 1rem;">
+        <label for="daily_summary_time" style="display: block; margin-bottom: .25rem; font-weight: 500;">
+          Send time (UTC)
+        </label>
+        <input type="time" id="daily_summary_time" name="daily_summary_time"
+               value="{{ user.daily_summary_time|time:'H:i' }}"
+               {% if not user.has_micropub %}disabled{% endif %}
+               style="padding: .5rem;">
+      </div>
+
+      {% if user.has_micropub %}
+      <p style="font-size: .875rem; color: var(--muted);">
+        Posting to: <code>{{ user.micropub_endpoint }}</code>
+      </p>
+      {% endif %}
+    </fieldset>
+
+    <button type="submit" style="padding: .625rem 1.5rem; font-size: 1rem;">Save settings</button>
+  </form>
+
+  {# ── Task Statuses ─────────────────────────────────────────────── #}
+  <hr style="border: none; border-top: 1px solid var(--border); margin: 2.5rem 0;">
+
+  <section style="margin-bottom: 2rem;">
+    <h2 style="font-size: 1.1rem; margin-bottom: 1rem;">Task Statuses</h2>
+
+    <div id="status-list" style="margin-bottom: 1rem;">
+      {% include "users/_status_list.html" %}
+    </div>
+
+    <form hx-post="{% url 'users:status-create' %}"
+          hx-target="#status-list"
+          hx-swap="innerHTML"
+          hx-on::after-request="this.reset()"
+          style="display: flex; gap: .5rem; flex-wrap: wrap; align-items: center;">
+      {% csrf_token %}
+      <input type="text" name="name" placeholder="Status name" required
+             style="flex: 1; min-width: 150px; padding: .375rem .5rem; font-size: .875rem;">
+      <label style="display: flex; align-items: center; gap: .35rem; font-size: .875rem; white-space: nowrap;">
+        <input type="checkbox" name="is_done"> Mark as done
+      </label>
+      <button type="submit" style="font-size: .875rem; padding: .375rem .75rem;">Add status</button>
+    </form>
+  </section>
+
+  {# ── Board Columns ─────────────────────────────────────────────── #}
+  <section style="margin-bottom: 2rem;">
+    <h2 style="font-size: 1.1rem; margin-bottom: 1rem;">Board Columns</h2>
+    <p style="font-size: .8rem; color: var(--muted); margin-bottom: 1rem;">
+      Each column shows tasks matching its filters. Leave a filter blank to match everything.
+      Tasks appear in the first matching column only.
+    </p>
+
+    <div id="column-list" style="margin-bottom: 1rem;">
+      {% include "users/_column_list.html" %}
+    </div>
+
+    <form hx-post="{% url 'users:column-create' %}"
+          hx-target="#column-list"
+          hx-swap="innerHTML"
+          hx-on::after-request="this.reset()"
+          style="display: grid; gap: .5rem;">
+      {% csrf_token %}
+      <input type="text" name="label" placeholder="Column label" required
+             style="padding: .375rem .5rem; font-size: .875rem;">
+      <input type="text" name="statuses" placeholder="Status slugs (comma-separated, e.g. todo,in_progress)"
+             style="padding: .375rem .5rem; font-size: .875rem;">
+      <input type="text" name="tags" placeholder="Tags (comma-separated, e.g. work,urgent)"
+             style="padding: .375rem .5rem; font-size: .875rem;">
+      <select name="due" style="padding: .375rem .5rem; font-size: .875rem;">
+        <option value="">No due date filter</option>
+        <option value="today">Due today</option>
+        <option value="this_week">Due this week</option>
+        <option value="overdue">Overdue</option>
+      </select>
+      <button type="submit" style="font-size: .875rem; padding: .375rem .75rem; justify-self: start;">Add column</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

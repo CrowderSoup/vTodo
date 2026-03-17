@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}Board — vtodo{% endblock %}
+
+{% block content %}
+<div style="padding: 1rem;">
+  <div id="board-content" class="board-columns">
+    {% include "boards/_columns.html" %}
+  </div>
+</div>
+{% endblock %}

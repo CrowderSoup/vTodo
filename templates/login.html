@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Sign in — vtodo{% endblock %}
+
+{% block content %}
+<div style="max-width: 420px; margin: 4rem auto; padding: 0 1rem;">
+  <h1 style="margin-bottom: 1.5rem;">Sign in to vtodo</h1>
+
+  <div class="tab-container">
+    <div role="tablist" style="display: flex; border-bottom: 2px solid var(--border); margin-bottom: 1.5rem;">
+      <button role="tab" id="tab-indieweb" aria-controls="panel-indieweb" aria-selected="true"
+              onclick="switchTab('indieweb')"
+              style="padding: .5rem 1rem; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 500; cursor: pointer;">
+        IndieWeb
+      </button>
+      <button role="tab" id="tab-email" aria-controls="panel-email" aria-selected="false"
+              onclick="switchTab('email')"
+              style="padding: .5rem 1rem; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 500; cursor: pointer;">
+        Email
+      </button>
+    </div>
+
+    <div id="panel-indieweb" role="tabpanel" aria-labelledby="tab-indieweb">
+      <form method="post" action="{% url 'indieauth:start' %}">
+        {% csrf_token %}
+        <div style="margin-bottom: 1rem;">
+          <label for="me" style="display: block; margin-bottom: .25rem; font-weight: 500;">Your website URL</label>
+          <input type="url" id="me" name="me"
+                 placeholder="https://yoursite.com" required
+                 style="width: 100%; padding: .5rem; font-size: 1rem;">
+        </div>
+        <button type="submit" style="width: 100%; padding: .625rem; font-size: 1rem;">
+          Sign in with your website
+        </button>
+      </form>
+    </div>
+
+    <div id="panel-email" role="tabpanel" aria-labelledby="tab-email" hidden>
+      <form method="post" action="{% url 'emailauth:request' %}">
+        {% csrf_token %}
+        <div style="margin-bottom: 1rem;">
+          <label for="email" style="display: block; margin-bottom: .25rem; font-weight: 500;">Your email address</label>
+          <input type="email" id="email" name="email"
+                 placeholder="you@example.com" required
+                 style="width: 100%; padding: .5rem; font-size: 1rem;">
+        </div>
+        <button type="submit" style="width: 100%; padding: .625rem; font-size: 1rem;">
+          Send login code
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  function switchTab(name) {
+    ['indieweb', 'email'].forEach(function (t) {
+      var tab   = document.getElementById('tab-' + t);
+      var panel = document.getElementById('panel-' + t);
+      var active = t === name;
+      tab.setAttribute('aria-selected', String(active));
+      tab.style.borderBottomColor = active ? '#4f46e5' : 'transparent';
+      tab.style.color = active ? '#4f46e5' : '';
+      panel.hidden = !active;
+    });
+  }
+  var hash = window.location.hash.replace('#', '') || 'indieweb';
+  switchTab(hash === 'email' ? 'email' : 'indieweb');
+</script>
+{% endblock %}

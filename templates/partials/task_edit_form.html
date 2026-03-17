@@ -1,0 +1,34 @@
+<article class="task-card task-card--editing" id="task-{{ task.pk }}">
+  <form hx-post="{% url 'boards:task-update' task.pk %}"
+        hx-target="#task-{{ task.pk }}"
+        hx-swap="outerHTML">
+    {% csrf_token %}
+    <div style="margin-bottom: .5rem;">
+      <input type="text" name="title" value="{{ task.title }}" required autofocus
+             style="width: 100%; padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem; font-weight: 500;">
+    </div>
+    <div style="margin-bottom: .5rem;">
+      <textarea name="notes" rows="3" placeholder="Notes…"
+                style="width: 100%; padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem; resize: vertical;">{{ task.notes }}</textarea>
+    </div>
+    <div style="margin-bottom: .5rem;">
+      <label style="font-size: .75rem; color: var(--muted); display: block; margin-bottom: .2rem;">Due date</label>
+      <input type="date" name="due_date" value="{{ task.due_date|date:'Y-m-d' }}"
+             style="padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem;">
+    </div>
+    <div style="margin-bottom: .5rem;">
+      <label style="font-size: .75rem; color: var(--muted); display: block; margin-bottom: .2rem;">Tags (comma-separated)</label>
+      <input type="text" name="tags" value="{{ task.tags|join:', ' }}"
+             placeholder="work, urgent, design"
+             style="width: 100%; padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem;">
+    </div>
+    <div style="display: flex; gap: .5rem; justify-content: flex-end;">
+      <button type="button"
+              hx-get="{% url 'boards:task-detail' task.pk %}"
+              hx-target="#task-{{ task.pk }}"
+              hx-swap="outerHTML"
+              style="font-size: .8rem;">Cancel</button>
+      <button type="submit" style="font-size: .8rem;">Save</button>
+    </div>
+  </form>
+</article>

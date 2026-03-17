@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+
+# uv
+.python-version
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+media/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# DigitalOcean App Platform
+.do/
