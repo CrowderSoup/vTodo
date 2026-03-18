@@ -212,11 +212,14 @@ def main() -> None:
         import uvicorn
 
         mcp_token = _settings.mcp_token
-        sse_app = mcp.sse_app(mount_path="/mcp")
+        # Streamable HTTP is the current MCP transport standard; Claude.ai web uses it.
+        # The route is registered at /mcp, which matches what DO forwards when
+        # preserve_path_prefix is true for the /mcp ingress rule.
+        http_app = mcp.streamable_http_app()
 
         async def auth_app(scope, receive, send):
             if scope["type"] != "http":
-                await sse_app(scope, receive, send)
+                await http_app(scope, receive, send)
                 return
 
             # Inject CORS headers into every HTTP response.
@@ -253,7 +256,7 @@ def main() -> None:
                     await send({"type": "http.response.body", "body": b"Unauthorized"})
                     return
 
-            await sse_app(scope, receive, send_with_cors)
+            await http_app(scope, receive, send_with_cors)
 
         uvicorn.run(auth_app, host=_settings.host, port=_settings.port)
     else:
