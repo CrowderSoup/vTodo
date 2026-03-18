@@ -202,4 +202,22 @@ def resource_tasks_overdue() -> str:
 
 
 def main() -> None:
-    mcp.run(transport="stdio")
+    if _settings.transport == "sse":
+        import uvicorn
+        from starlette.middleware.base import BaseHTTPMiddleware
+        from starlette.responses import Response
+
+        mcp_token = _settings.mcp_token
+
+        class BearerAuthMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request, call_next):
+                if mcp_token:
+                    auth = request.headers.get("Authorization", "")
+                    if auth != f"Bearer {mcp_token}":
+                        return Response("Unauthorized", status_code=401)
+                return await call_next(request)
+
+        app = BearerAuthMiddleware(mcp.sse_app())
+        uvicorn.run(app, host=_settings.host, port=_settings.port)
+    else:
+        mcp.run(transport="stdio")
