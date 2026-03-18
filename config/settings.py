@@ -17,6 +17,10 @@ DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
 
+# Trust the X-Forwarded-Proto header from reverse proxies (e.g. DO App Platform)
+# so that request.build_absolute_uri() generates https:// URLs correctly.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 INSTALLED_APPS = [
     # Local apps — users first because AUTH_USER_MODEL depends on it
     "apps.users.apps.UsersConfig",
