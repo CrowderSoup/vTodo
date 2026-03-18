@@ -9,11 +9,10 @@ from mcp.server.fastmcp import FastMCP
 from .client import VtodoAPIError, VtodoClient
 from .config import load_settings
 
-mcp = FastMCP("vtodo")
-
 # Initialised once when the module is imported (i.e. when the process starts).
 _settings = load_settings()
 _client = VtodoClient(_settings.api_url, _settings.api_token)
+mcp = FastMCP("vtodo", host=_settings.host)
 
 
 def _ok(data: Any) -> str:
