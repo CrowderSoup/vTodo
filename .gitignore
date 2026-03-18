@@ -12,8 +12,6 @@ build/
 venv/
 env/
 
-# uv
-.python-version
 
 # Django
 *.log
