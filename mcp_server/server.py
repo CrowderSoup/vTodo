@@ -203,21 +203,25 @@ def resource_tasks_overdue() -> str:
 def main() -> None:
     if _settings.transport == "sse":
         import uvicorn
-        from starlette.middleware.base import BaseHTTPMiddleware
-        from starlette.responses import Response
 
         mcp_token = _settings.mcp_token
+        sse_app = mcp.sse_app()
 
-        class BearerAuthMiddleware(BaseHTTPMiddleware):
-            async def dispatch(self, request, call_next):
-                if mcp_token:
-                    auth = request.headers.get("Authorization", "")
-                    token_param = request.query_params.get("token", "")
-                    if auth != f"Bearer {mcp_token}" and token_param != mcp_token:
-                        return Response("Unauthorized", status_code=401)
-                return await call_next(request)
+        async def auth_app(scope, receive, send):
+            if scope["type"] == "http" and mcp_token:
+                headers = dict(scope.get("headers", []))
+                auth = headers.get(b"authorization", b"").decode()
+                query = scope.get("query_string", b"").decode()
+                token_param = next(
+                    (p[6:] for p in query.split("&") if p.startswith("token=")), ""
+                )
+                if auth != f"Bearer {mcp_token}" and token_param != mcp_token:
+                    await send({"type": "http.response.start", "status": 401,
+                                "headers": [(b"content-type", b"text/plain")]})
+                    await send({"type": "http.response.body", "body": b"Unauthorized"})
+                    return
+            await sse_app(scope, receive, send)
 
-        app = BearerAuthMiddleware(mcp.sse_app())
-        uvicorn.run(app, host=_settings.host, port=_settings.port)
+        uvicorn.run(auth_app, host=_settings.host, port=_settings.port)
     else:
         mcp.run(transport="stdio")
