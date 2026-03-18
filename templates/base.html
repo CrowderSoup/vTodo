@@ -212,6 +212,9 @@
       border-radius: .375rem; padding: .75rem 1rem; overflow-x: auto;
     }
     .task-panel-notes pre code { background: none; border: none; padding: 0; }
+    /* EasyMDE spacing */
+    .EasyMDEContainer { margin-bottom: .75rem; }
+
     /* EasyMDE dark mode overrides */
     [data-theme="dark"] .CodeMirror,
     [data-theme="dark"] .editor-toolbar {
@@ -505,6 +508,7 @@
 
     // ── Task detail panel ──────────────────────────────────────────
     var _easyMDEInstance = null;
+    var _easyMDECommentInstance = null;
 
     function openTaskPanel() {
       document.getElementById('task-panel').classList.add('open');
@@ -517,6 +521,10 @@
       if (_easyMDEInstance) {
         _easyMDEInstance.toTextArea();
         _easyMDEInstance = null;
+      }
+      if (_easyMDECommentInstance) {
+        _easyMDECommentInstance.toTextArea();
+        _easyMDECommentInstance = null;
       }
     }
 
@@ -538,6 +546,24 @@
           minHeight: '180px',
         });
       }
+      var commentTextarea = document.getElementById('task-comment-editor');
+      if (commentTextarea && window.EasyMDE) {
+        if (_easyMDECommentInstance) { _easyMDECommentInstance.toTextArea(); }
+        _easyMDECommentInstance = new EasyMDE({
+          element: commentTextarea,
+          spellChecker: false,
+          status: false,
+          autoDownloadFontAwesome: true,
+          minHeight: '100px',
+        });
+      }
+    });
+
+    // After a comment is submitted, clear the editor rather than reinitialising it.
+    document.addEventListener('htmx:afterRequest', function (e) {
+      if (e.target.id === 'task-comment-form' && e.detail.successful && _easyMDECommentInstance) {
+        _easyMDECommentInstance.value('');
+      }
     });
 
     // Sync EasyMDE value to textarea before HTMX submits the panel form
@@ -545,6 +571,10 @@
       if (_easyMDEInstance) {
         var textarea = document.getElementById('task-notes-editor');
         if (textarea) textarea.value = _easyMDEInstance.value();
+      }
+      if (_easyMDECommentInstance) {
+        var ct = document.getElementById('task-comment-editor');
+        if (ct) ct.value = _easyMDECommentInstance.value();
       }
     });
 

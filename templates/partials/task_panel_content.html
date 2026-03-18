@@ -21,6 +21,22 @@
   {% else %}
   <p style="color: var(--muted); font-size: .875rem; margin: 0;">No notes yet. Click Edit to add some.</p>
   {% endif %}
+  <hr style="border: none; border-top: 1px solid var(--border); margin: 1rem 0;">
+  <h3 style="font-size: .9rem; margin: 0 0 .75rem;">Comments</h3>
+  <div id="task-comments">
+    {% include "partials/task_comments.html" %}
+  </div>
+  <form id="task-comment-form"
+        hx-post="{% url 'boards:task-comment-create' task.pk %}"
+        hx-target="#task-comments"
+        hx-swap="innerHTML">
+    {% csrf_token %}
+    <textarea id="task-comment-editor" name="body" rows="3"
+              style="width: 100%; margin-bottom: .5rem;"></textarea>
+    <div style="display: flex; justify-content: flex-end;">
+      <button type="submit" style="font-size: .8rem;">Add comment</button>
+    </div>
+  </form>
 </div>
 <div class="task-panel-footer">
   <div style="flex: 1; display: flex; align-items: center; gap: .5rem;">

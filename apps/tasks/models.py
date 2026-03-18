@@ -90,3 +90,15 @@ class Task(models.Model):
             recurrence_days=self.recurrence_days,
             recurrence_from=self.recurrence_from,
         )
+
+
+class TaskComment(models.Model):
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="comments")
+    body = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"Comment on {self.task_id} @ {self.created_at}"

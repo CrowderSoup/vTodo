@@ -116,3 +116,19 @@ class VtodoClient:
     def delete_status(self, slug: str) -> None:
         r = self._session.delete(f"{self._base}/statuses/{slug}/")
         self._raise(r)
+
+    # ── Comments ───────────────────────────────────────────────────────────
+
+    def list_comments(self, task_id: int) -> list[dict]:
+        r = self._session.get(f"{self._base}/tasks/{task_id}/comments/")
+        self._raise(r)
+        return r.json()
+
+    def add_comment(self, task_id: int, body: str) -> dict:
+        r = self._session.post(f"{self._base}/tasks/{task_id}/comments/", json={"body": body})
+        self._raise(r)
+        return r.json()
+
+    def delete_comment(self, comment_id: int) -> None:
+        r = self._session.delete(f"{self._base}/comments/{comment_id}/")
+        self._raise(r)

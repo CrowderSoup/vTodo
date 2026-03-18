@@ -1,12 +1,12 @@
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
-from rest_framework import status, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from apps.tasks.models import Task, TaskStatus
+from apps.tasks.models import Task, TaskComment, TaskStatus
 
-from .serializers import TaskSerializer, TaskStatusSerializer
+from .serializers import TaskCommentSerializer, TaskSerializer, TaskStatusSerializer
 
 
 class TaskStatusViewSet(viewsets.ModelViewSet):
@@ -68,3 +68,20 @@ class TaskViewSet(viewsets.ModelViewSet):
         task.save(update_fields=["status", "completed_at", "updated_at"])
 
         return Response(TaskSerializer(task).data)
+
+    @action(detail=True, methods=["get", "post"])
+    def comments(self, request, pk=None):
+        task = self.get_object()
+        if request.method == "GET":
+            return Response(TaskCommentSerializer(task.comments.all(), many=True).data)
+        serializer = TaskCommentSerializer(data={**request.data, "task": task.pk})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class TaskCommentViewSet(viewsets.GenericViewSet, mixins.DestroyModelMixin):
+    serializer_class = TaskCommentSerializer
+
+    def get_queryset(self):
+        return TaskComment.objects.filter(task__user=self.request.user)

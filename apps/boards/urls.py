@@ -24,4 +24,6 @@ urlpatterns = [
     path("tasks/<int:pk>/panel/", views.TaskPanelView.as_view(), name="task-panel"),
     path("tasks/<int:pk>/panel/edit/", views.TaskPanelEditView.as_view(), name="task-panel-edit"),
     path("tasks/<int:pk>/panel/update/", views.TaskPanelUpdateView.as_view(), name="task-panel-update"),
+    path("tasks/<int:pk>/comments/", views.TaskCommentCreateView.as_view(), name="task-comment-create"),
+    path("tasks/<int:pk>/comments/<int:comment_pk>/delete/", views.TaskCommentDeleteView.as_view(), name="task-comment-delete"),
 ]

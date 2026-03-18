@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.tasks.models import Task, TaskStatus
+from apps.tasks.models import Task, TaskComment, TaskStatus
 
 
 class TaskStatusSerializer(serializers.ModelSerializer):
@@ -8,6 +8,13 @@ class TaskStatusSerializer(serializers.ModelSerializer):
         model = TaskStatus
         fields = ["id", "name", "slug", "order", "color", "is_done"]
         read_only_fields = ["slug"]
+
+
+class TaskCommentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaskComment
+        fields = ["id", "task", "body", "created_at"]
+        read_only_fields = ["created_at"]
 
 
 class TaskSerializer(serializers.ModelSerializer):

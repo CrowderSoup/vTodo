@@ -105,6 +105,37 @@ def move_task(id: int, new_status: str) -> str:
         return _err(e)
 
 
+# ── Comment tools ──────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+def list_comments(task_id: int) -> str:
+    """List all comments on a task."""
+    try:
+        return _ok(_client.list_comments(task_id))
+    except VtodoAPIError as e:
+        return _err(e)
+
+
+@mcp.tool()
+def add_comment(task_id: int, body: str) -> str:
+    """Add a comment to a task without editing it."""
+    try:
+        return _ok(_client.add_comment(task_id, body))
+    except VtodoAPIError as e:
+        return _err(e)
+
+
+@mcp.tool()
+def delete_comment(comment_id: int) -> str:
+    """Delete a task comment by its ID."""
+    try:
+        _client.delete_comment(comment_id)
+        return f"Comment {comment_id} deleted."
+    except VtodoAPIError as e:
+        return _err(e)
+
+
 # ── Status tools ───────────────────────────────────────────────────────────────
 
 

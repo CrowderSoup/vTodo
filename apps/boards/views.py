@@ -8,7 +8,7 @@ from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views import View
 
-from apps.tasks.models import Task, TaskStatus
+from apps.tasks.models import Task, TaskComment, TaskStatus
 
 from .models import Board, Column, SavedFilter
 
@@ -337,6 +337,7 @@ class TaskPanelView(LoginRequiredMixin, View):
             "statuses": statuses,
             "done_slug": done_slug,
             "active_slug": active_slug,
+            "comments": _render_comments(task),
         })
 
 
@@ -381,6 +382,36 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
             "statuses": statuses,
             "done_slug": done_slug,
             "active_slug": active_slug,
+        })
+
+
+def _render_comments(task):
+    return [
+        {"comment": c, "body_html": md.markdown(c.body, extensions=["fenced_code", "tables"])}
+        for c in task.comments.all()
+    ]
+
+
+class TaskCommentCreateView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        task = get_object_or_404(Task, pk=pk, user=request.user)
+        body = request.POST.get("body", "").strip()
+        if body:
+            TaskComment.objects.create(task=task, body=body)
+        return render(request, "partials/task_comments.html", {
+            "task": task,
+            "comments": _render_comments(task),
+        })
+
+
+class TaskCommentDeleteView(LoginRequiredMixin, View):
+    def post(self, request, pk, comment_pk):
+        task = get_object_or_404(Task, pk=pk, user=request.user)
+        comment = get_object_or_404(TaskComment, pk=comment_pk, task=task)
+        comment.delete()
+        return render(request, "partials/task_comments.html", {
+            "task": task,
+            "comments": _render_comments(task),
         })
 
 
