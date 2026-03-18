@@ -212,7 +212,8 @@ def main() -> None:
             async def dispatch(self, request, call_next):
                 if mcp_token:
                     auth = request.headers.get("Authorization", "")
-                    if auth != f"Bearer {mcp_token}":
+                    token_param = request.query_params.get("token", "")
+                    if auth != f"Bearer {mcp_token}" and token_param != mcp_token:
                         return Response("Unauthorized", status_code=401)
                 return await call_next(request)
 
