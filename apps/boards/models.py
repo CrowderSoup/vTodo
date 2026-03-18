@@ -37,3 +37,18 @@ class Column(models.Model):
         from apps.tasks.models import TaskStatus
         first = TaskStatus.objects.filter(user=user).first()
         return first.slug if first else "todo"
+
+
+class SavedFilter(models.Model):
+    board = models.ForeignKey(Board, on_delete=models.CASCADE, related_name="saved_filters")
+    name = models.CharField(max_length=255)
+    filter_config = models.JSONField(default=dict)
+    # schema: {"tags": [...], "due": "...", "hidden_columns": [...]}
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+        unique_together = [("board", "name")]
+
+    def __str__(self):
+        return f"{self.name} ({self.board})"

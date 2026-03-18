@@ -1,4 +1,15 @@
 <div style="display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem;">
+  <select id="saved-filter-select"
+          onchange="if(this.value) htmx.ajax('POST', this.value, {target:'#board-content', swap:'innerHTML'})"
+          style="padding: .3rem .5rem; font-size: .875rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--input-bg); color: var(--text); cursor: pointer; width: fit-content;">
+    <option value="">Saved filters…</option>
+    {% for sf in saved_filters %}
+    <option value="{% url 'boards:filter-load' sf.pk %}"
+            {% if sf.name == active_saved_filter_name %}selected{% endif %}>
+      {{ sf.name }}
+    </option>
+    {% endfor %}
+  </select>
   <form id="board-filter-form"
         hx-post="{% url 'boards:board-filter' %}"
         hx-target="#board-content"
@@ -30,6 +41,24 @@
     {% endfor %}
   </form>
   {% if active_filter.tags or active_filter.due or active_filter.hidden_columns %}
+  <div class="save-filter-container" style="position: relative; display: inline-block;">
+    <button onclick="this.nextElementSibling.classList.toggle('open')"
+            style="font-size: .8rem; color: var(--muted); padding: .3rem .5rem; background: none; border: none;">
+      Save filter
+    </button>
+    <div class="save-filter-popover">
+      <form hx-post="{% url 'boards:filter-save' %}"
+            hx-target="#board-content"
+            hx-swap="innerHTML"
+            hx-include="#board-filter-form"
+            style="display: flex; gap: .25rem;">
+        {% csrf_token %}
+        <input type="text" name="name" placeholder="Filter name…"
+               style="padding: .3rem .5rem; font-size: .875rem; flex: 1; min-width: 0;">
+        <button type="submit" style="font-size: .875rem; white-space: nowrap;">Save</button>
+      </form>
+    </div>
+  </div>
   <form hx-post="{% url 'boards:board-filter' %}"
         hx-target="#board-content"
         hx-swap="innerHTML"

@@ -10,7 +10,7 @@ from django.views import View
 
 from apps.tasks.models import Task, TaskStatus
 
-from .models import Board, Column
+from .models import Board, Column, SavedFilter
 
 
 def _task_matches_column(task, filter_config):
@@ -83,6 +83,19 @@ def _build_board_context(user, session=None):
                 claimed.add(task.pk)
         columns_with_tasks.append((column, col_tasks, column.default_status(user)))
 
+    saved_filters = list(board.saved_filters.all())
+    active_saved_filter_name = None
+    current_config = {"tags": filter_tags, "due": filter_due, "hidden_columns": list(hidden_column_pks)}
+    for sf in saved_filters:
+        sf_config = sf.filter_config
+        if (
+            sorted(sf_config.get("tags", [])) == sorted(current_config["tags"])
+            and sf_config.get("due", "") == current_config["due"]
+            and sorted(sf_config.get("hidden_columns", [])) == sorted(current_config["hidden_columns"])
+        ):
+            active_saved_filter_name = sf.name
+            break
+
     return {
         "board": board,
         "columns_with_tasks": columns_with_tasks,
@@ -90,6 +103,8 @@ def _build_board_context(user, session=None):
         "done_slug": done_slug,
         "active_slug": active_slug,
         "active_filter": {"tags": filter_tags, "due": filter_due, "hidden_columns": hidden_columns},
+        "saved_filters": saved_filters,
+        "active_saved_filter_name": active_saved_filter_name,
     }
 
 
@@ -367,3 +382,39 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
             "done_slug": done_slug,
             "active_slug": active_slug,
         })
+
+
+class SavedFilterLoadView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        board = get_object_or_404(Board, user=request.user)
+        saved_filter = get_object_or_404(SavedFilter, pk=pk, board=board)
+        request.session["board_filter"] = saved_filter.filter_config
+        request.session.modified = True
+        context = _build_board_context(request.user, request.session)
+        return render(request, "boards/_filter_response.html", context)
+
+
+class SavedFilterSaveView(LoginRequiredMixin, View):
+    def post(self, request):
+        board = get_object_or_404(Board, user=request.user)
+        name = request.POST.get("name", "").strip()
+        if not name:
+            context = _build_board_context(request.user, request.session)
+            return render(request, "boards/_filter_response.html", context)
+        filter_config = request.session.get("board_filter") or {}
+        SavedFilter.objects.update_or_create(
+            board=board,
+            name=name,
+            defaults={"filter_config": filter_config},
+        )
+        context = _build_board_context(request.user, request.session)
+        return render(request, "boards/_filter_response.html", context)
+
+
+class SavedFilterDeleteView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        board = get_object_or_404(Board, user=request.user)
+        saved_filter = get_object_or_404(SavedFilter, pk=pk, board=board)
+        saved_filter.delete()
+        context = _build_board_context(request.user, request.session)
+        return render(request, "boards/_filter_response.html", context)

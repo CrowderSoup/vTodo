@@ -243,6 +243,22 @@
       .task-panel { width: 100vw; }
     }
 
+    /* ── Saved filter popover ───────────────────────────────────── */
+    .save-filter-popover {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: .375rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,.15);
+      padding: .5rem;
+      z-index: 100;
+      min-width: 200px;
+    }
+    .save-filter-popover.open { display: block; }
+
     /* ── Theme toggle button ────────────────────────────────────── */
     #theme-toggle {
       font-size: .8rem; padding: .25rem .6rem;
@@ -552,11 +568,16 @@
     // Set initial label once DOM is ready
     document.addEventListener('DOMContentLoaded', vtodoUpdateToggleLabel);
 
-    // ── Column actions menu: close on outside click ─────────────────
+    // ── Column actions menu + save-filter popover: close on outside click ──
     document.addEventListener('click', function (e) {
       if (!e.target.closest('.column-actions')) {
         document.querySelectorAll('.col-actions-menu.open').forEach(function (m) {
           m.classList.remove('open');
+        });
+      }
+      if (!e.target.closest('.save-filter-container')) {
+        document.querySelectorAll('.save-filter-popover.open').forEach(function (p) {
+          p.classList.remove('open');
         });
       }
     });
