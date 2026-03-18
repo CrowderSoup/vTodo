@@ -134,7 +134,7 @@
 
     /* ── Add-task form ──────────────────────────────────────────── */
     .add-task-form {
-      margin-top: .5rem; display: flex; gap: .25rem;
+      margin-top: .5rem; margin-bottom: .5rem; display: flex; gap: .25rem;
     }
     .add-task-form input[type="text"] {
       flex: 1; padding: .375rem .5rem; font-size: .875rem;
@@ -223,6 +223,25 @@
     [data-theme="dark"] .editor-toolbar button.active { background: var(--badge-bg); color: var(--text); }
     [data-theme="dark"] .editor-preview { background: var(--bg-card); color: var(--text); }
     [data-theme="dark"] .editor-statusbar { color: var(--muted); }
+
+    /* ── Mobile / responsive ────────────────────────────────────── */
+    @media (max-width: 640px) {
+      .board-columns {
+        flex-direction: column;
+        overflow-x: visible;
+      }
+      .board-column { flex: none; width: 100%; }
+      .nav-bar { flex-wrap: wrap; gap: .4rem; padding: .5rem .75rem; }
+      .nav-spacer { display: none; }
+      /* Prevent iOS from zooming into inputs smaller than 16px */
+      input, select, textarea { font-size: 1rem !important; }
+      /* Larger touch targets */
+      button { min-height: 2.5rem; padding: .4rem .7rem; }
+      .add-task-form input[type="text"] { min-height: 2.5rem; }
+      .task-title-btn { padding: .25rem 0; }
+      /* Panel takes full width on mobile */
+      .task-panel { width: 100vw; }
+    }
 
     /* ── Theme toggle button ────────────────────────────────────── */
     #theme-toggle {

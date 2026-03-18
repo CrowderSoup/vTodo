@@ -18,12 +18,6 @@
     </div>
   </div>
 
-  <div class="task-list" id="col-tasks-{{ column.pk }}" data-default-status="{{ default_status }}">
-    {% for task in tasks %}
-    {% include "partials/task_card.html" %}
-    {% endfor %}
-  </div>
-
   <form class="add-task-form"
         hx-post="{% url 'boards:task-create' %}"
         hx-target="#col-tasks-{{ column.pk }}"
@@ -34,5 +28,11 @@
     <input type="text" name="title" placeholder="Add a task…">
     <button type="submit" title="Add task">+</button>
   </form>
+
+  <div class="task-list" id="col-tasks-{{ column.pk }}" data-default-status="{{ default_status }}">
+    {% for task in tasks %}
+    {% include "partials/task_card.html" %}
+    {% endfor %}
+  </div>
 </div>
 {% endfor %}
