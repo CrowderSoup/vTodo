@@ -20,8 +20,16 @@
       {{ tag }} ×
     </label>
     {% endfor %}
+    {% for col in active_filter.hidden_columns %}
+    <label style="display: inline-flex; align-items: center; gap: .25rem; font-size: .75rem; padding: .15rem .5rem;
+                  background: var(--badge-bg); color: var(--text);
+                  border: 1px solid var(--border); border-radius: 9999px; cursor: pointer; user-select: none;">
+      <input type="checkbox" name="hidden_columns" value="{{ col.pk }}" checked style="display: none;">
+      Hidden: {{ col.label }} ×
+    </label>
+    {% endfor %}
   </form>
-  {% if active_filter.tags or active_filter.due %}
+  {% if active_filter.tags or active_filter.due or active_filter.hidden_columns %}
   <form hx-post="{% url 'boards:board-filter' %}"
         hx-target="#board-content"
         hx-swap="innerHTML"

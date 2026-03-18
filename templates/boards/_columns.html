@@ -7,6 +7,12 @@
     <div class="column-actions">
       <button class="col-actions-btn" title="Column actions" onclick="this.nextElementSibling.classList.toggle('open')">⋯</button>
       <div class="col-actions-menu">
+        <button hx-post="{% url 'boards:column-hide' column.pk %}"
+                hx-target="#board-content"
+                hx-swap="innerHTML"
+                onclick="this.closest('.col-actions-menu').classList.remove('open')">
+          Hide column
+        </button>
         <button hx-post="{% url 'boards:column-archive' column.pk %}"
                 hx-target="#board-content"
                 hx-swap="innerHTML"

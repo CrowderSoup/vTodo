@@ -9,6 +9,7 @@ urlpatterns = [
     path("filter/", views.BoardFilterView.as_view(), name="board-filter"),
     path("filter/add-tag/", views.BoardFilterAddTagView.as_view(), name="board-filter-add-tag"),
     path("columns/reorder/", views.ColumnReorderView.as_view(), name="column-reorder"),
+    path("columns/<int:pk>/hide/", views.ColumnHideView.as_view(), name="column-hide"),
     path("columns/<int:pk>/archive/", views.ColumnArchiveView.as_view(), name="column-archive"),
     path("tasks/reorder/", views.TaskReorderView.as_view(), name="task-reorder"),
     path("tasks/create/", views.TaskCreateView.as_view(), name="task-create"),

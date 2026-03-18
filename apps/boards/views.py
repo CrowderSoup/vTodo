@@ -51,6 +51,7 @@ def _build_board_context(user, session=None):
     board_filter = (session.get("board_filter") or {}) if session else {}
     filter_tags = board_filter.get("tags", [])
     filter_due = board_filter.get("due", "").strip()
+    hidden_column_pks = set(board_filter.get("hidden_columns", []))
 
     tasks = list(Task.objects.filter(user=user, is_archived=False).order_by("order", "created_at"))
 
@@ -68,9 +69,13 @@ def _build_board_context(user, session=None):
 
     statuses, done_slug, active_slug = _status_context(user)
 
+    hidden_columns = []
     claimed = set()
     columns_with_tasks = []
     for column in columns:
+        if column.pk in hidden_column_pks:
+            hidden_columns.append(column)
+            continue
         col_tasks = []
         for task in tasks:
             if task.pk not in claimed and _task_matches_column(task, column.filter_config):
@@ -84,7 +89,7 @@ def _build_board_context(user, session=None):
         "statuses": statuses,
         "done_slug": done_slug,
         "active_slug": active_slug,
-        "active_filter": {"tags": filter_tags, "due": filter_due},
+        "active_filter": {"tags": filter_tags, "due": filter_due, "hidden_columns": hidden_columns},
     }
 
 
@@ -98,7 +103,8 @@ class BoardFilterView(LoginRequiredMixin, View):
     def post(self, request):
         tags = request.POST.getlist("tags")
         due = request.POST.get("due", "").strip()
-        request.session["board_filter"] = {"tags": tags, "due": due}
+        hidden_columns = [int(pk) for pk in request.POST.getlist("hidden_columns") if pk.isdigit()]
+        request.session["board_filter"] = {"tags": tags, "due": due, "hidden_columns": hidden_columns}
         request.session.modified = True
         context = _build_board_context(request.user, request.session)
         return render(request, "boards/_filter_response.html", context)
@@ -112,9 +118,27 @@ class BoardFilterAddTagView(LoginRequiredMixin, View):
         board_filter = request.session.get("board_filter") or {}
         current_tags = board_filter.get("tags", [])
         due = board_filter.get("due", "")
+        hidden_columns = board_filter.get("hidden_columns", [])
         if tag and tag not in current_tags:
             current_tags = current_tags + [tag]
-        request.session["board_filter"] = {"tags": current_tags, "due": due}
+        request.session["board_filter"] = {"tags": current_tags, "due": due, "hidden_columns": hidden_columns}
+        request.session.modified = True
+        context = _build_board_context(request.user, request.session)
+        return render(request, "boards/_filter_response.html", context)
+
+
+class ColumnHideView(LoginRequiredMixin, View):
+    """Add a column to the session hidden-columns filter."""
+
+    def post(self, request, pk):
+        board = get_object_or_404(Board, user=request.user)
+        column = get_object_or_404(Column, pk=pk, board=board)
+        board_filter = request.session.get("board_filter") or {}
+        hidden = board_filter.get("hidden_columns", [])
+        if column.pk not in hidden:
+            hidden = hidden + [column.pk]
+        request.session["board_filter"] = {**board_filter, "hidden_columns": hidden}
+        request.session.modified = True
         context = _build_board_context(request.user, request.session)
         return render(request, "boards/_filter_response.html", context)
 
