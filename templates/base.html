@@ -1,9 +1,13 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}vtodo{% endblock %}</title>
+  <link rel="icon" type="image/png" href="{% static 'logo.png' %}">
+  <link rel="apple-touch-icon" href="{% static 'logo.png' %}">
+  <link rel="manifest" href="{% static 'manifest.json' %}">
   <link rel="stylesheet" href="https://unpkg.com/@knadh/oat/oat.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.css">
   <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
@@ -241,6 +245,7 @@
 <body>
   {% if user.is_authenticated %}
   <nav class="nav-bar">
+    <img src="{% static 'logo.png' %}" alt="vtodo" height="28" width="28" style="vertical-align: middle; border-radius: 4px;">
     <strong>vtodo</strong>
     <a href="{% url 'boards:board' %}">Board</a>
     <a href="{% url 'users:settings' %}">Settings</a>

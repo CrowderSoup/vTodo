@@ -1,0 +1,17 @@
+{
+  "name": "vtodo",
+  "short_name": "vtodo",
+  "description": "A personal kanban-style task manager",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#111827",
+  "icons": [
+    {
+      "src": "/static/logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
