@@ -200,15 +200,44 @@ def resource_tasks_overdue() -> str:
         return _err(e)
 
 
+_CORS_HEADERS = [
+    (b"access-control-allow-origin", b"*"),
+    (b"access-control-allow-methods", b"GET, POST, OPTIONS"),
+    (b"access-control-allow-headers", b"Authorization, Content-Type"),
+]
+
+
 def main() -> None:
     if _settings.transport == "sse":
         import uvicorn
 
         mcp_token = _settings.mcp_token
-        sse_app = mcp.sse_app()
+        sse_app = mcp.sse_app(mount_path="/mcp")
 
         async def auth_app(scope, receive, send):
-            if scope["type"] == "http" and mcp_token:
+            if scope["type"] != "http":
+                await sse_app(scope, receive, send)
+                return
+
+            # Inject CORS headers into every HTTP response.
+            async def send_with_cors(message):
+                if message["type"] == "http.response.start":
+                    headers = list(message.get("headers", []))
+                    headers.extend(_CORS_HEADERS)
+                    message = {**message, "headers": headers}
+                await send(message)
+
+            # Handle CORS preflight before auth so browsers can negotiate.
+            if scope.get("method") == "OPTIONS":
+                await send_with_cors({
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [(b"content-length", b"0")],
+                })
+                await send({"type": "http.response.body", "body": b""})
+                return
+
+            if mcp_token:
                 headers = dict(scope.get("headers", []))
                 auth = headers.get(b"authorization", b"").decode()
                 query = scope.get("query_string", b"").decode()
@@ -216,11 +245,15 @@ def main() -> None:
                     (p[6:] for p in query.split("&") if p.startswith("token=")), ""
                 )
                 if auth != f"Bearer {mcp_token}" and token_param != mcp_token:
-                    await send({"type": "http.response.start", "status": 401,
-                                "headers": [(b"content-type", b"text/plain")]})
+                    await send_with_cors({
+                        "type": "http.response.start",
+                        "status": 401,
+                        "headers": [(b"content-type", b"text/plain")],
+                    })
                     await send({"type": "http.response.body", "body": b"Unauthorized"})
                     return
-            await sse_app(scope, receive, send)
+
+            await sse_app(scope, receive, send_with_cors)
 
         uvicorn.run(auth_app, host=_settings.host, port=_settings.port)
     else:
