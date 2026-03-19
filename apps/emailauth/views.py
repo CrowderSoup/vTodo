@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from django.contrib import messages
@@ -10,6 +11,8 @@ from django.utils import timezone
 from django.views import View
 
 from .models import EmailIdentity, EmailOTP
+
+logger = logging.getLogger(__name__)
 
 OTP_RATE_LIMIT = 3
 OTP_RATE_WINDOW = 3600  # seconds (1 hour)
@@ -41,17 +44,24 @@ class RequestOTPView(View):
 
         otp = EmailOTP.generate(identity)
 
-        send_mail(
-            subject="Your vtodo login code",
-            message=(
-                f"Your login code is: {otp.code}\n\n"
-                "This code expires in 15 minutes. "
-                "If you didn't request this, you can ignore this email."
-            ),
-            from_email=None,  # uses DEFAULT_FROM_EMAIL from settings
-            recipient_list=[email],
-            fail_silently=True,
-        )
+        logger.info("Sending OTP email to %s", email)
+        try:
+            send_mail(
+                subject="Your vtodo login code",
+                message=(
+                    f"Your login code is: {otp.code}\n\n"
+                    "This code expires in 15 minutes. "
+                    "If you didn't request this, you can ignore this email."
+                ),
+                from_email=None,  # uses DEFAULT_FROM_EMAIL from settings
+                recipient_list=[email],
+                fail_silently=False,
+            )
+            logger.info("OTP email sent successfully to %s", email)
+        except Exception:
+            logger.exception("Failed to send OTP email to %s", email)
+            messages.error(request, "Failed to send login code. Please try again later.")
+            return redirect(reverse("indieauth:login") + "#email")
 
         # Increment rate limit counter
         cache.set(rate_key, count + 1, OTP_RATE_WINDOW)
