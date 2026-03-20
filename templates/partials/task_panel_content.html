@@ -1,69 +1,104 @@
 <div class="task-panel-header">
-  <h2>{{ task.title }}</h2>
-  <button class="task-panel-close" onclick="closeTaskPanel()" title="Close">×</button>
+  <div class="task-panel-header-copy">
+    <span class="eyebrow">Task #{{ task.pk }}</span>
+    <h2 class="task-panel-title">{{ task.title }}</h2>
+    <div class="task-panel-subtitle">Updated {{ task.updated_at|date:"M j, Y" }}</div>
+  </div>
+  <button class="task-panel-close btn-ghost" type="button" onclick="closeTaskPanel()" title="Close">×</button>
 </div>
+
 <div class="task-panel-body">
   <div class="task-panel-meta">
-    <span style="font-size: .75rem; padding: .1rem .5rem; background: var(--badge-bg); border: 1px solid var(--border); border-radius: 9999px; color: var(--muted);">{{ task.status }}</span>
-    <span style="font-size: .75rem; color: var(--very-muted);">#{{ task.pk }}</span>
-    {% if task.due_date %}<span style="font-size: .75rem; color: var(--muted);">Due {{ task.due_date }}</span>{% endif %}
-    {% if task.recurrence_days %}<span style="font-size: .75rem; color: var(--muted);">↻ Every {{ task.recurrence_days }} day{{ task.recurrence_days|pluralize }}</span>{% endif %}
-  </div>
-  {% if task.tags %}
-  <div style="display: flex; flex-wrap: wrap; gap: .25rem; margin-bottom: .75rem;">
-    {% for tag in task.tags %}
-    <span style="font-size: .7rem; padding: .1rem .4rem; background: var(--badge-bg); border: 1px solid var(--border); border-radius: 9999px; color: var(--muted);">{{ tag }}</span>
+    {% for status in statuses %}
+    {% if status.slug == task.status %}
+    <span class="status-pill">{{ status.name }}</span>
+    {% endif %}
     {% endfor %}
+    {% if task.due_date %}
+    <span class="meta-pill{% if not task.completed_at %}{% if task.due_date < today %} meta-pill--danger{% elif task.due_date == today %} meta-pill--warm{% endif %}{% else %} meta-pill--success{% endif %}">
+      Due {{ task.due_date|date:"M j, Y" }}
+    </span>
+    {% endif %}
+    {% if task.recurrence_days %}
+    <span class="meta-pill">Repeats every {{ task.recurrence_days }} day{{ task.recurrence_days|pluralize }}</span>
+    {% endif %}
+    {% if task.completed_at %}
+    <span class="meta-pill meta-pill--success">Completed {{ task.completed_at|date:"M j, Y" }}</span>
+    {% endif %}
   </div>
-  {% endif %}
-  {% if notes_html %}
-  <div class="task-panel-notes">{{ notes_html|safe }}</div>
-  {% else %}
-  <p style="color: var(--muted); font-size: .875rem; margin: 0;">No notes yet. Click Edit to add some.</p>
-  {% endif %}
-  <hr style="border: none; border-top: 1px solid var(--border); margin: 1rem 0;">
-  <h3 style="font-size: .9rem; margin: 0 0 .75rem;">Comments</h3>
-  <div id="task-comments">
-    {% include "partials/task_comments.html" %}
-  </div>
-  <form id="task-comment-form"
-        hx-post="{% url 'boards:task-comment-create' task.pk %}"
-        hx-target="#task-comments"
-        hx-swap="innerHTML">
-    {% csrf_token %}
-    <textarea id="task-comment-editor" name="body" rows="3"
-              style="width: 100%; margin-bottom: .5rem;"></textarea>
-    <div style="display: flex; justify-content: flex-end;">
-      <button type="submit" style="font-size: .8rem;">Add comment</button>
+
+  {% if task.tags %}
+  <div class="task-panel-section">
+    <span class="section-title">Tags</span>
+    <div class="tag-row">
+      {% for tag in task.tags %}
+      <span class="pill">{{ tag }}</span>
+      {% endfor %}
     </div>
-  </form>
+  </div>
+  {% endif %}
+
+  <section class="task-panel-section">
+    <span class="section-title">Notes</span>
+    {% if notes_html %}
+    <div class="task-panel-notes">{{ notes_html|safe }}</div>
+    {% else %}
+    <div class="surface-card" style="padding: 1rem 1.1rem;">
+      <p class="field-help">No notes yet. Add some context so future-you knows what “done” looks like.</p>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="task-panel-section">
+    <span class="section-title">Comments</span>
+    <div id="task-comments">
+      {% include "partials/task_comments.html" %}
+    </div>
+
+    <form id="task-comment-form"
+          class="panel-form"
+          hx-post="{% url 'boards:task-comment-create' task.pk %}"
+          hx-target="#task-comments"
+          hx-swap="innerHTML">
+      {% csrf_token %}
+      <textarea id="task-comment-editor" name="body" rows="3" placeholder="Capture progress, blockers, or decisions"></textarea>
+      <div class="form-actions">
+        <button type="submit" class="btn-primary btn-small">Add comment</button>
+      </div>
+    </form>
+  </section>
 </div>
+
 <div class="task-panel-footer">
-  <div style="flex: 1; display: flex; align-items: center; gap: .5rem;">
+  <div class="panel-footer-actions">
     {% if not task.completed_at %}
-    <button hx-post="{% url 'boards:task-move' task.pk %}"
+    <button class="btn-primary"
+            hx-post="{% url 'boards:task-move' task.pk %}"
             hx-vals='{"new_status": "{{ done_slug }}"}'
             hx-target="#board-content"
             hx-swap="innerHTML"
-            hx-on::after-request="closeTaskPanel()"
-            style="font-size: .8rem;">✓ Mark complete</button>
+            hx-on::after-request="closeTaskPanel()">Mark complete</button>
     {% else %}
-    <button hx-post="{% url 'boards:task-move' task.pk %}"
+    <button class="btn-secondary"
+            hx-post="{% url 'boards:task-move' task.pk %}"
             hx-vals='{"new_status": "{{ active_slug }}"}'
             hx-target="#board-content"
             hx-swap="innerHTML"
-            hx-on::after-request="closeTaskPanel()"
-            style="font-size: .8rem;">↩ Move to active</button>
+            hx-on::after-request="closeTaskPanel()">Move to active</button>
     {% endif %}
-    <button hx-post="{% url 'boards:task-delete' task.pk %}"
+
+    <button class="btn-danger"
+            hx-post="{% url 'boards:task-delete' task.pk %}"
             hx-target="#task-{{ task.pk }}"
             hx-swap="outerHTML"
             hx-on::after-request="closeTaskPanel()"
-            hx-confirm="Delete &ldquo;{{ task.title|escapejs }}&rdquo;?"
-            style="font-size: .8rem; color: var(--muted);">Delete</button>
+            hx-confirm="Delete &ldquo;{{ task.title|escapejs }}&rdquo;?">Delete</button>
   </div>
-  <button hx-get="{% url 'boards:task-panel-edit' task.pk %}"
-          hx-target="#task-panel-content"
-          hx-swap="innerHTML"
-          style="font-size: .8rem;">Edit</button>
+
+  <div class="panel-footer-secondary">
+    <button class="btn-secondary"
+            hx-get="{% url 'boards:task-panel-edit' task.pk %}"
+            hx-target="#task-panel-content"
+            hx-swap="innerHTML">Edit task</button>
+  </div>
 </div>

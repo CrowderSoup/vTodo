@@ -1,46 +1,54 @@
 <article class="task-card task-card--editing" id="task-{{ task.pk }}">
-  <form hx-post="{% url 'boards:task-update' task.pk %}"
+  <form class="stack-form"
+        hx-post="{% url 'boards:task-update' task.pk %}"
         hx-target="#task-{{ task.pk }}"
         hx-swap="outerHTML">
     {% csrf_token %}
-    <div style="margin-bottom: .5rem;">
-      <input type="text" name="title" value="{{ task.title }}" required autofocus
-             style="width: 100%; padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem; font-weight: 500;">
+
+    <div class="form-field">
+      <label class="field-label" for="task-title-{{ task.pk }}">Title</label>
+      <input id="task-title-{{ task.pk }}" type="text" name="title" value="{{ task.title }}" required autofocus>
     </div>
-    <div style="margin-bottom: .5rem;">
-      <textarea name="notes" rows="3" placeholder="Notes…"
-                style="width: 100%; padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem; resize: vertical;">{{ task.notes }}</textarea>
+
+    <div class="form-field">
+      <label class="field-label" for="task-notes-{{ task.pk }}">Notes</label>
+      <textarea id="task-notes-{{ task.pk }}" name="notes" rows="4" placeholder="Add context, links, or next steps">{{ task.notes }}</textarea>
     </div>
-    <div style="margin-bottom: .5rem;">
-      <label style="font-size: .75rem; color: var(--muted); display: block; margin-bottom: .2rem;">Due date</label>
-      <input type="date" name="due_date" value="{{ task.due_date|date:'Y-m-d' }}"
-             style="padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem;">
+
+    <div class="form-grid form-grid--two">
+      <div class="form-field">
+        <label class="field-label" for="task-due-{{ task.pk }}">Due date</label>
+        <input id="task-due-{{ task.pk }}" type="date" name="due_date" value="{{ task.due_date|date:'Y-m-d' }}">
+      </div>
+
+      <div class="form-field">
+        <label class="field-label" for="task-tags-{{ task.pk }}">Tags</label>
+        <input id="task-tags-{{ task.pk }}" type="text" name="tags" value="{{ task.tags|join:', ' }}" placeholder="work, urgent, design">
+      </div>
     </div>
-    <div style="margin-bottom: .5rem;">
-      <label style="font-size: .75rem; color: var(--muted); display: block; margin-bottom: .2rem;">Tags (comma-separated)</label>
-      <input type="text" name="tags" value="{{ task.tags|join:', ' }}"
-             placeholder="work, urgent, design"
-             style="width: 100%; padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem;">
-    </div>
-    <div style="margin-bottom: .5rem;">
-      <label style="font-size: .75rem; color: var(--muted); display: block; margin-bottom: .2rem;">Recurrence (days)</label>
-      <div style="display: flex; gap: .5rem; align-items: center;">
-        <input type="number" name="recurrence_days" value="{{ task.recurrence_days|default:'' }}" min="1" placeholder="e.g. 7"
-               style="width: 6rem; padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem;">
-        <select name="recurrence_from"
-                style="padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem;">
-          <option value="completion" {% if task.recurrence_from == "completion" %}selected{% endif %}>after completion</option>
-          <option value="due_date" {% if task.recurrence_from == "due_date" %}selected{% endif %}>after due date</option>
+
+    <div class="form-grid form-grid--two">
+      <div class="form-field">
+        <label class="field-label" for="task-recurrence-{{ task.pk }}">Repeat every</label>
+        <input id="task-recurrence-{{ task.pk }}" type="number" name="recurrence_days" value="{{ task.recurrence_days|default:'' }}" min="1" placeholder="e.g. 7">
+      </div>
+
+      <div class="form-field">
+        <label class="field-label" for="task-recurrence-from-{{ task.pk }}">Repeat from</label>
+        <select id="task-recurrence-from-{{ task.pk }}" name="recurrence_from">
+          <option value="completion" {% if task.recurrence_from == "completion" %}selected{% endif %}>Completion date</option>
+          <option value="due_date" {% if task.recurrence_from == "due_date" %}selected{% endif %}>Due date</option>
         </select>
       </div>
     </div>
-    <div style="display: flex; gap: .5rem; justify-content: flex-end;">
+
+    <div class="form-actions">
       <button type="button"
+              class="btn-ghost"
               hx-get="{% url 'boards:task-detail' task.pk %}"
               hx-target="#task-{{ task.pk }}"
-              hx-swap="outerHTML"
-              style="font-size: .8rem;">Cancel</button>
-      <button type="submit" style="font-size: .8rem;">Save</button>
+              hx-swap="outerHTML">Cancel</button>
+      <button type="submit" class="btn-primary">Save changes</button>
     </div>
   </form>
 </article>

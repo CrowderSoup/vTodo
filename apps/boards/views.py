@@ -44,21 +44,33 @@ def _status_context(user):
     return statuses, done_slug, active_slug
 
 
+def _task_render_context(user, task):
+    statuses, done_slug, active_slug = _status_context(user)
+    return {
+        "task": task,
+        "statuses": statuses,
+        "done_slug": done_slug,
+        "active_slug": active_slug,
+        "today": timezone.localdate(),
+    }
+
+
 def _build_board_context(user, session=None):
     board = get_object_or_404(Board, user=user)
     columns = list(board.columns.all())
+    today = timezone.localdate()
 
     board_filter = (session.get("board_filter") or {}) if session else {}
     filter_tags = board_filter.get("tags", [])
     filter_due = board_filter.get("due", "").strip()
     hidden_column_pks = set(board_filter.get("hidden_columns", []))
 
-    tasks = list(Task.objects.filter(user=user, is_archived=False).order_by("order", "created_at"))
+    all_tasks = list(Task.objects.filter(user=user, is_archived=False).order_by("order", "created_at"))
+    tasks = list(all_tasks)
 
     if filter_tags:
         tasks = [t for t in tasks if all(tag in t.tags for tag in filter_tags)]
     if filter_due:
-        today = date.today()
         if filter_due == "overdue":
             tasks = [t for t in tasks if t.due_date and t.due_date < today]
         elif filter_due == "today":
@@ -105,6 +117,13 @@ def _build_board_context(user, session=None):
         "active_filter": {"tags": filter_tags, "due": filter_due, "hidden_columns": hidden_columns},
         "saved_filters": saved_filters,
         "active_saved_filter_name": active_saved_filter_name,
+        "today": today,
+        "total_task_count": len(all_tasks),
+        "visible_task_count": len(tasks),
+        "done_task_count": sum(1 for task in all_tasks if task.completed_at),
+        "due_today_count": sum(1 for task in tasks if task.due_date == today and not task.completed_at),
+        "overdue_count": sum(1 for task in tasks if task.due_date and task.due_date < today and not task.completed_at),
+        "active_filter_count": len(filter_tags) + len(hidden_column_pks) + (1 if filter_due else 0),
     }
 
 
@@ -206,13 +225,7 @@ class TaskCreateView(LoginRequiredMixin, View):
             status = valid_slugs[0] if valid_slugs else "todo"
 
         task = Task.objects.create(user=request.user, title=title, status=status)
-        statuses, done_slug, active_slug = _status_context(request.user)
-        return render(request, "partials/task_card.html", {
-            "task": task,
-            "statuses": statuses,
-            "done_slug": done_slug,
-            "active_slug": active_slug,
-        })
+        return render(request, "partials/task_card.html", _task_render_context(request.user, task))
 
 
 class TaskUpdateView(LoginRequiredMixin, View):
@@ -240,13 +253,7 @@ class TaskUpdateView(LoginRequiredMixin, View):
         task.recurrence_from = recurrence_from
         task.save(update_fields=["title", "notes", "due_date", "tags", "recurrence_days", "recurrence_from", "updated_at"])
 
-        statuses, done_slug, active_slug = _status_context(request.user)
-        return render(request, "partials/task_card.html", {
-            "task": task,
-            "statuses": statuses,
-            "done_slug": done_slug,
-            "active_slug": active_slug,
-        })
+        return render(request, "partials/task_card.html", _task_render_context(request.user, task))
 
 
 class TaskMoveView(LoginRequiredMixin, View):
@@ -308,13 +315,7 @@ class TaskDetailView(LoginRequiredMixin, View):
 
     def get(self, request, pk):
         task = get_object_or_404(Task, pk=pk, user=request.user)
-        statuses, done_slug, active_slug = _status_context(request.user)
-        return render(request, "partials/task_card.html", {
-            "task": task,
-            "statuses": statuses,
-            "done_slug": done_slug,
-            "active_slug": active_slug,
-        })
+        return render(request, "partials/task_card.html", _task_render_context(request.user, task))
 
 
 class TaskEditView(LoginRequiredMixin, View):
@@ -330,15 +331,12 @@ class TaskPanelView(LoginRequiredMixin, View):
 
     def get(self, request, pk):
         task = get_object_or_404(Task, pk=pk, user=request.user)
-        statuses, done_slug, active_slug = _status_context(request.user)
-        return render(request, "partials/task_panel_content.html", {
-            "task": task,
+        context = _task_render_context(request.user, task)
+        context.update({
             "notes_html": md.markdown(task.notes, extensions=["fenced_code", "tables"]) if task.notes else "",
-            "statuses": statuses,
-            "done_slug": done_slug,
-            "active_slug": active_slug,
             "comments": _render_comments(task),
         })
+        return render(request, "partials/task_panel_content.html", context)
 
 
 class TaskPanelEditView(LoginRequiredMixin, View):
@@ -346,7 +344,8 @@ class TaskPanelEditView(LoginRequiredMixin, View):
 
     def get(self, request, pk):
         task = get_object_or_404(Task, pk=pk, user=request.user)
-        return render(request, "partials/task_panel_edit.html", {"task": task})
+        context = _task_render_context(request.user, task)
+        return render(request, "partials/task_panel_edit.html", context)
 
 
 class TaskPanelUpdateView(LoginRequiredMixin, View):
@@ -375,14 +374,11 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
         task.recurrence_from = recurrence_from
         task.save(update_fields=["title", "notes", "due_date", "tags", "recurrence_days", "recurrence_from", "updated_at"])
 
-        statuses, done_slug, active_slug = _status_context(request.user)
-        return render(request, "partials/task_panel_update_response.html", {
-            "task": task,
+        context = _task_render_context(request.user, task)
+        context.update({
             "notes_html": md.markdown(task.notes, extensions=["fenced_code", "tables"]) if task.notes else "",
-            "statuses": statuses,
-            "done_slug": done_slug,
-            "active_slug": active_slug,
         })
+        return render(request, "partials/task_panel_update_response.html", context)
 
 
 def _render_comments(task):

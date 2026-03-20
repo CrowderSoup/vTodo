@@ -1,52 +1,69 @@
 <div class="task-panel-header">
-  <h2 style="font-size: 1rem; color: var(--muted);">Edit task</h2>
-  <button class="task-panel-close" onclick="closeTaskPanel()" title="Close">×</button>
+  <div class="task-panel-header-copy">
+    <span class="eyebrow">Editing task #{{ task.pk }}</span>
+    <h2 class="task-panel-title">{{ task.title }}</h2>
+    <div class="task-panel-subtitle">Tighten the details without leaving the board.</div>
+  </div>
+  <button class="task-panel-close btn-ghost" type="button" onclick="closeTaskPanel()" title="Close">×</button>
 </div>
+
 <div class="task-panel-body">
   <form id="task-panel-form"
+        class="panel-form"
         hx-post="{% url 'boards:task-panel-update' task.pk %}"
         hx-target="#task-panel-content"
         hx-swap="innerHTML">
     {% csrf_token %}
-    <div style="margin-bottom: .75rem;">
-      <label style="font-size: .75rem; color: var(--muted); display: block; margin-bottom: .2rem;">Title</label>
-      <input type="text" name="title" value="{{ task.title }}" required autofocus
-             style="width: 100%; padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .9rem; font-weight: 500;">
+
+    <div class="form-field">
+      <label class="field-label" for="task-panel-title-input">Title</label>
+      <input id="task-panel-title-input" type="text" name="title" value="{{ task.title }}" required autofocus>
     </div>
-    <div style="margin-bottom: .75rem;">
-      <label style="font-size: .75rem; color: var(--muted); display: block; margin-bottom: .2rem;">Notes</label>
+
+    <div class="form-field">
+      <label class="field-label" for="task-notes-editor">Notes</label>
       <textarea id="task-notes-editor" name="notes">{{ task.notes }}</textarea>
     </div>
-    <div style="margin-bottom: .75rem;">
-      <label style="font-size: .75rem; color: var(--muted); display: block; margin-bottom: .2rem;">Due date</label>
-      <input type="date" name="due_date" value="{{ task.due_date|date:'Y-m-d' }}"
-             style="padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem;">
+
+    <div class="form-grid form-grid--two">
+      <div class="form-field">
+        <label class="field-label" for="task-panel-due">Due date</label>
+        <input id="task-panel-due" type="date" name="due_date" value="{{ task.due_date|date:'Y-m-d' }}">
+      </div>
+
+      <div class="form-field">
+        <label class="field-label" for="task-panel-tags">Tags</label>
+        <input id="task-panel-tags" type="text" name="tags" value="{{ task.tags|join:', ' }}" placeholder="work, urgent, design">
+      </div>
     </div>
-    <div style="margin-bottom: .75rem;">
-      <label style="font-size: .75rem; color: var(--muted); display: block; margin-bottom: .2rem;">Tags (comma-separated)</label>
-      <input type="text" name="tags" value="{{ task.tags|join:', ' }}"
-             placeholder="work, urgent, design"
-             style="width: 100%; padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem;">
-    </div>
-    <div style="margin-bottom: .75rem;">
-      <label style="font-size: .75rem; color: var(--muted); display: block; margin-bottom: .2rem;">Recurrence (days)</label>
-      <div style="display: flex; gap: .5rem; align-items: center;">
-        <input type="number" name="recurrence_days" value="{{ task.recurrence_days|default:'' }}" min="1" placeholder="e.g. 7"
-               style="width: 6rem; padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem;">
-        <select name="recurrence_from"
-                style="padding: .375rem .5rem; border: 1px solid var(--border); border-radius: .375rem; background: var(--bg); color: var(--text); font-size: .875rem;">
-          <option value="completion" {% if task.recurrence_from == "completion" %}selected{% endif %}>after completion</option>
-          <option value="due_date" {% if task.recurrence_from == "due_date" %}selected{% endif %}>after due date</option>
+
+    <div class="form-grid form-grid--two">
+      <div class="form-field">
+        <label class="field-label" for="task-panel-recurrence-days">Repeat every</label>
+        <input id="task-panel-recurrence-days" type="number" name="recurrence_days" value="{{ task.recurrence_days|default:'' }}" min="1" placeholder="e.g. 7">
+      </div>
+
+      <div class="form-field">
+        <label class="field-label" for="task-panel-recurrence-from">Repeat from</label>
+        <select id="task-panel-recurrence-from" name="recurrence_from">
+          <option value="completion" {% if task.recurrence_from == "completion" %}selected{% endif %}>Completion date</option>
+          <option value="due_date" {% if task.recurrence_from == "due_date" %}selected{% endif %}>Due date</option>
         </select>
       </div>
     </div>
   </form>
 </div>
+
 <div class="task-panel-footer">
-  <button type="button"
-          hx-get="{% url 'boards:task-panel' task.pk %}"
-          hx-target="#task-panel-content"
-          hx-swap="innerHTML"
-          style="font-size: .8rem;">Cancel</button>
-  <button type="submit" form="task-panel-form" style="font-size: .8rem;">Save</button>
+  <div class="panel-footer-actions">
+    <button type="button"
+            class="btn-ghost"
+            hx-get="{% url 'boards:task-panel' task.pk %}"
+            hx-target="#task-panel-content"
+            hx-swap="innerHTML">Cancel</button>
+  </div>
+
+  <div class="panel-footer-secondary">
+    <button type="submit" class="btn-primary" form="task-panel-form">Save changes</button>
+  </div>
 </div>

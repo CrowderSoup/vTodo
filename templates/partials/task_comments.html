@@ -1,17 +1,21 @@
 {% if comments %}
-<div style="display: flex; flex-direction: column; gap: .75rem; margin-bottom: 1rem;">
+<div class="comment-list">
   {% for entry in comments %}
-  <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: .375rem; padding: .625rem .75rem;">
-    <div style="font-size: .75rem; color: var(--muted); margin-bottom: .35rem; display: flex; justify-content: space-between; align-items: center;">
+  <div class="surface-card comment-card">
+    <div class="comment-meta">
       <span>{{ entry.comment.created_at|date:"N j, Y g:i a" }}</span>
-      <button hx-post="{% url 'boards:task-comment-delete' task.pk entry.comment.pk %}"
+      <button class="btn-ghost btn-small"
+              hx-post="{% url 'boards:task-comment-delete' task.pk entry.comment.pk %}"
               hx-target="#task-comments"
               hx-swap="innerHTML"
-              hx-confirm="Delete this comment?"
-              style="font-size: .7rem; color: var(--muted); padding: .1rem .35rem;">Delete</button>
+              hx-confirm="Delete this comment?">Delete</button>
     </div>
-    <div class="task-panel-notes" style="font-size: .875rem;">{{ entry.body_html|safe }}</div>
+    <div class="task-panel-notes">{{ entry.body_html|safe }}</div>
   </div>
   {% endfor %}
+</div>
+{% else %}
+<div class="surface-card" style="padding: 1rem 1.1rem;">
+  <p class="field-help">No comments yet. Use comments for updates that should stay attached to the task.</p>
 </div>
 {% endif %}

@@ -1,31 +1,55 @@
 {% extends "base.html" %}
+{% load static %}
 
+{% block body_class %}page-auth{% endblock %}
 {% block title %}Enter code — vtodo{% endblock %}
 
 {% block content %}
-<div style="max-width: 420px; margin: 4rem auto; padding: 0 1rem;">
-  <h1 style="margin-bottom: .5rem;">Check your email</h1>
-  <p style="color: var(--muted); margin-bottom: 1.5rem;">
-    We sent a 6-digit code to <strong>{{ email }}</strong>.
-    It expires in 15 minutes.
-  </p>
-
-  <form method="post" action="{% url 'emailauth:verify' %}">
-    {% csrf_token %}
-    <div style="margin-bottom: 1rem;">
-      <label for="code" style="display: block; margin-bottom: .25rem; font-weight: 500;">Login code</label>
-      <input type="text" id="code" name="code"
-             inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
-             placeholder="000000" autofocus required
-             style="width: 100%; padding: .5rem; font-size: 1.5rem; letter-spacing: .25em; text-align: center;">
+<section class="auth-shell">
+  <div class="auth-splash surface-panel page-hero--auth">
+    <div>
+      <div class="auth-brand">
+        <img class="auth-logo" src="{% static 'logo.png' %}" alt="vtodo">
+        <span class="eyebrow">Almost there</span>
+      </div>
+      <h1 class="auth-heading">Check your inbox and bring the code back here.</h1>
+      <p class="auth-copy">
+        We sent a 6-digit code to <strong>{{ email }}</strong>. It stays valid for 15 minutes and signs you straight into your board.
+      </p>
     </div>
-    <button type="submit" style="width: 100%; padding: .625rem; font-size: 1rem;">
-      Sign in
-    </button>
-  </form>
 
-  <p style="margin-top: 1rem; text-align: center; color: var(--muted); font-size: .9rem;">
-    <a href="{% url 'indieauth:login' %}#email">Request a new code</a>
-  </p>
-</div>
+    <div class="auth-feature-list">
+      <span class="auth-feature">One-time code</span>
+      <span class="auth-feature">No password to remember</span>
+    </div>
+  </div>
+
+  <div class="auth-card surface-panel">
+    <span class="eyebrow">Email verification</span>
+    <h2 class="card-title">Enter your login code.</h2>
+    <p class="card-subtitle">Paste or type the six digits from your email to continue.</p>
+
+    <form class="auth-form" method="post" action="{% url 'emailauth:verify' %}">
+      {% csrf_token %}
+      <div class="form-field">
+        <label class="field-label" for="code">Login code</label>
+        <input class="auth-code"
+               type="text"
+               id="code"
+               name="code"
+               inputmode="numeric"
+               pattern="[0-9]{6}"
+               maxlength="6"
+               placeholder="000000"
+               autofocus
+               required>
+      </div>
+      <button type="submit" class="btn-primary">Sign in</button>
+    </form>
+
+    <p class="auth-note">
+      Need a fresh code? <a class="auth-link" href="{% url 'indieauth:login' %}#email">Request another one</a>.
+    </p>
+  </div>
+</section>
 {% endblock %}

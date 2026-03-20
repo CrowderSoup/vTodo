@@ -1,65 +1,86 @@
-<article class="task-card" id="task-{{ task.pk }}" draggable="true" data-task-id="{{ task.pk }}"{% if oob_swap %} hx-swap-oob="true"{% endif %}>
-  <div style="display: flex; align-items: flex-start; gap: .25rem; margin-bottom: .25rem;">
-    {# Clicking the title opens the detail panel #}
-    <button class="task-title-btn"
-            hx-get="{% url 'boards:task-panel' task.pk %}"
-            hx-target="#task-panel-content"
-            hx-swap="innerHTML"
-            hx-on::after-request="openTaskPanel()"
-            style="margin-bottom: 0;"
-            title="Click to view">{{ task.title }}</button>
-    <span style="font-size: .65rem; color: var(--very-muted); flex-shrink: 0; padding-top: .15rem; user-select: none;">#{{ task.pk }}</span>
+<article class="task-card{% if task.completed_at %} task-card--complete{% endif %}{% if task.due_date and not task.completed_at %}{% if task.due_date < today %} task-card--overdue{% elif task.due_date == today %} task-card--today{% endif %}{% endif %}"
+         id="task-{{ task.pk }}"
+         draggable="true"
+         data-task-id="{{ task.pk }}"
+         data-status="{{ task.status }}"{% if oob_swap %} hx-swap-oob="true"{% endif %}>
+  <div class="task-card-top">
+    <div class="task-card-heading">
+      <span class="task-card-id">#{{ task.pk }}</span>
+      <button class="task-title-btn"
+              hx-get="{% url 'boards:task-panel' task.pk %}"
+              hx-target="#task-panel-content"
+              hx-swap="innerHTML"
+              hx-on::after-request="openTaskPanel()">{{ task.title }}</button>
+    </div>
+
+    {% if task.completed_at %}
+    <span class="badge badge--done">Done</span>
+    {% elif task.due_date and task.due_date < today %}
+    <span class="badge badge--attention">Overdue</span>
+    {% endif %}
   </div>
+
   {% if task.tags %}
-  <div style="display: flex; flex-wrap: wrap; gap: .25rem; margin-bottom: .35rem;">
+  <div class="tag-row">
     {% for tag in task.tags %}
-    <button hx-post="{% url 'boards:board-filter-add-tag' %}"
+    <button class="tag-pill"
+            hx-post="{% url 'boards:board-filter-add-tag' %}"
             hx-target="#board-content"
             hx-swap="innerHTML"
-            hx-vals='{"tag": "{{ tag }}"}'
-            style="font-size: .7rem; padding: .1rem .4rem; background: var(--badge-bg); border: 1px solid var(--border); border-radius: 9999px; color: var(--muted); cursor: pointer;">{{ tag }}</button>
+            hx-vals='{"tag": "{{ tag }}"}'>{{ tag }}</button>
     {% endfor %}
   </div>
   {% endif %}
+
   {% if task.notes %}
-  <div style="font-size: .875rem; color: var(--muted); margin-bottom: .25rem;">{{ task.notes|truncatechars:80 }}</div>
+  <p class="task-card-notes">{{ task.notes|truncatechars:120 }}</p>
   {% endif %}
-  {% if task.due_date %}
-  <div style="font-size: .75rem; color: var(--very-muted);">Due {{ task.due_date }}</div>
+
+  {% if task.due_date or task.recurrence_days %}
+  <div class="meta-row">
+    {% if task.due_date %}
+    <span class="meta-pill{% if not task.completed_at %}{% if task.due_date < today %} meta-pill--danger{% elif task.due_date == today %} meta-pill--warm{% endif %}{% else %} meta-pill--success{% endif %}">
+      Due {{ task.due_date|date:"M j" }}
+    </span>
+    {% endif %}
+    {% if task.recurrence_days %}
+    <span class="meta-pill">Repeats every {{ task.recurrence_days }} day{{ task.recurrence_days|pluralize }}</span>
+    {% endif %}
+  </div>
   {% endif %}
-  {% if task.recurrence_days %}
-  <div style="font-size: .7rem; color: var(--very-muted);">↻ Every {{ task.recurrence_days }} day{{ task.recurrence_days|pluralize }}</div>
-  {% endif %}
+
   <div class="task-card-actions">
-    {# Move to column select #}
-    <select name="new_status"
+    <select class="task-status-select"
+            name="new_status"
             hx-post="{% url 'boards:task-move' task.pk %}"
             hx-trigger="change"
             hx-target="#board-content"
-            hx-swap="innerHTML"
-            style="font-size: .75rem; padding: .15rem .3rem; border: 1px solid var(--border); border-radius: .25rem; background: var(--bg); color: var(--text); cursor: pointer;">
+            hx-swap="innerHTML">
       {% for status in statuses %}
       <option value="{{ status.slug }}" {% if task.status == status.slug %}selected{% endif %}>{{ status.name }}</option>
       {% endfor %}
     </select>
-    {# Quick-complete / undo #}
-    {% if not task.completed_at %}
-    <button title="Mark complete"
-            hx-post="{% url 'boards:task-move' task.pk %}"
-            hx-vals='{"new_status": "{{ done_slug }}"}'
-            hx-target="#board-content"
-            hx-swap="innerHTML">✓</button>
-    {% else %}
-    <button title="Move back to active"
-            hx-post="{% url 'boards:task-move' task.pk %}"
-            hx-vals='{"new_status": "{{ active_slug }}"}'
-            hx-target="#board-content"
-            hx-swap="innerHTML">↩</button>
-    {% endif %}
-    <button title="Delete task"
-            hx-post="{% url 'boards:task-delete' task.pk %}"
-            hx-target="#task-{{ task.pk }}"
-            hx-swap="outerHTML"
-            hx-confirm="Delete &ldquo;{{ task.title|escapejs }}&rdquo;?">×</button>
+
+    <div class="task-action-row">
+      {% if not task.completed_at %}
+      <button class="btn-secondary btn-icon" title="Mark complete"
+              hx-post="{% url 'boards:task-move' task.pk %}"
+              hx-vals='{"new_status": "{{ done_slug }}"}'
+              hx-target="#board-content"
+              hx-swap="innerHTML">✓</button>
+      {% else %}
+      <button class="btn-secondary btn-icon" title="Move back to active"
+              hx-post="{% url 'boards:task-move' task.pk %}"
+              hx-vals='{"new_status": "{{ active_slug }}"}'
+              hx-target="#board-content"
+              hx-swap="innerHTML">↩</button>
+      {% endif %}
+
+      <button class="btn-danger btn-icon" title="Delete task"
+              hx-post="{% url 'boards:task-delete' task.pk %}"
+              hx-target="#task-{{ task.pk }}"
+              hx-swap="outerHTML"
+              hx-confirm="Delete &ldquo;{{ task.title|escapejs }}&rdquo;?">×</button>
+    </div>
   </div>
 </article>

@@ -1,70 +1,66 @@
 {% extends "base.html" %}
+{% load static %}
 
+{% block body_class %}page-auth{% endblock %}
 {% block title %}Sign in — vtodo{% endblock %}
 
 {% block content %}
-<div style="max-width: 420px; margin: 4rem auto; padding: 0 1rem;">
-  <h1 style="margin-bottom: 1.5rem;">Sign in to vtodo</h1>
+<section class="auth-shell">
+  <div class="auth-splash surface-panel page-hero--auth">
+    <div>
+      <div class="auth-brand">
+        <img class="auth-logo" src="{% static 'logo.png' %}" alt="vtodo">
+        <span class="eyebrow">indieweb-first task board</span>
+      </div>
+      <h1 class="auth-heading">A more polished place for the work you actually care about.</h1>
+      <p class="auth-copy">
+        vtodo keeps the kanban board small, fast, and yours. Sign in with your website or email, then manage work with customizable columns, quick notes, and calm HTMX interactions.
+      </p>
+    </div>
 
-  <div class="tab-container">
-    <div role="tablist" style="display: flex; border-bottom: 2px solid var(--border); margin-bottom: 1.5rem;">
-      <button role="tab" id="tab-indieweb" aria-controls="panel-indieweb" aria-selected="true"
-              onclick="switchTab('indieweb')"
-              style="padding: .5rem 1rem; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 500; cursor: pointer;">
+    <div class="auth-feature-list">
+      <span class="auth-feature">Custom statuses</span>
+      <span class="auth-feature">Saved views</span>
+      <span class="auth-feature">Micropub summaries</span>
+      <span class="auth-feature">Keyboard-light flow</span>
+    </div>
+  </div>
+
+  <div class="auth-card surface-panel">
+    <span class="eyebrow">Sign in</span>
+    <h2 class="card-title">Choose your path in.</h2>
+    <p class="card-subtitle">Both options create the same account experience once you’re inside.</p>
+
+    <div class="auth-tabs" role="tablist">
+      <button class="auth-tab" role="tab" id="tab-indieweb" aria-controls="panel-indieweb" aria-selected="true" type="button" onclick="switchTab('indieweb')">
         IndieWeb
       </button>
-      <button role="tab" id="tab-email" aria-controls="panel-email" aria-selected="false"
-              onclick="switchTab('email')"
-              style="padding: .5rem 1rem; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 500; cursor: pointer;">
+      <button class="auth-tab" role="tab" id="tab-email" aria-controls="panel-email" aria-selected="false" type="button" onclick="switchTab('email')">
         Email
       </button>
     </div>
 
-    <div id="panel-indieweb" role="tabpanel" aria-labelledby="tab-indieweb">
-      <form method="post" action="{% url 'indieauth:start' %}">
+    <div id="panel-indieweb" class="auth-panel" role="tabpanel" aria-labelledby="tab-indieweb">
+      <form class="auth-form" method="post" action="{% url 'indieauth:start' %}">
         {% csrf_token %}
-        <div style="margin-bottom: 1rem;">
-          <label for="me" style="display: block; margin-bottom: .25rem; font-weight: 500;">Your website URL</label>
-          <input type="url" id="me" name="me"
-                 placeholder="https://yoursite.com" required
-                 style="width: 100%; padding: .5rem; font-size: 1rem;">
+        <div class="form-field">
+          <label class="field-label" for="me">Your website URL</label>
+          <input type="url" id="me" name="me" placeholder="https://yoursite.com" required>
         </div>
-        <button type="submit" style="width: 100%; padding: .625rem; font-size: 1rem;">
-          Sign in with your website
-        </button>
+        <button type="submit" class="btn-primary">Sign in with your website</button>
       </form>
     </div>
 
-    <div id="panel-email" role="tabpanel" aria-labelledby="tab-email" hidden>
-      <form method="post" action="{% url 'emailauth:request' %}">
+    <div id="panel-email" class="auth-panel" role="tabpanel" aria-labelledby="tab-email" hidden>
+      <form class="auth-form" method="post" action="{% url 'emailauth:request' %}">
         {% csrf_token %}
-        <div style="margin-bottom: 1rem;">
-          <label for="email" style="display: block; margin-bottom: .25rem; font-weight: 500;">Your email address</label>
-          <input type="email" id="email" name="email"
-                 placeholder="you@example.com" required
-                 style="width: 100%; padding: .5rem; font-size: 1rem;">
+        <div class="form-field">
+          <label class="field-label" for="email">Your email address</label>
+          <input type="email" id="email" name="email" placeholder="you@example.com" required>
         </div>
-        <button type="submit" style="width: 100%; padding: .625rem; font-size: 1rem;">
-          Send login code
-        </button>
+        <button type="submit" class="btn-primary">Send login code</button>
       </form>
     </div>
   </div>
-</div>
-
-<script>
-  function switchTab(name) {
-    ['indieweb', 'email'].forEach(function (t) {
-      var tab   = document.getElementById('tab-' + t);
-      var panel = document.getElementById('panel-' + t);
-      var active = t === name;
-      tab.setAttribute('aria-selected', String(active));
-      tab.style.borderBottomColor = active ? '#4f46e5' : 'transparent';
-      tab.style.color = active ? '#4f46e5' : '';
-      panel.hidden = !active;
-    });
-  }
-  var hash = window.location.hash.replace('#', '') || 'indieweb';
-  switchTab(hash === 'email' ? 'email' : 'indieweb');
-</script>
+</section>
 {% endblock %}

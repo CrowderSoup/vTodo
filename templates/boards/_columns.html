@@ -1,25 +1,46 @@
 {% for column, tasks, default_status in columns_with_tasks %}
-<div class="board-column" data-column-id="{{ column.pk }}">
+<section class="board-column"
+         data-column-id="{{ column.pk }}"
+         {% if column.color %}
+         style="--column-accent: {{ column.color }};"
+         {% elif default_status == "backlog" %}
+         style="--column-accent: #4f78ff;"
+         {% elif default_status == "in_progress" %}
+         style="--column-accent: var(--accent-warm);"
+         {% elif default_status == done_slug %}
+         style="--column-accent: var(--success);"
+         {% endif %}>
   <div class="column-header">
-    <span class="col-drag-handle" draggable="true" data-column-id="{{ column.pk }}" title="Drag to reorder">⠿</span>
-    <strong>{{ column.label }}</strong>
-    <span class="column-badge">{{ tasks|length }}</span>
-    <div class="column-actions">
-      <button class="col-actions-btn" title="Column actions" onclick="this.nextElementSibling.classList.toggle('open')">⋯</button>
-      <div class="col-actions-menu">
-        <button hx-post="{% url 'boards:column-hide' column.pk %}"
-                hx-target="#board-content"
-                hx-swap="innerHTML"
-                onclick="this.closest('.col-actions-menu').classList.remove('open')">
-          Hide column
-        </button>
-        <button hx-post="{% url 'boards:column-archive' column.pk %}"
-                hx-target="#board-content"
-                hx-swap="innerHTML"
-                hx-confirm="Archive all {{ tasks|length }} card{% if tasks|length != 1 %}s{% endif %} in &ldquo;{{ column.label }}&rdquo;?"
-                onclick="this.closest('.col-actions-menu').classList.remove('open')">
-          Archive all cards
-        </button>
+    <div class="column-header-main">
+      <span class="col-drag-handle" draggable="true" data-column-id="{{ column.pk }}" title="Drag to reorder">⋮⋮</span>
+      <div>
+        <p class="column-kicker">Lane {{ forloop.counter }}</p>
+        <h2 class="column-title">{{ column.label }}</h2>
+        <p class="column-subtitle">
+          {% with due=column.filter_config.due tags=column.filter_config.tags %}
+          {% if due == "overdue" %}Overdue work collected in one place{% elif due == "today" %}Cards that need to land today{% elif due == "this_week" %}Short-horizon work for the week ahead{% elif tags %}Focused on {{ tags|join:", " }}{% else %}Capture here and sort with drag and drop{% endif %}
+          {% endwith %}
+        </p>
+      </div>
+    </div>
+
+    <div class="column-header-tools">
+      <span class="column-badge">{{ tasks|length }}</span>
+      <div class="column-actions">
+        <button class="col-actions-btn" type="button" title="Column actions" data-disclosure-toggle>⋯</button>
+        <div class="col-actions-menu">
+          <button hx-post="{% url 'boards:column-hide' column.pk %}"
+                  hx-target="#board-content"
+                  hx-swap="innerHTML">
+            Hide lane
+          </button>
+          <button hx-post="{% url 'boards:column-archive' column.pk %}"
+                  hx-target="#board-content"
+                  hx-swap="innerHTML"
+                  hx-confirm="Archive all {{ tasks|length }} card{% if tasks|length != 1 %}s{% endif %} in &ldquo;{{ column.label }}&rdquo;?">
+            Archive all cards
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -31,14 +52,16 @@
         hx-on::after-request="this.reset()">
     {% csrf_token %}
     <input type="hidden" name="status" value="{{ default_status }}">
-    <input type="text" name="title" placeholder="Add a task…">
-    <button type="submit" title="Add task">+</button>
+    <input type="text" name="title" placeholder="Capture a new task" aria-label="New task title">
+    <button type="submit" class="btn-primary" title="Add task" aria-label="Add task">+</button>
   </form>
 
   <div class="task-list" id="col-tasks-{{ column.pk }}" data-default-status="{{ default_status }}">
     {% for task in tasks %}
     {% include "partials/task_card.html" %}
+    {% empty %}
+    <div class="task-empty">Nothing here yet. Add a card or drag one in.</div>
     {% endfor %}
   </div>
-</div>
+</section>
 {% endfor %}

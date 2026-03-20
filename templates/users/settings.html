@@ -1,141 +1,208 @@
 {% extends "base.html" %}
 
+{% block body_class %}page-settings{% endblock %}
 {% block title %}Settings — vtodo{% endblock %}
 
 {% block content %}
-<div style="max-width: 560px; margin: 2rem auto; padding: 0 1rem;">
-  <h1 style="margin-bottom: 1.5rem;">Settings</h1>
+<section class="page-shell page-shell--narrow">
+  <header class="page-hero page-hero--settings surface-panel">
+    <div class="hero-copy">
+      <span class="eyebrow">Settings and structure</span>
+      <h1 class="page-title">Shape the board around how you actually work.</h1>
+      <p class="page-subtitle">
+        Update your profile, automate daily summaries, and tune the statuses and columns that keep your board feeling like your own system instead of a default template.
+      </p>
+    </div>
 
-  <form method="post" action="{% url 'users:settings' %}">
+    <div class="hero-aside">
+      <div class="hero-stats">
+        <div class="stat-pill">
+          <span class="stat-value">{{ statuses|length }}</span>
+          <span class="stat-label">task statuses</span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-value">{{ columns|length }}</span>
+          <span class="stat-label">board columns</span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-value">{{ user.daily_summary_enabled|yesno:"On,Off" }}</span>
+          <span class="stat-label">daily summary</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <form method="post" action="{% url 'users:settings' %}" class="settings-grid">
     {% csrf_token %}
 
-    <fieldset style="border: none; padding: 0; margin-bottom: 2rem;">
-      <legend style="font-weight: 600; font-size: 1.1rem; margin-bottom: 1rem; padding: 0;">Profile</legend>
-
-      <div style="margin-bottom: 1rem;">
-        <label for="display_name" style="display: block; margin-bottom: .25rem; font-weight: 500;">Display name</label>
-        <input type="text" id="display_name" name="display_name"
-               value="{{ user.display_name }}"
-               style="width: 100%; padding: .5rem;">
+    <section class="settings-card surface-panel">
+      <div>
+        <h2 class="card-title">Profile</h2>
+        <p class="card-subtitle">This is the identity shown around the app and alongside your integrations.</p>
       </div>
 
-      <div style="margin-bottom: 1rem;">
-        <label for="avatar_url" style="display: block; margin-bottom: .25rem; font-weight: 500;">Avatar URL</label>
-        <input type="url" id="avatar_url" name="avatar_url"
+      <div class="form-field">
+        <label class="field-label" for="display_name">Display name</label>
+        <input type="text" id="display_name" name="display_name" value="{{ user.display_name }}">
+      </div>
+
+      <div class="form-field">
+        <label class="field-label" for="avatar_url">Avatar URL</label>
+        <input type="url"
+               id="avatar_url"
+               name="avatar_url"
                value="{{ user.avatar_url }}"
-               placeholder="https://example.com/avatar.jpg"
-               style="width: 100%; padding: .5rem;">
+               placeholder="https://example.com/avatar.jpg">
       </div>
-    </fieldset>
+    </section>
 
-    <fieldset style="border: none; padding: 0; margin-bottom: 2rem;">
-      <legend style="font-weight: 600; font-size: 1.1rem; margin-bottom: 1rem; padding: 0;">Daily Summary</legend>
-
-      <div style="display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem;">
-        <input type="checkbox" id="daily_summary_enabled" name="daily_summary_enabled"
-               {% if user.daily_summary_enabled %}checked{% endif %}
-               style="width: 1rem; height: 1rem;">
-        <label for="daily_summary_enabled" style="font-weight: 500;">Enable daily summary post</label>
+    <section class="settings-card surface-panel">
+      <div>
+        <h2 class="card-title">Daily Summary</h2>
+        <p class="card-subtitle">Optional Micropub posting for a clean daily wrap-up.</p>
       </div>
+
+      <label class="checkbox-field" for="daily_summary_enabled">
+        <input type="checkbox"
+               id="daily_summary_enabled"
+               name="daily_summary_enabled"
+               {% if user.daily_summary_enabled %}checked{% endif %}>
+        <span>
+          <strong>Enable daily summary post</strong><br>
+          <span class="field-help">Send one concise summary of completed work each day.</span>
+        </span>
+      </label>
 
       {% if not user.has_micropub %}
-      <p style="font-size: .875rem; color: var(--muted); margin-bottom: 1rem;">
-        Daily summaries are posted via Micropub. Sign in with your IndieAuth identity
-        and grant <code>publish</code> scope to enable this feature.
+      <p class="field-help">
+        Daily summaries are posted via Micropub. Sign in with your IndieAuth identity and grant <code>publish</code> scope to turn this on.
       </p>
       {% endif %}
 
-      <div style="margin-bottom: 1rem;">
-        <label for="daily_summary_time" style="display: block; margin-bottom: .25rem; font-weight: 500;">
-          Send time (UTC)
-        </label>
-        <input type="time" id="daily_summary_time" name="daily_summary_time"
+      <div class="form-field">
+        <label class="field-label" for="daily_summary_time">Send time (UTC)</label>
+        <input type="time"
+               id="daily_summary_time"
+               name="daily_summary_time"
                value="{{ user.daily_summary_time|time:'H:i' }}"
-               {% if not user.has_micropub %}disabled{% endif %}
-               style="padding: .5rem;">
+               {% if not user.has_micropub %}disabled{% endif %}>
       </div>
 
       {% if user.has_micropub %}
-      <p style="font-size: .875rem; color: var(--muted);">
-        Posting to: <code>{{ user.micropub_endpoint }}</code>
-      </p>
+      <p class="field-help">Posting to <code>{{ user.micropub_endpoint }}</code></p>
       {% endif %}
-    </fieldset>
+    </section>
 
-    <button type="submit" style="padding: .625rem 1.5rem; font-size: 1rem;">Save settings</button>
+    <section class="settings-card settings-card--wide surface-panel">
+      <div class="settings-actions">
+        <button type="submit" class="btn-primary">Save settings</button>
+      </div>
+    </section>
   </form>
 
-  {# ── API Token ──────────────────────────────────────────────────── #}
-  <hr style="border: none; border-top: 1px solid var(--border); margin: 2.5rem 0;">
+  <div class="settings-grid">
+    <section class="settings-card surface-panel">
+      <div>
+        <h2 class="card-title">API Token</h2>
+        <p class="card-subtitle">
+          Use this token to authenticate with the <a class="auth-link" href="/api/docs/">REST API</a>.
+        </p>
+      </div>
 
-  <section style="margin-bottom: 2rem;">
-    <h2 style="font-size: 1.1rem; margin-bottom: 1rem;">API Token</h2>
-    <p style="font-size: .8rem; color: var(--muted); margin-bottom: 1rem;">
-      Use this token to authenticate with the <a href="/api/docs/">REST API</a>.
-    </p>
-    <div id="api-token-section"
-         hx-get="{% url 'users:api-token' %}"
-         hx-trigger="load">
-    </div>
-  </section>
+      <div id="api-token-section"
+           hx-get="{% url 'users:api-token' %}"
+           hx-trigger="load">
+      </div>
+    </section>
 
-  {# ── Task Statuses ─────────────────────────────────────────────── #}
-  <hr style="border: none; border-top: 1px solid var(--border); margin: 2.5rem 0;">
+    <section class="settings-card surface-panel">
+      <div>
+        <h2 class="card-title">Task Statuses</h2>
+        <p class="card-subtitle">Statuses drive the workflow options on each card and power your board lanes.</p>
+      </div>
 
-  <section style="margin-bottom: 2rem;">
-    <h2 style="font-size: 1.1rem; margin-bottom: 1rem;">Task Statuses</h2>
+      <div id="status-list" class="settings-list">
+        {% include "users/_status_list.html" %}
+      </div>
 
-    <div id="status-list" style="margin-bottom: 1rem;">
-      {% include "users/_status_list.html" %}
-    </div>
+      <form class="inline-form"
+            hx-post="{% url 'users:status-create' %}"
+            hx-target="#status-list"
+            hx-swap="innerHTML"
+            hx-on::after-request="this.reset()">
+        {% csrf_token %}
+        <div class="form-field">
+          <label class="field-label" for="status-name">Status name</label>
+          <input id="status-name" type="text" name="name" placeholder="Status name" required>
+        </div>
 
-    <form hx-post="{% url 'users:status-create' %}"
-          hx-target="#status-list"
-          hx-swap="innerHTML"
-          hx-on::after-request="this.reset()"
-          style="display: flex; gap: .5rem; flex-wrap: wrap; align-items: center;">
-      {% csrf_token %}
-      <input type="text" name="name" placeholder="Status name" required
-             style="flex: 1; min-width: 150px; padding: .375rem .5rem; font-size: .875rem;">
-      <label style="display: flex; align-items: center; gap: .35rem; font-size: .875rem; white-space: nowrap;">
-        <input type="checkbox" name="is_done"> Mark as done
-      </label>
-      <button type="submit" style="font-size: .875rem; padding: .375rem .75rem;">Add status</button>
-    </form>
-  </section>
+        <label class="checkbox-field" for="status-is-done">
+          <input id="status-is-done" type="checkbox" name="is_done">
+          <span>
+            <strong>Done state</strong><br>
+            <span class="field-help">Marks cards as complete when selected.</span>
+          </span>
+        </label>
 
-  {# ── Board Columns ─────────────────────────────────────────────── #}
-  <section style="margin-bottom: 2rem;">
-    <h2 style="font-size: 1.1rem; margin-bottom: 1rem;">Board Columns</h2>
-    <p style="font-size: .8rem; color: var(--muted); margin-bottom: 1rem;">
-      Each column shows tasks matching its filters. Leave a filter blank to match everything.
-      Tasks appear in the first matching column only.
-    </p>
+        <div class="form-field">
+          <button type="submit" class="btn-primary">Add status</button>
+        </div>
+      </form>
+    </section>
 
-    <div id="column-list" style="margin-bottom: 1rem;">
-      {% include "users/_column_list.html" %}
-    </div>
+    <section class="settings-card settings-card--wide surface-panel">
+      <div>
+        <h2 class="card-title">Board Columns</h2>
+        <p class="card-subtitle">
+          Columns filter the same task list into a clearer flow. Leave filters blank to create a catch-all lane.
+        </p>
+      </div>
 
-    <form hx-post="{% url 'users:column-create' %}"
-          hx-target="#column-list"
-          hx-swap="innerHTML"
-          hx-on::after-request="this.reset()"
-          style="display: grid; gap: .5rem;">
-      {% csrf_token %}
-      <input type="text" name="label" placeholder="Column label" required
-             style="padding: .375rem .5rem; font-size: .875rem;">
-      <input type="text" name="statuses" placeholder="Status slugs (comma-separated, e.g. todo,in_progress)"
-             style="padding: .375rem .5rem; font-size: .875rem;">
-      <input type="text" name="tags" placeholder="Tags (comma-separated, e.g. work,urgent)"
-             style="padding: .375rem .5rem; font-size: .875rem;">
-      <select name="due" style="padding: .375rem .5rem; font-size: .875rem;">
-        <option value="">No due date filter</option>
-        <option value="today">Due today</option>
-        <option value="this_week">Due this week</option>
-        <option value="overdue">Overdue</option>
-      </select>
-      <button type="submit" style="font-size: .875rem; padding: .375rem .75rem; justify-self: start;">Add column</button>
-    </form>
-  </section>
-</div>
+      <div id="column-list" class="settings-list">
+        {% include "users/_column_list.html" %}
+      </div>
+
+      <form class="column-create-form"
+            hx-post="{% url 'users:column-create' %}"
+            hx-target="#column-list"
+            hx-swap="innerHTML"
+            hx-on::after-request="this.reset()">
+        {% csrf_token %}
+
+        <div class="form-field">
+          <label class="field-label" for="column-label">Column label</label>
+          <input id="column-label" type="text" name="label" placeholder="Column label" required>
+        </div>
+
+        <div class="form-grid form-grid--two">
+          <div class="form-field">
+            <label class="field-label" for="column-statuses">Status slugs</label>
+            <input id="column-statuses" type="text" name="statuses" placeholder="todo,in_progress">
+          </div>
+
+          <div class="form-field">
+            <label class="field-label" for="column-tags">Tags</label>
+            <input id="column-tags" type="text" name="tags" placeholder="work,urgent">
+          </div>
+        </div>
+
+        <div class="form-grid form-grid--two">
+          <div class="form-field">
+            <label class="field-label" for="column-due">Due date filter</label>
+            <select id="column-due" name="due">
+              <option value="">No due date filter</option>
+              <option value="today">Due today</option>
+              <option value="this_week">Due this week</option>
+              <option value="overdue">Overdue</option>
+            </select>
+          </div>
+
+          <div class="form-field" style="justify-content: end; display: flex;">
+            <button type="submit" class="btn-primary">Add column</button>
+          </div>
+        </div>
+      </form>
+    </section>
+  </div>
+</section>
 {% endblock %}

@@ -1,16 +1,20 @@
 {% for status in statuses %}
-<div style="display: flex; align-items: center; gap: .5rem; padding: .4rem 0; border-bottom: 1px solid var(--border);">
-  <span style="flex: 1; font-size: .875rem;">
-    {{ status.name }}
-    <code style="font-size: .75rem; color: var(--muted);">{{ status.slug }}</code>
-    {% if status.is_done %}<span style="font-size: .7rem; padding: .1rem .35rem; background: var(--badge-bg); border: 1px solid var(--border); border-radius: 9999px; color: var(--muted);">done</span>{% endif %}
-  </span>
-  <button hx-post="{% url 'users:status-delete' status.pk %}"
+<div class="config-row">
+  <div class="config-main">
+    <div class="config-title">
+      <span>{{ status.name }}</span>
+      <code>{{ status.slug }}</code>
+      {% if status.is_done %}<span class="badge badge--done">done</span>{% endif %}
+    </div>
+  </div>
+  <button class="btn-danger btn-icon"
+          hx-post="{% url 'users:status-delete' status.pk %}"
           hx-target="#status-list"
           hx-swap="innerHTML"
-          hx-confirm="Delete status &ldquo;{{ status.name|escapejs }}&rdquo;? Tasks with this status will be unaffected."
-          style="font-size: .75rem; color: var(--muted); border-color: var(--border);">×</button>
+          hx-confirm="Delete status &ldquo;{{ status.name|escapejs }}&rdquo;? Tasks with this status will be unaffected.">×</button>
 </div>
 {% empty %}
-<p style="font-size: .875rem; color: var(--muted);">No statuses yet.</p>
+<div class="surface-card" style="padding: 1rem 1.1rem;">
+  <p class="field-help">No statuses yet. Add the workflow steps you want cards to move through.</p>
+</div>
 {% endfor %}
