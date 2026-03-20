@@ -610,6 +610,8 @@ hr {
 
 .board-controls {
   padding: 0.8rem 0.9rem;
+  position: relative;
+  z-index: 1;
 }
 
 .board-filter-bar {
