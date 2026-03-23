@@ -18,7 +18,7 @@
         <h2 class="column-title">{{ column.label }}</h2>
         <p class="column-subtitle">
           {% with due=column.filter_config.due tags=column.filter_config.tags %}
-          {% if due == "overdue" %}Overdue work collected in one place{% elif due == "today" %}Cards that need to land today{% elif due == "this_week" %}Short-horizon work for the week ahead{% elif tags %}Focused on {{ tags|join:", " }}{% else %}Capture here and sort with drag and drop{% endif %}
+          {% if due == "overdue" %}Overdue work collected in one place{% elif due == "today" %}Cards that need to land today{% elif due == "this_week" %}Short-horizon work for the week ahead{% elif tags %}Focused on {{ tags|join:", " }}{% endif %}
           {% endwith %}
         </p>
       </div>
