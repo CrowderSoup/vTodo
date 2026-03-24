@@ -41,6 +41,10 @@
         autoDownloadFontAwesome: true,
         minHeight: "180px",
       });
+      notesEditor.codemirror.on("change", function () {
+        notesTextarea.value = notesEditor.value();
+      });
+      notesTextarea.value = notesEditor.value();
     }
 
     var commentTextarea = document.getElementById("task-comment-editor");
@@ -55,6 +59,36 @@
         autoDownloadFontAwesome: true,
         minHeight: "100px",
       });
+      commentEditor.codemirror.on("change", function () {
+        commentTextarea.value = commentEditor.value();
+      });
+      commentTextarea.value = commentEditor.value();
+    }
+  }
+
+  function syncEditorValue(event, editor, textareaId, fieldName) {
+    if (!editor) {
+      return;
+    }
+
+    var textarea = document.getElementById(textareaId);
+    if (!textarea) {
+      return;
+    }
+
+    var value = editor.value();
+    textarea.value = value;
+
+    var requestElement = event.detail.elt || event.target;
+    if (!requestElement || !requestElement.closest) {
+      return;
+    }
+
+    var form = requestElement.matches("form") ? requestElement : requestElement.closest("form");
+    if (form && form.contains(textarea)) {
+      // HTMX has already collected form values at configRequest time,
+      // so update the request payload directly as well as the hidden textarea.
+      event.detail.parameters[fieldName] = value;
     }
   }
 
@@ -369,24 +403,16 @@
       event.detail.headers["X-CSRFToken"] = csrfToken;
     }
 
-    if (notesEditor) {
-      var notesTextarea = document.getElementById("task-notes-editor");
-      if (notesTextarea) {
-        notesTextarea.value = notesEditor.value();
-      }
-    }
-
-    if (commentEditor) {
-      var commentTextarea = document.getElementById("task-comment-editor");
-      if (commentTextarea) {
-        commentTextarea.value = commentEditor.value();
-      }
-    }
+    syncEditorValue(event, notesEditor, "task-notes-editor", "notes");
+    syncEditorValue(event, commentEditor, "task-comment-editor", "body");
   });
 
-  document.addEventListener("htmx:afterSwap", function (event) {
+  document.addEventListener("htmx:afterSettle", function (event) {
     if (event.target.id === "task-panel-content") {
-      initTaskEditors();
+      var panel = document.getElementById("task-panel");
+      if (panel && panel.classList.contains("open")) {
+        initTaskEditors();
+      }
     }
   });
 

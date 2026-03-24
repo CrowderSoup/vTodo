@@ -4,6 +4,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.boards.models import Board
+from apps.boards.views import _render_markdown
 from apps.tasks.models import Task, TaskStatus
 from apps.users.models import User
 
@@ -184,6 +185,26 @@ def test_task_panel_includes_today_in_context(logged_in_client):
     response = client.get(reverse("boards:task-panel", kwargs={"pk": task.pk}))
     assert response.status_code == 200
     assert "today" in response.context
+
+
+@pytest.mark.django_db
+def test_render_markdown_wraps_task_list_checkboxes():
+    html = _render_markdown("- [x] Ship polish\n- [ ] Follow up")
+    assert 'class="rendered-checkbox-line rendered-checkbox-line--checked"' in html
+    assert 'class="rendered-checkbox-label">Ship polish</span>' in html
+    assert 'class="rendered-checkbox-line">' in html
+    assert 'class="rendered-checkbox-label">Follow up</span>' in html
+
+
+@pytest.mark.django_db
+def test_render_markdown_wraps_paragraph_checkboxes():
+    html = _render_markdown("[ ] Share the board")
+    assert html == (
+        '<p class="rendered-checkbox-line">'
+        '<span class="rendered-checkbox" aria-hidden="true"></span>'
+        '<span class="rendered-checkbox-label">Share the board</span>'
+        "</p>"
+    )
 
 
 # ---------------------------------------------------------------------------

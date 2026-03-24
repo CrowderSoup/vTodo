@@ -1,4 +1,5 @@
 import json
+import re
 import markdown as md
 from datetime import date, timedelta
 
@@ -11,6 +12,8 @@ from django.views import View
 from apps.tasks.models import Task, TaskComment, TaskStatus
 
 from .models import Board, Column, SavedFilter
+
+TASK_CHECKBOX_PATTERN = re.compile(r"<(?P<tag>li|p)>\[(?P<state>[xX ])\]\s*(?P<body>.*?)</(?P=tag)>", re.DOTALL)
 
 
 def _task_matches_column(task, filter_config):
@@ -333,7 +336,7 @@ class TaskPanelView(LoginRequiredMixin, View):
         task = get_object_or_404(Task, pk=pk, user=request.user)
         context = _task_render_context(request.user, task)
         context.update({
-            "notes_html": md.markdown(task.notes, extensions=["fenced_code", "tables"]) if task.notes else "",
+            "notes_html": _render_markdown(task.notes) if task.notes else "",
             "comments": _render_comments(task),
         })
         return render(request, "partials/task_panel_content.html", context)
@@ -376,14 +379,32 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
 
         context = _task_render_context(request.user, task)
         context.update({
-            "notes_html": md.markdown(task.notes, extensions=["fenced_code", "tables"]) if task.notes else "",
+            "notes_html": _render_markdown(task.notes) if task.notes else "",
         })
         return render(request, "partials/task_panel_update_response.html", context)
 
 
+def _replace_task_checkbox(match):
+    tag = match.group("tag")
+    body = match.group("body").strip()
+    checked = match.group("state").lower() == "x"
+    state_class = " rendered-checkbox-line--checked" if checked else ""
+    return (
+        f'<{tag} class="rendered-checkbox-line{state_class}">'
+        '<span class="rendered-checkbox" aria-hidden="true"></span>'
+        f'<span class="rendered-checkbox-label">{body}</span>'
+        f"</{tag}>"
+    )
+
+
+def _render_markdown(text):
+    html = md.markdown(text, extensions=["fenced_code", "tables"])
+    return TASK_CHECKBOX_PATTERN.sub(_replace_task_checkbox, html)
+
+
 def _render_comments(task):
     return [
-        {"comment": c, "body_html": md.markdown(c.body, extensions=["fenced_code", "tables"])}
+        {"comment": c, "body_html": _render_markdown(c.body)}
         for c in task.comments.all()
     ]
 
