@@ -3,6 +3,9 @@
   <div class="config-main">
     <div class="config-title">
       <strong>{{ column.label }}</strong>
+      {% if column.pk == default_column_id %}
+      <span class="pill">Default lane</span>
+      {% endif %}
     </div>
     <div class="config-description">
       {% with statuses=column.filter_config.statuses tags=column.filter_config.tags due=column.filter_config.due %}

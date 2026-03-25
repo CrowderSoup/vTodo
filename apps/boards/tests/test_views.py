@@ -158,6 +158,112 @@ def test_task_create_missing_title_returns_422(logged_in_client):
 
 
 # ---------------------------------------------------------------------------
+# Board columns / TaskPanelCreateView
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_board_uses_lane_menu_for_add_task(logged_in_client):
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    first_column = board.columns.first()
+    response = client.get(reverse("boards:board"))
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert 'class="add-task-form"' not in content
+    assert f'{reverse("boards:task-panel-create")}?column={first_column.pk}' in content
+
+
+@pytest.mark.django_db
+def test_board_renders_fab_for_task_creation(logged_in_client):
+    client, _ = logged_in_client
+    response = client.get(reverse("boards:board"))
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert 'class="board-fab"' in content
+    assert f'hx-get="{reverse("boards:task-panel-create")}"' in content
+
+
+@pytest.mark.django_db
+def test_task_panel_create_renders_without_comments_form(logged_in_client):
+    client, user = logged_in_client
+    first_column = user.board.columns.first()
+    response = client.get(reverse("boards:task-panel-create"))
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert response.context["selected_column_id"] == first_column.pk
+    assert response.context["selected_status"] == first_column.default_status(user)
+    assert 'id="task-comment-form"' not in content
+    assert "Create task" in content
+
+
+@pytest.mark.django_db
+def test_task_panel_create_uses_default_column_when_user_has_one(logged_in_client):
+    client, user = logged_in_client
+    default_column = user.board.columns.get(label="In Progress")
+    user.default_column = default_column
+    user.save(update_fields=["default_column"])
+
+    response = client.get(reverse("boards:task-panel-create"))
+    assert response.status_code == 200
+    assert response.context["selected_column_id"] == default_column.pk
+    assert response.context["selected_status"] == "in_progress"
+
+
+@pytest.mark.django_db
+def test_task_panel_create_explicit_column_overrides_default_column(logged_in_client):
+    client, user = logged_in_client
+    user.default_column = user.board.columns.get(label="Done")
+    user.save(update_fields=["default_column"])
+    explicit_column = user.board.columns.get(label="To Do")
+
+    response = client.get(f'{reverse("boards:task-panel-create")}?column={explicit_column.pk}')
+    assert response.status_code == 200
+    assert response.context["selected_column_id"] == explicit_column.pk
+    assert response.context["selected_status"] == "todo"
+
+
+@pytest.mark.django_db
+def test_task_panel_create_creates_task_and_refreshes_board(logged_in_client):
+    client, user = logged_in_client
+    default_column = user.board.columns.get(label="In Progress")
+    user.default_column = default_column
+    user.save(update_fields=["default_column"])
+
+    response = client.post(
+        reverse("boards:task-panel-create"),
+        {
+            "title": "Panel created task",
+            "notes": "Fresh context",
+            "tags": "ops, urgent",
+            "due_date": "",
+            "recurrence_days": "",
+            "recurrence_from": "completion",
+        },
+    )
+    content = response.content.decode()
+    task = Task.objects.get(user=user, title="Panel created task")
+
+    assert response.status_code == 200
+    assert task.status == "in_progress"
+    assert task.notes == "Fresh context"
+    assert task.tags == ["ops", "urgent"]
+    assert 'hx-swap-oob="innerHTML"' in content
+    assert 'id="board-content"' in content
+    assert 'id="task-comment-form"' in content
+
+
+@pytest.mark.django_db
+def test_task_panel_create_missing_title_returns_422(logged_in_client):
+    client, user = logged_in_client
+    response = client.post(reverse("boards:task-panel-create"), {"title": ""})
+    content = response.content.decode()
+    assert response.status_code == 422
+    assert "Add a title before creating the task." in content
+    assert not Task.objects.filter(user=user).exists()
+
+
+# ---------------------------------------------------------------------------
 # TaskDetailView — today in task card context
 # ---------------------------------------------------------------------------
 

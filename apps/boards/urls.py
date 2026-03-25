@@ -22,6 +22,7 @@ urlpatterns = [
     path("tasks/<int:pk>/", views.TaskDetailView.as_view(), name="task-detail"),
     path("tasks/<int:pk>/edit/", views.TaskEditView.as_view(), name="task-edit"),
     path("tasks/<int:pk>/panel/", views.TaskPanelView.as_view(), name="task-panel"),
+    path("tasks/panel/create/", views.TaskPanelCreateView.as_view(), name="task-panel-create"),
     path("tasks/<int:pk>/panel/edit/", views.TaskPanelEditView.as_view(), name="task-panel-edit"),
     path("tasks/<int:pk>/panel/update/", views.TaskPanelUpdateView.as_view(), name="task-panel-update"),
     path("tasks/<int:pk>/comments/", views.TaskCommentCreateView.as_view(), name="task-comment-create"),

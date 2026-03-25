@@ -12,5 +12,17 @@
   <div id="board-content" class="board-columns">
     {% include "boards/_columns.html" %}
   </div>
+
+  <button class="board-fab"
+          type="button"
+          title="Add task"
+          aria-label="Add task"
+          hx-get="{% url 'boards:task-panel-create' %}"
+          hx-target="#task-panel-content"
+          hx-swap="innerHTML"
+          hx-on::after-request="openTaskPanel()">
+    <span class="board-fab-mark">+</span>
+    <span class="board-fab-label">New task</span>
+  </button>
 </section>
 {% endblock %}

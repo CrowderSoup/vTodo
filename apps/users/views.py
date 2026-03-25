@@ -11,7 +11,7 @@ from django.views import View
 class SettingsView(LoginRequiredMixin, View):
     def get(self, request):
         from apps.tasks.models import TaskStatus
-        from apps.boards.models import Board, Column
+        from apps.boards.models import Board
 
         statuses = TaskStatus.objects.filter(user=request.user)
         try:
@@ -23,9 +23,12 @@ class SettingsView(LoginRequiredMixin, View):
         return render(request, "users/settings.html", {
             "statuses": statuses,
             "columns": columns,
+            "default_column_id": request.user.default_column_id,
         })
 
     def post(self, request):
+        from apps.boards.models import Board
+
         user = request.user
         user.display_name = request.POST.get("display_name", "").strip()
         user.avatar_url = request.POST.get("avatar_url", "").strip()
@@ -38,12 +41,23 @@ class SettingsView(LoginRequiredMixin, View):
         except (ValueError, IndexError):
             pass
 
+        default_column = None
+        default_column_id = request.POST.get("default_column", "").strip()
+        if default_column_id.isdigit():
+            try:
+                board = Board.objects.get(user=user)
+                default_column = board.columns.filter(pk=int(default_column_id)).first()
+            except Board.DoesNotExist:
+                default_column = None
+        user.default_column = default_column
+
         user.save(
             update_fields=[
                 "display_name",
                 "avatar_url",
                 "daily_summary_enabled",
                 "daily_summary_time",
+                "default_column",
             ]
         )
         messages.success(request, "Settings saved.")
@@ -107,7 +121,10 @@ class ColumnCreateView(LoginRequiredMixin, View):
             order=order,
         )
         columns = board.columns.all()
-        return render(request, "users/_column_list.html", {"columns": columns})
+        return render(request, "users/_column_list.html", {
+            "columns": columns,
+            "default_column_id": request.user.default_column_id,
+        })
 
 
 class ColumnDeleteView(LoginRequiredMixin, View):
@@ -117,8 +134,12 @@ class ColumnDeleteView(LoginRequiredMixin, View):
         board = get_object_or_404(Board, user=request.user)
         column = get_object_or_404(Column, pk=pk, board=board)
         column.delete()
+        request.user.refresh_from_db(fields=["default_column"])
         columns = board.columns.all()
-        return render(request, "users/_column_list.html", {"columns": columns})
+        return render(request, "users/_column_list.html", {
+            "columns": columns,
+            "default_column_id": request.user.default_column_id,
+        })
 
 
 class ApiTokenView(LoginRequiredMixin, View):

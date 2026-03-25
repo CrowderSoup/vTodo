@@ -47,6 +47,36 @@ def _status_context(user):
     return statuses, done_slug, active_slug
 
 
+def _resolve_status_slug(status, statuses):
+    valid_slugs = [item.slug for item in statuses]
+    if status in valid_slugs:
+        return status
+    return valid_slugs[0] if valid_slugs else "todo"
+
+
+def _resolve_task_create_column(user, requested_column_id=""):
+    board = Board.objects.filter(user=user).prefetch_related("columns").first()
+    if not board:
+        return None
+
+    columns = list(board.columns.all())
+    if not columns:
+        return None
+
+    if str(requested_column_id).isdigit():
+        requested_pk = int(requested_column_id)
+        for column in columns:
+            if column.pk == requested_pk:
+                return column
+
+    if user.default_column_id:
+        for column in columns:
+            if column.pk == user.default_column_id:
+                return column
+
+    return columns[0]
+
+
 def _task_render_context(user, task):
     statuses, done_slug, active_slug = _status_context(user)
     return {
@@ -55,6 +85,37 @@ def _task_render_context(user, task):
         "done_slug": done_slug,
         "active_slug": active_slug,
         "today": timezone.localdate(),
+}
+
+
+def _task_panel_create_context(user, column_id="", form_values=None, form_error=""):
+    statuses, done_slug, active_slug = _status_context(user)
+    selected_column = _resolve_task_create_column(user, column_id)
+    selected_status = (
+        selected_column.default_status(user)
+        if selected_column
+        else _resolve_status_slug("", statuses)
+    )
+    selected_status_name = next((item.name for item in statuses if item.slug == selected_status), selected_status)
+    form_values = form_values or {}
+
+    return {
+        "statuses": statuses,
+        "done_slug": done_slug,
+        "active_slug": active_slug,
+        "today": timezone.localdate(),
+        "selected_column": selected_column,
+        "selected_column_id": selected_column.pk if selected_column else "",
+        "selected_column_name": selected_column.label if selected_column else "your board",
+        "selected_status": selected_status,
+        "selected_status_name": selected_status_name,
+        "title_value": form_values.get("title", ""),
+        "notes_value": form_values.get("notes", ""),
+        "due_date_value": form_values.get("due_date", ""),
+        "tags_value": form_values.get("tags", ""),
+        "recurrence_days_value": form_values.get("recurrence_days", ""),
+        "recurrence_from_value": form_values.get("recurrence_from", Task.RECURRENCE_FROM_COMPLETION),
+        "form_error": form_error,
     }
 
 
@@ -217,15 +278,12 @@ class TaskReorderView(LoginRequiredMixin, View):
 
 class TaskCreateView(LoginRequiredMixin, View):
     def post(self, request):
-        status = request.POST.get("status", "").strip()
+        statuses, _, _ = _status_context(request.user)
+        status = _resolve_status_slug(request.POST.get("status", "").strip(), statuses)
         title = request.POST.get("title", "").strip()
 
         if not title:
             return HttpResponse(status=422)
-
-        valid_slugs = list(TaskStatus.objects.filter(user=request.user).values_list("slug", flat=True))
-        if status not in valid_slugs:
-            status = valid_slugs[0] if valid_slugs else "todo"
 
         task = Task.objects.create(user=request.user, title=title, status=status)
         return render(request, "partials/task_card.html", _task_render_context(request.user, task))
@@ -340,6 +398,58 @@ class TaskPanelView(LoginRequiredMixin, View):
             "comments": _render_comments(task),
         })
         return render(request, "partials/task_panel_content.html", context)
+
+
+class TaskPanelCreateView(LoginRequiredMixin, View):
+    """Return the panel create-mode content and handle initial task creation."""
+
+    def get(self, request):
+        context = _task_panel_create_context(request.user, request.GET.get("column", "").strip())
+        return render(request, "partials/task_panel_create.html", context)
+
+    def post(self, request):
+        form_values = {
+            "title": request.POST.get("title", "").strip(),
+            "notes": request.POST.get("notes", ""),
+            "due_date": request.POST.get("due_date", ""),
+            "tags": request.POST.get("tags", ""),
+            "recurrence_days": request.POST.get("recurrence_days", "").strip(),
+            "recurrence_from": request.POST.get("recurrence_from", Task.RECURRENCE_FROM_COMPLETION),
+        }
+        context = _task_panel_create_context(
+            request.user,
+            request.POST.get("column", "").strip(),
+            form_values=form_values,
+        )
+
+        if not form_values["title"]:
+            context["form_error"] = "Add a title before creating the task."
+            return render(request, "partials/task_panel_create.html", context, status=422)
+
+        tags = [tag.strip() for tag in form_values["tags"].split(",") if tag.strip()]
+        recurrence_days = int(form_values["recurrence_days"]) if form_values["recurrence_days"].isdigit() else None
+        recurrence_from = form_values["recurrence_from"]
+        if recurrence_from not in (Task.RECURRENCE_FROM_COMPLETION, Task.RECURRENCE_FROM_DUE_DATE):
+            recurrence_from = Task.RECURRENCE_FROM_COMPLETION
+
+        task = Task.objects.create(
+            user=request.user,
+            title=form_values["title"],
+            notes=form_values["notes"],
+            status=context["selected_status"],
+            due_date=form_values["due_date"] or None,
+            tags=tags,
+            recurrence_days=recurrence_days,
+            recurrence_from=recurrence_from,
+        )
+
+        panel_context = _task_render_context(request.user, task)
+        panel_context.update({
+            "notes_html": _render_markdown(task.notes) if task.notes else "",
+            "comments": _render_comments(task),
+        })
+        panel_context.update(_build_board_context(request.user, request.session))
+        return render(request, "partials/task_panel_create_response.html", panel_context)
 
 
 class TaskPanelEditView(LoginRequiredMixin, View):

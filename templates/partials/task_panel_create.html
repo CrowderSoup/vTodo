@@ -1,0 +1,73 @@
+<div class="task-panel-header">
+  <div class="task-panel-header-copy">
+    <span class="eyebrow">New task</span>
+    <h2 class="task-panel-title">Create a card for {{ selected_column_name }}</h2>
+    <div class="task-panel-subtitle">This will land in {{ selected_column_name }} with the default {{ selected_status_name }} status.</div>
+  </div>
+  <button class="task-panel-close btn-ghost" type="button" onclick="closeTaskPanel()" title="Close">×</button>
+</div>
+
+<div class="task-panel-body">
+  <div class="task-panel-meta">
+    <span class="status-pill">{{ selected_status_name }}</span>
+  </div>
+
+  <form id="task-panel-create-form"
+        class="panel-form"
+        hx-post="{% url 'boards:task-panel-create' %}"
+        hx-target="#task-panel-content"
+        hx-swap="innerHTML">
+    {% csrf_token %}
+    <input type="hidden" name="column" value="{{ selected_column_id }}">
+
+    <div class="form-field">
+      <label class="field-label" for="task-panel-create-title">Title</label>
+      <input id="task-panel-create-title" type="text" name="title" value="{{ title_value }}" required autofocus>
+      {% if form_error %}
+      <p class="field-help field-help--danger">{{ form_error }}</p>
+      {% endif %}
+    </div>
+
+    <div class="form-field">
+      <label class="field-label" for="task-notes-editor">Notes</label>
+      <textarea id="task-notes-editor" name="notes">{{ notes_value }}</textarea>
+    </div>
+
+    <div class="form-grid form-grid--two">
+      <div class="form-field">
+        <label class="field-label" for="task-panel-create-due">Due date</label>
+        <input id="task-panel-create-due" type="date" name="due_date" value="{{ due_date_value }}">
+      </div>
+
+      <div class="form-field">
+        <label class="field-label" for="task-panel-create-tags">Tags</label>
+        <input id="task-panel-create-tags" type="text" name="tags" value="{{ tags_value }}" placeholder="work, urgent, design">
+      </div>
+    </div>
+
+    <div class="form-grid form-grid--two">
+      <div class="form-field">
+        <label class="field-label" for="task-panel-create-recurrence-days">Repeat every</label>
+        <input id="task-panel-create-recurrence-days" type="number" name="recurrence_days" value="{{ recurrence_days_value }}" min="1" placeholder="e.g. 7">
+      </div>
+
+      <div class="form-field">
+        <label class="field-label" for="task-panel-create-recurrence-from">Repeat from</label>
+        <select id="task-panel-create-recurrence-from" name="recurrence_from">
+          <option value="completion" {% if recurrence_from_value == "completion" %}selected{% endif %}>Completion date</option>
+          <option value="due_date" {% if recurrence_from_value == "due_date" %}selected{% endif %}>Due date</option>
+        </select>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div class="task-panel-footer">
+  <div class="panel-footer-actions">
+    <button type="button" class="btn-ghost" onclick="closeTaskPanel()">Cancel</button>
+  </div>
+
+  <div class="panel-footer-secondary">
+    <button type="submit" class="btn-primary" form="task-panel-create-form">Create task</button>
+  </div>
+</div>

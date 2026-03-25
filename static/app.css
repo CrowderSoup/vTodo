@@ -248,6 +248,10 @@ hr {
   gap: 1rem;
 }
 
+.page-board .page-shell {
+  padding-bottom: 5rem;
+}
+
 .page-shell > * {
   min-width: 0;
 }
@@ -427,6 +431,10 @@ hr {
 .field-help {
   color: var(--text-subtle);
   font-size: 0.86rem;
+}
+
+.field-help--danger {
+  color: var(--danger);
 }
 
 .pill,
@@ -710,6 +718,52 @@ hr {
   min-width: 0;
 }
 
+.board-fab {
+  position: fixed;
+  right: 1.2rem;
+  bottom: calc(1.2rem + env(safe-area-inset-bottom));
+  z-index: 35;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3.35rem;
+  padding: 0.65rem 1rem 0.65rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid rgba(11, 87, 82, 0.18);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.22), transparent 62%),
+    linear-gradient(135deg, var(--accent), #169b91);
+  color: #fffaf2;
+  box-shadow: 0 20px 34px rgba(11, 87, 82, 0.24);
+}
+
+.board-fab:hover {
+  border-color: rgba(11, 87, 82, 0.28);
+  box-shadow: 0 24px 40px rgba(11, 87, 82, 0.28);
+}
+
+[data-theme="dark"] .board-fab {
+  border-color: rgba(143, 228, 222, 0.18);
+  box-shadow: 0 20px 34px rgba(0, 0, 0, 0.34);
+}
+
+.board-fab-mark {
+  width: 1.95rem;
+  height: 1.95rem;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255, 250, 242, 0.18);
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.board-fab-label {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
 .board-column {
   position: relative;
   padding: 0.8rem;
@@ -844,18 +898,6 @@ hr {
 .col-actions-menu button:hover {
   background: var(--surface-muted);
   transform: none;
-}
-
-.add-task-form {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0.45rem;
-  margin-bottom: 0.75rem;
-  min-width: 0;
-}
-
-.add-task-form button {
-  min-width: 2.4rem;
 }
 
 .task-list {
@@ -1756,6 +1798,17 @@ textarea:has(+ .EasyMDEContainer) {
     grid-auto-flow: row;
     grid-auto-columns: auto;
     overflow-x: visible;
+  }
+
+  .page-board .page-shell {
+    padding-bottom: 5.5rem;
+  }
+
+  .board-fab {
+    right: 0.75rem;
+    left: 0.75rem;
+    bottom: calc(0.75rem + env(safe-area-inset-bottom));
+    justify-content: center;
   }
 
   .hero-stats {

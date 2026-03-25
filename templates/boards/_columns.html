@@ -29,6 +29,13 @@
       <div class="column-actions">
         <button class="col-actions-btn" type="button" title="Column actions" data-disclosure-toggle>⋯</button>
         <div class="col-actions-menu">
+          <button hx-get="{% url 'boards:task-panel-create' %}?column={{ column.pk }}"
+                  hx-target="#task-panel-content"
+                  hx-swap="innerHTML"
+                  hx-on:click="this.closest('.col-actions-menu').classList.remove('open')"
+                  hx-on::after-request="openTaskPanel()">
+            Add task
+          </button>
           <button hx-post="{% url 'boards:column-hide' column.pk %}"
                   hx-target="#board-content"
                   hx-swap="innerHTML">
@@ -44,17 +51,6 @@
       </div>
     </div>
   </div>
-
-  <form class="add-task-form"
-        hx-post="{% url 'boards:task-create' %}"
-        hx-target="#col-tasks-{{ column.pk }}"
-        hx-swap="beforeend"
-        hx-on::after-request="this.reset()">
-    {% csrf_token %}
-    <input type="hidden" name="status" value="{{ default_status }}">
-    <input type="text" name="title" placeholder="Capture a new task" aria-label="New task title">
-    <button type="submit" class="btn-primary" title="Add task" aria-label="Add task">+</button>
-  </form>
 
   <div class="task-list" id="col-tasks-{{ column.pk }}" data-default-status="{{ default_status }}">
     {% for task in tasks %}
