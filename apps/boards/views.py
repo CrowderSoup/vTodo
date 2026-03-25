@@ -85,7 +85,16 @@ def _task_render_context(user, task):
         "done_slug": done_slug,
         "active_slug": active_slug,
         "today": timezone.localdate(),
-}
+    }
+
+
+def _task_panel_context(user, task):
+    context = _task_render_context(user, task)
+    context.update({
+        "notes_html": _render_markdown(task.notes) if task.notes else "",
+        "comments": _render_comments(task),
+    })
+    return context
 
 
 def _task_panel_create_context(user, column_id="", form_values=None, form_error=""):
@@ -337,6 +346,11 @@ class TaskMoveView(LoginRequiredMixin, View):
                 task.completed_at = None
             task.save(update_fields=["status", "completed_at", "updated_at"])
 
+        if request.headers.get("HX-Target") == "task-panel-content":
+            context = _task_panel_context(request.user, task)
+            context.update(_build_board_context(request.user, request.session))
+            return render(request, "partials/task_panel_board_response.html", context)
+
         context = _build_board_context(request.user, request.session)
         return render(request, "boards/_columns.html", context)
 
@@ -392,11 +406,7 @@ class TaskPanelView(LoginRequiredMixin, View):
 
     def get(self, request, pk):
         task = get_object_or_404(Task, pk=pk, user=request.user)
-        context = _task_render_context(request.user, task)
-        context.update({
-            "notes_html": _render_markdown(task.notes) if task.notes else "",
-            "comments": _render_comments(task),
-        })
+        context = _task_panel_context(request.user, task)
         return render(request, "partials/task_panel_content.html", context)
 
 
@@ -443,13 +453,9 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
             recurrence_from=recurrence_from,
         )
 
-        panel_context = _task_render_context(request.user, task)
-        panel_context.update({
-            "notes_html": _render_markdown(task.notes) if task.notes else "",
-            "comments": _render_comments(task),
-        })
+        panel_context = _task_panel_context(request.user, task)
         panel_context.update(_build_board_context(request.user, request.session))
-        return render(request, "partials/task_panel_create_response.html", panel_context)
+        return render(request, "partials/task_panel_board_response.html", panel_context)
 
 
 class TaskPanelEditView(LoginRequiredMixin, View):
@@ -487,10 +493,7 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
         task.recurrence_from = recurrence_from
         task.save(update_fields=["title", "notes", "due_date", "tags", "recurrence_days", "recurrence_from", "updated_at"])
 
-        context = _task_render_context(request.user, task)
-        context.update({
-            "notes_html": _render_markdown(task.notes) if task.notes else "",
-        })
+        context = _task_panel_context(request.user, task)
         return render(request, "partials/task_panel_update_response.html", context)
 
 

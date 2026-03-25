@@ -185,6 +185,17 @@ def test_board_renders_fab_for_task_creation(logged_in_client):
 
 
 @pytest.mark.django_db
+def test_board_includes_shared_confirm_modal(logged_in_client):
+    client, _ = logged_in_client
+    response = client.get(reverse("boards:board"))
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert 'id="confirm-modal"' in content
+    assert 'id="confirm-modal-confirm"' in content
+
+
+@pytest.mark.django_db
 def test_task_panel_create_renders_without_comments_form(logged_in_client):
     client, user = logged_in_client
     first_column = user.board.columns.first()
@@ -278,6 +289,16 @@ def test_task_detail_includes_today_in_context(logged_in_client):
     assert "today" in response.context
 
 
+@pytest.mark.django_db
+def test_task_detail_hides_status_select(logged_in_client):
+    client, user = logged_in_client
+    task = Task.objects.create(user=user, title="My task", status="todo")
+    response = client.get(reverse("boards:task-detail", kwargs={"pk": task.pk}))
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert 'class="task-status-select"' not in content
+
+
 # ---------------------------------------------------------------------------
 # TaskPanelView — today in panel context
 # ---------------------------------------------------------------------------
@@ -291,6 +312,38 @@ def test_task_panel_includes_today_in_context(logged_in_client):
     response = client.get(reverse("boards:task-panel", kwargs={"pk": task.pk}))
     assert response.status_code == 200
     assert "today" in response.context
+
+
+@pytest.mark.django_db
+def test_task_panel_renders_status_select(logged_in_client):
+    client, user = logged_in_client
+    task = Task.objects.create(user=user, title="Panel task", status="todo")
+    response = client.get(reverse("boards:task-panel", kwargs={"pk": task.pk}))
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert f'id="task-panel-status-{task.pk}"' in content
+    assert 'hx-target="#task-panel-content"' in content
+
+
+@pytest.mark.django_db
+def test_task_move_from_panel_refreshes_panel_and_board(logged_in_client):
+    client, user = logged_in_client
+    task = Task.objects.create(user=user, title="Panel task", status="todo")
+    response = client.post(
+        reverse("boards:task-move", kwargs={"pk": task.pk}),
+        {"new_status": "in_progress"},
+        HTTP_HX_REQUEST="true",
+        HTTP_HX_TARGET="task-panel-content",
+    )
+    content = response.content.decode()
+    task.refresh_from_db()
+
+    assert response.status_code == 200
+    assert task.status == "in_progress"
+    assert 'id="board-content"' in content
+    assert 'hx-swap-oob="innerHTML"' in content
+    assert f'id="task-panel-status-{task.pk}"' in content
+    assert 'id="task-comment-form"' in content
 
 
 @pytest.mark.django_db

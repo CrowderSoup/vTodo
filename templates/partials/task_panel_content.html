@@ -39,6 +39,22 @@
   {% endif %}
 
   <section class="task-panel-section">
+    <span class="section-title">Status</span>
+    <select id="task-panel-status-{{ task.pk }}"
+            class="task-panel-status-select"
+            name="new_status"
+            aria-label="Task status"
+            hx-post="{% url 'boards:task-move' task.pk %}"
+            hx-trigger="change"
+            hx-target="#task-panel-content"
+            hx-swap="innerHTML">
+      {% for status in statuses %}
+      <option value="{{ status.slug }}" {% if task.status == status.slug %}selected{% endif %}>{{ status.name }}</option>
+      {% endfor %}
+    </select>
+  </section>
+
+  <section class="task-panel-section">
     <span class="section-title">Notes</span>
     {% if notes_html %}
     <div class="task-panel-notes">{{ notes_html|safe }}</div>

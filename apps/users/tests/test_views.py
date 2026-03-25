@@ -50,3 +50,14 @@ def test_settings_post_rejects_default_column_from_another_user(logged_in_client
     user.refresh_from_db()
     assert response.status_code == 302
     assert user.default_column_id is None
+
+
+@pytest.mark.django_db
+def test_settings_includes_shared_confirm_modal(logged_in_client):
+    client, _ = logged_in_client
+    response = client.get(reverse("users:settings"))
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert 'id="confirm-modal"' in content
+    assert 'id="confirm-modal-cancel"' in content

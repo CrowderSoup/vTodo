@@ -50,17 +50,6 @@
   {% endif %}
 
   <div class="task-card-actions">
-    <select class="task-status-select"
-            name="new_status"
-            hx-post="{% url 'boards:task-move' task.pk %}"
-            hx-trigger="change"
-            hx-target="#board-content"
-            hx-swap="innerHTML">
-      {% for status in statuses %}
-      <option value="{{ status.slug }}" {% if task.status == status.slug %}selected{% endif %}>{{ status.name }}</option>
-      {% endfor %}
-    </select>
-
     <div class="task-action-row">
       {% if not task.completed_at %}
       <button class="btn-secondary btn-icon" title="Mark complete"

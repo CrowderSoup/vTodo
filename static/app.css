@@ -87,6 +87,11 @@ body {
     linear-gradient(180deg, var(--bg-elevated), var(--bg));
 }
 
+body.panel-open,
+body.confirm-modal-open {
+  overflow: hidden;
+}
+
 body::before {
   content: "";
   position: fixed;
@@ -1103,16 +1108,8 @@ hr {
 .task-card-actions {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
   margin-top: auto;
-  min-width: 0;
-}
-
-.task-status-select {
-  flex: 1;
-  min-width: 0;
-  min-height: 2.2rem;
-  padding-block: 0.42rem;
+  justify-content: flex-end;
 }
 
 .task-action-row {
@@ -1133,6 +1130,53 @@ hr {
 
 .task-panel-overlay.open {
   display: block;
+}
+
+.confirm-modal {
+  width: min(30rem, calc(100vw - 1.5rem));
+  margin: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.confirm-modal::backdrop {
+  background: rgba(11, 16, 21, 0.42);
+  backdrop-filter: blur(6px);
+}
+
+.confirm-modal-card {
+  display: grid;
+  gap: 1.1rem;
+  padding: 1.2rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius-lg) + 2px);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(24px);
+}
+
+.confirm-modal-copy {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.confirm-modal-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.4rem;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.confirm-modal-message {
+  color: var(--text-soft);
+}
+
+.confirm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
 }
 
 .task-panel {
@@ -1233,6 +1277,11 @@ hr {
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
+}
+
+.task-panel-status-select {
+  width: 100%;
+  min-height: 2.55rem;
 }
 
 .section-title {
@@ -1830,6 +1879,14 @@ textarea:has(+ .EasyMDEContainer) {
 
   .task-panel {
     width: 100vw;
+  }
+
+  .confirm-modal {
+    width: min(100vw - 1rem, 30rem);
+  }
+
+  .confirm-modal-actions {
+    display: grid;
   }
 
   .task-panel-footer {

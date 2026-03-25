@@ -5,6 +5,94 @@
   var dropPosition = null;
   var notesEditor = null;
   var commentEditor = null;
+  var pendingConfirmAction = null;
+
+  function getConfirmModalElements() {
+    return {
+      modal: document.getElementById("confirm-modal"),
+      message: document.getElementById("confirm-modal-message"),
+      confirmButton: document.getElementById("confirm-modal-confirm"),
+      cancelButton: document.getElementById("confirm-modal-cancel"),
+    };
+  }
+
+  function isConfirmModalOpen() {
+    var modal = getConfirmModalElements().modal;
+    return !!(modal && modal.open);
+  }
+
+  function resetConfirmModal() {
+    var elements = getConfirmModalElements();
+    if (elements.message) {
+      elements.message.textContent = "";
+    }
+    if (elements.confirmButton) {
+      elements.confirmButton.textContent = "Confirm";
+      elements.confirmButton.classList.remove("btn-danger");
+      elements.confirmButton.classList.add("btn-primary");
+    }
+    pendingConfirmAction = null;
+    document.body.classList.remove("confirm-modal-open");
+  }
+
+  function closeConfirmModal() {
+    var modal = getConfirmModalElements().modal;
+    if (!modal) {
+      resetConfirmModal();
+      return;
+    }
+
+    if (modal.open) {
+      modal.close();
+      return;
+    }
+
+    resetConfirmModal();
+  }
+
+  function setConfirmButtonState(question) {
+    var confirmButton = getConfirmModalElements().confirmButton;
+    if (!confirmButton) {
+      return;
+    }
+
+    var destructiveMatch = question.match(/^\s*(delete|archive|remove)\b/i);
+    if (destructiveMatch) {
+      confirmButton.textContent = destructiveMatch[1].charAt(0).toUpperCase() + destructiveMatch[1].slice(1);
+      confirmButton.classList.remove("btn-primary");
+      confirmButton.classList.add("btn-danger");
+      return;
+    }
+
+    confirmButton.textContent = "Confirm";
+    confirmButton.classList.remove("btn-danger");
+    confirmButton.classList.add("btn-primary");
+  }
+
+  function openConfirmModal(question, onConfirm) {
+    var elements = getConfirmModalElements();
+    if (!elements.modal || !elements.message || typeof elements.modal.showModal !== "function") {
+      return false;
+    }
+
+    if (elements.modal.open) {
+      elements.modal.close();
+    }
+
+    elements.message.textContent = question;
+    setConfirmButtonState(question);
+    pendingConfirmAction = onConfirm;
+    elements.modal.showModal();
+    document.body.classList.add("confirm-modal-open");
+
+    window.requestAnimationFrame(function () {
+      if (elements.confirmButton) {
+        elements.confirmButton.focus();
+      }
+    });
+
+    return true;
+  }
 
   function getCsrfToken() {
     var match = document.cookie.match(/csrftoken=([^;]+)/);
@@ -163,6 +251,39 @@
       var activeTab = window.location.hash.replace("#", "") === "email" ? "email" : "indieweb";
       switchTab(activeTab);
     }
+
+    var confirmElements = getConfirmModalElements();
+    if (confirmElements.cancelButton) {
+      confirmElements.cancelButton.addEventListener("click", function () {
+        closeConfirmModal();
+      });
+    }
+    if (confirmElements.confirmButton) {
+      confirmElements.confirmButton.addEventListener("click", function () {
+        var confirmAction = pendingConfirmAction;
+        closeConfirmModal();
+        if (confirmAction) {
+          confirmAction();
+        }
+      });
+    }
+    if (confirmElements.modal) {
+      confirmElements.modal.addEventListener("close", function () {
+        resetConfirmModal();
+      });
+      confirmElements.modal.addEventListener("click", function (event) {
+        var rect = confirmElements.modal.getBoundingClientRect();
+        var isBackdropClick = (
+          event.clientX < rect.left ||
+          event.clientX > rect.right ||
+          event.clientY < rect.top ||
+          event.clientY > rect.bottom
+        );
+        if (isBackdropClick) {
+          closeConfirmModal();
+        }
+      });
+    }
   });
 
   document.addEventListener("click", function (event) {
@@ -185,6 +306,9 @@
 
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape") {
+      if (isConfirmModalOpen()) {
+        return;
+      }
       closeTaskPanel();
       closeOpenDisclosures(null);
     }
@@ -419,6 +543,22 @@
   document.addEventListener("htmx:afterRequest", function (event) {
     if (event.target.id === "task-comment-form" && event.detail.successful && commentEditor) {
       commentEditor.value("");
+    }
+  });
+
+  document.addEventListener("htmx:confirm", function (event) {
+    if (!event.detail.question) {
+      return;
+    }
+
+    event.preventDefault();
+
+    var didOpenModal = openConfirmModal(event.detail.question, function () {
+      event.detail.issueRequest(true);
+    });
+
+    if (!didOpenModal && window.confirm(event.detail.question)) {
+      event.detail.issueRequest(true);
     }
   });
 

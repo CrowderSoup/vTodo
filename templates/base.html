@@ -80,6 +80,20 @@
     <div id="task-panel-content"></div>
   </aside>
 
+  <dialog id="confirm-modal" class="confirm-modal" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-message">
+    <div class="confirm-modal-card">
+      <div class="confirm-modal-copy">
+        <span class="eyebrow">Confirm action</span>
+        <h2 id="confirm-modal-title" class="confirm-modal-title">Are you sure?</h2>
+        <p id="confirm-modal-message" class="confirm-modal-message"></p>
+      </div>
+      <div class="confirm-modal-actions">
+        <button id="confirm-modal-cancel" class="btn-ghost" type="button">Cancel</button>
+        <button id="confirm-modal-confirm" class="btn-primary" type="button">Confirm</button>
+      </div>
+    </div>
+  </dialog>
+
   <main>
     {% block content %}{% endblock %}
   </main>
