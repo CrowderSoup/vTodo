@@ -299,6 +299,37 @@ def test_task_detail_hides_status_select(logged_in_client):
     assert 'class="task-status-select"' not in content
 
 
+@pytest.mark.django_db
+def test_task_detail_for_incomplete_task_shows_complete_edit_and_delete(logged_in_client):
+    client, user = logged_in_client
+    task = Task.objects.create(user=user, title="My task", status="todo")
+    response = client.get(reverse("boards:task-detail", kwargs={"pk": task.pk}))
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert 'title="Mark complete"' in content
+    assert 'title="Edit task"' in content
+    assert 'title="Delete task"' in content
+    assert f'hx-get="{reverse("boards:task-panel-edit", kwargs={"pk": task.pk})}"' in content
+    assert 'hx-target="#task-panel-content"' in content
+    assert 'hx-on::after-request="openTaskPanel()"' in content
+    assert content.index('title="Mark complete"') < content.index('title="Edit task"')
+    assert content.index('title="Edit task"') < content.index('title="Delete task"')
+
+
+@pytest.mark.django_db
+def test_task_detail_for_completed_task_hides_edit_and_delete(logged_in_client):
+    client, user = logged_in_client
+    task = Task.objects.create(user=user, title="Done task", status="done", completed_at=timezone.now())
+    response = client.get(reverse("boards:task-detail", kwargs={"pk": task.pk}))
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert 'title="Move back to active"' in content
+    assert 'title="Edit task"' not in content
+    assert 'title="Delete task"' not in content
+
+
 # ---------------------------------------------------------------------------
 # TaskPanelView — today in panel context
 # ---------------------------------------------------------------------------

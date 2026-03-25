@@ -57,6 +57,16 @@
               hx-vals='{"new_status": "{{ done_slug }}"}'
               hx-target="#board-content"
               hx-swap="innerHTML">✓</button>
+      <button class="btn-secondary btn-icon" title="Edit task"
+              hx-get="{% url 'boards:task-panel-edit' task.pk %}"
+              hx-target="#task-panel-content"
+              hx-swap="innerHTML"
+              hx-on::after-request="openTaskPanel()">✎</button>
+      <button class="btn-danger btn-icon" title="Delete task"
+              hx-post="{% url 'boards:task-delete' task.pk %}"
+              hx-target="#task-{{ task.pk }}"
+              hx-swap="outerHTML"
+              hx-confirm="Delete &ldquo;{{ task.title|escapejs }}&rdquo;?">×</button>
       {% else %}
       <button class="btn-secondary btn-icon" title="Move back to active"
               hx-post="{% url 'boards:task-move' task.pk %}"
@@ -64,12 +74,6 @@
               hx-target="#board-content"
               hx-swap="innerHTML">↩</button>
       {% endif %}
-
-      <button class="btn-danger btn-icon" title="Delete task"
-              hx-post="{% url 'boards:task-delete' task.pk %}"
-              hx-target="#task-{{ task.pk }}"
-              hx-swap="outerHTML"
-              hx-confirm="Delete &ldquo;{{ task.title|escapejs }}&rdquo;?">×</button>
     </div>
   </div>
 </article>
