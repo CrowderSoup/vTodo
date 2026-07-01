@@ -1,0 +1,75 @@
+# Kamal 2 deploy config for vtodo (vtodo.crowdersoup.com + mcp.vtodo.crowdersoup.com)
+#
+# vtodo owns Redis for the crowder-cloud droplet. Boot it before deploying padd:
+#   kamal accessory boot redis
+
+service: vtodo
+image: crowdersoup/vtodo
+
+servers:
+  web:
+    hosts:
+      - 64.23.247.60
+    proxy:
+      ssl: true
+      host: vtodo.crowdersoup.com
+      app_port: 8000
+      healthcheck:
+        path: /up/
+  mcp:
+    hosts:
+      - 64.23.247.60
+    cmd: "uv run python -m mcp_server"
+    proxy:
+      ssl: true
+      host: mcp.vtodo.crowdersoup.com
+      app_port: 8001
+      healthcheck:
+        path: /up
+    env:
+      clear:
+        VTODO_API_URL: https://vtodo.crowdersoup.com
+        VTODO_MCP_TRANSPORT: sse
+      secret:
+        - VTODO_API_TOKEN
+        - VTODO_MCP_TOKEN
+
+registry:
+  server: ghcr.io
+  username: crowdersoup
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+builder:
+  arch: amd64
+
+ssh:
+  user: deploy
+  keys:
+    - ~/.ssh/crowder-cloud
+
+env:
+  clear:
+    DEBUG: "False"
+    ALLOWED_HOSTS: vtodo.crowdersoup.com,localhost,127.0.0.1,*
+    CSRF_TRUSTED_ORIGINS: https://vtodo.crowdersoup.com
+    INDIEAUTH_CLIENT_ID: https://vtodo.crowdersoup.com/
+    EMAIL_BACKEND: django.core.mail.backends.smtp.EmailBackend
+    EMAIL_HOST: smtppro.zoho.com
+    EMAIL_PORT: "465"
+    EMAIL_HOST_USER: aaron@crowder.cloud
+    EMAIL_USE_SSL: "True"
+    DEFAULT_FROM_EMAIL: Aaron <aaron@crowder.cloud>
+  secret:
+    - SECRET_KEY
+    - DATABASE_URL
+    - CELERY_BROKER_URL   # redis://vtodo-redis:6379/0
+    - EMAIL_HOST_PASSWORD
+
+accessories:
+  redis:
+    image: redis:7
+    host: 64.23.247.60
+    port: 6379
+    directories:
+      - data:/data

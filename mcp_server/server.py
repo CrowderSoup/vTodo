@@ -271,6 +271,16 @@ def main() -> None:
                 await send({"type": "http.response.body", "body": b""})
                 return
 
+            # Unauthenticated health check for Kamal's proxy.
+            if scope.get("path") == "/up":
+                await send_with_cors({
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [(b"content-length", b"2")],
+                })
+                await send({"type": "http.response.body", "body": b"OK"})
+                return
+
             if mcp_token:
                 headers = dict(scope.get("headers", []))
                 auth = headers.get(b"authorization", b"").decode()

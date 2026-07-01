@@ -1,9 +1,11 @@
 from django.conf import settings
+from django.http import HttpResponse
 from django.urls import include, path
 from django.views.generic import RedirectView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
 urlpatterns = [
+    path("up/", lambda request: HttpResponse("OK")),
     path("", RedirectView.as_view(url="/login/", permanent=False)),
     # Combined login page lives at the indieauth namespace root
     path("login/", include("apps.indieauth.urls", namespace="indieauth")),
