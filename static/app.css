@@ -795,7 +795,7 @@ hr {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;
-  height: 4px;
+  height: 16px;
   border-radius: 16px 16px 0 0;
   background: linear-gradient(90deg, var(--column-accent, var(--accent)), transparent 82%);
 }
@@ -806,6 +806,7 @@ hr {
   justify-content: space-between;
   gap: 0.55rem;
   margin-bottom: 0.75rem;
+  margin-top: 0.5rem;
   min-width: 0;
 }
 
