@@ -23,11 +23,17 @@
   {% if task.tags %}
   <div class="tag-row">
     {% for tag in task.tags %}
-    <button class="tag-pill"
-            hx-post="{% url 'boards:board-filter-add-tag' %}"
-            hx-target="#board-content"
-            hx-swap="innerHTML"
-            hx-vals='{"tag": "{{ tag }}"}'>{{ tag }}</button>
+    <span class="tag-pill-group">
+      <button class="tag-pill" title="Filter to tasks tagged &ldquo;{{ tag }}&rdquo;"
+              hx-post="{% url 'boards:board-filter-add-tag' %}"
+              hx-target="#board-content"
+              hx-swap="innerHTML"
+              hx-vals='{"tag": "{{ tag }}"}'>{{ tag }}</button><button class="tag-pill tag-pill--exclude" title="Hide tasks tagged &ldquo;{{ tag }}&rdquo;"
+              hx-post="{% url 'boards:board-filter-exclude-tag' %}"
+              hx-target="#board-content"
+              hx-swap="innerHTML"
+              hx-vals='{"tag": "{{ tag }}"}'>⊘</button>
+    </span>
     {% endfor %}
   </div>
   {% endif %}

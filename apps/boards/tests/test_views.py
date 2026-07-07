@@ -135,6 +135,67 @@ def test_board_active_filter_count_combined(logged_in_client):
     assert response.context["active_filter_count"] == 3
 
 
+@pytest.mark.django_db
+def test_board_active_filter_count_with_exclude_tag_filter(logged_in_client):
+    """active_filter_count increments for each active exclude-tag filter."""
+    client, _ = logged_in_client
+    session = client.session
+    session["board_filter"] = {"tags": [], "exclude_tags": ["urgent", "bug"], "due": "", "hidden_columns": []}
+    session.save()
+    response = client.get(reverse("boards:board"))
+    assert response.context["active_filter_count"] == 2
+
+
+@pytest.mark.django_db
+def test_board_exclude_tag_filter_hides_matching_tasks(logged_in_client):
+    """Tasks with an excluded tag are hidden from the board, others remain visible."""
+    client, user = logged_in_client
+    Task.objects.create(user=user, title="Has tag", status="todo", tags=["urgent"])
+    Task.objects.create(user=user, title="No tag", status="todo", tags=["misc"])
+    session = client.session
+    session["board_filter"] = {"tags": [], "exclude_tags": ["urgent"], "due": "", "hidden_columns": []}
+    session.save()
+    response = client.get(reverse("boards:board"))
+    assert response.context["visible_task_count"] == 1
+
+
+@pytest.mark.django_db
+def test_board_filter_add_exclude_tag_view_adds_tag(logged_in_client):
+    """Posting to board-filter-exclude-tag appends the tag to the session's exclude list."""
+    client, _ = logged_in_client
+    response = client.post(reverse("boards:board-filter-exclude-tag"), {"tag": "urgent"})
+    assert response.status_code == 200
+    assert client.session["board_filter"]["exclude_tags"] == ["urgent"]
+
+
+@pytest.mark.django_db
+def test_board_filter_add_exclude_tag_removes_from_include(logged_in_client):
+    """Excluding a tag that is currently an include-filter removes it from the include list."""
+    client, _ = logged_in_client
+    session = client.session
+    session["board_filter"] = {"tags": ["urgent"], "exclude_tags": [], "due": "", "hidden_columns": []}
+    session.save()
+    response = client.post(reverse("boards:board-filter-exclude-tag"), {"tag": "urgent"})
+    assert response.status_code == 200
+    board_filter = client.session["board_filter"]
+    assert board_filter["tags"] == []
+    assert board_filter["exclude_tags"] == ["urgent"]
+
+
+@pytest.mark.django_db
+def test_board_filter_add_tag_removes_from_exclude(logged_in_client):
+    """Including a tag that is currently an exclude-filter removes it from the exclude list."""
+    client, _ = logged_in_client
+    session = client.session
+    session["board_filter"] = {"tags": [], "exclude_tags": ["urgent"], "due": "", "hidden_columns": []}
+    session.save()
+    response = client.post(reverse("boards:board-filter-add-tag"), {"tag": "urgent"})
+    assert response.status_code == 200
+    board_filter = client.session["board_filter"]
+    assert board_filter["tags"] == ["urgent"]
+    assert board_filter["exclude_tags"] == []
+
+
 # ---------------------------------------------------------------------------
 # TaskCreateView — today in task card context
 # ---------------------------------------------------------------------------

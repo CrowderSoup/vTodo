@@ -674,6 +674,12 @@ hr {
   color: var(--bg-elevated);
 }
 
+.filter-pill--danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--bg-elevated);
+}
+
 .board-filter-actions {
   display: flex;
   align-items: center;
@@ -1071,6 +1077,29 @@ hr {
   background: var(--accent-soft);
   color: var(--accent-strong);
   box-shadow: none;
+}
+
+.tag-pill-group {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.tag-pill-group .tag-pill {
+  border-radius: 999px 0 0 999px;
+  border-right: none;
+}
+
+.tag-pill--exclude {
+  border-radius: 0 999px 999px 0;
+  border-left: 1px solid var(--border);
+  padding-left: 0.42rem;
+  padding-right: 0.42rem;
+  font-weight: 400;
+}
+
+.tag-pill--exclude:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .meta-row {

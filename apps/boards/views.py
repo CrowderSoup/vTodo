@@ -135,6 +135,7 @@ def _build_board_context(user, session=None):
 
     board_filter = (session.get("board_filter") or {}) if session else {}
     filter_tags = board_filter.get("tags", [])
+    exclude_tags = board_filter.get("exclude_tags", [])
     filter_due = board_filter.get("due", "").strip()
     hidden_column_pks = set(board_filter.get("hidden_columns", []))
 
@@ -143,6 +144,8 @@ def _build_board_context(user, session=None):
 
     if filter_tags:
         tasks = [t for t in tasks if all(tag in t.tags for tag in filter_tags)]
+    if exclude_tags:
+        tasks = [t for t in tasks if not any(tag in t.tags for tag in exclude_tags)]
     if filter_due:
         if filter_due == "overdue":
             tasks = [t for t in tasks if t.due_date and t.due_date < today]
@@ -170,11 +173,17 @@ def _build_board_context(user, session=None):
 
     saved_filters = list(board.saved_filters.all())
     active_saved_filter_name = None
-    current_config = {"tags": filter_tags, "due": filter_due, "hidden_columns": list(hidden_column_pks)}
+    current_config = {
+        "tags": filter_tags,
+        "exclude_tags": exclude_tags,
+        "due": filter_due,
+        "hidden_columns": list(hidden_column_pks),
+    }
     for sf in saved_filters:
         sf_config = sf.filter_config
         if (
             sorted(sf_config.get("tags", [])) == sorted(current_config["tags"])
+            and sorted(sf_config.get("exclude_tags", [])) == sorted(current_config["exclude_tags"])
             and sf_config.get("due", "") == current_config["due"]
             and sorted(sf_config.get("hidden_columns", [])) == sorted(current_config["hidden_columns"])
         ):
@@ -187,7 +196,12 @@ def _build_board_context(user, session=None):
         "statuses": statuses,
         "done_slug": done_slug,
         "active_slug": active_slug,
-        "active_filter": {"tags": filter_tags, "due": filter_due, "hidden_columns": hidden_columns},
+        "active_filter": {
+            "tags": filter_tags,
+            "exclude_tags": exclude_tags,
+            "due": filter_due,
+            "hidden_columns": hidden_columns,
+        },
         "saved_filters": saved_filters,
         "active_saved_filter_name": active_saved_filter_name,
         "today": today,
@@ -196,7 +210,7 @@ def _build_board_context(user, session=None):
         "done_task_count": sum(1 for task in all_tasks if task.completed_at),
         "due_today_count": sum(1 for task in tasks if task.due_date == today and not task.completed_at),
         "overdue_count": sum(1 for task in tasks if task.due_date and task.due_date < today and not task.completed_at),
-        "active_filter_count": len(filter_tags) + len(hidden_column_pks) + (1 if filter_due else 0),
+        "active_filter_count": len(filter_tags) + len(exclude_tags) + len(hidden_column_pks) + (1 if filter_due else 0),
     }
 
 
@@ -209,26 +223,61 @@ class BoardView(LoginRequiredMixin, View):
 class BoardFilterView(LoginRequiredMixin, View):
     def post(self, request):
         tags = request.POST.getlist("tags")
+        exclude_tags = request.POST.getlist("exclude_tags")
         due = request.POST.get("due", "").strip()
         hidden_columns = [int(pk) for pk in request.POST.getlist("hidden_columns") if pk.isdigit()]
-        request.session["board_filter"] = {"tags": tags, "due": due, "hidden_columns": hidden_columns}
+        request.session["board_filter"] = {
+            "tags": tags,
+            "exclude_tags": exclude_tags,
+            "due": due,
+            "hidden_columns": hidden_columns,
+        }
         request.session.modified = True
         context = _build_board_context(request.user, request.session)
         return render(request, "boards/_filter_response.html", context)
 
 
 class BoardFilterAddTagView(LoginRequiredMixin, View):
-    """Add a single tag to the active filter without replacing existing ones."""
+    """Add a single tag to the active (inclusive) filter without replacing existing ones."""
 
     def post(self, request):
         tag = request.POST.get("tag", "").strip()
         board_filter = request.session.get("board_filter") or {}
         current_tags = board_filter.get("tags", [])
+        exclude_tags = [t for t in board_filter.get("exclude_tags", []) if t != tag]
         due = board_filter.get("due", "")
         hidden_columns = board_filter.get("hidden_columns", [])
         if tag and tag not in current_tags:
             current_tags = current_tags + [tag]
-        request.session["board_filter"] = {"tags": current_tags, "due": due, "hidden_columns": hidden_columns}
+        request.session["board_filter"] = {
+            "tags": current_tags,
+            "exclude_tags": exclude_tags,
+            "due": due,
+            "hidden_columns": hidden_columns,
+        }
+        request.session.modified = True
+        context = _build_board_context(request.user, request.session)
+        return render(request, "boards/_filter_response.html", context)
+
+
+class BoardFilterExcludeTagView(LoginRequiredMixin, View):
+    """Add a single tag to the active exclude filter without replacing existing ones."""
+
+    def post(self, request):
+        tag = request.POST.get("tag", "").strip()
+        board_filter = request.session.get("board_filter") or {}
+        current_tags = [t for t in board_filter.get("tags", []) if t != tag]
+        exclude_tags = board_filter.get("exclude_tags", [])
+        due = board_filter.get("due", "")
+        hidden_columns = board_filter.get("hidden_columns", [])
+        if tag and tag not in exclude_tags:
+            exclude_tags = exclude_tags + [tag]
+        request.session["board_filter"] = {
+            "tags": current_tags,
+            "exclude_tags": exclude_tags,
+            "due": due,
+            "hidden_columns": hidden_columns,
+        }
         request.session.modified = True
         context = _build_board_context(request.user, request.session)
         return render(request, "boards/_filter_response.html", context)

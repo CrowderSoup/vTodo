@@ -8,6 +8,7 @@ urlpatterns = [
     path("", views.BoardView.as_view(), name="board"),
     path("filter/", views.BoardFilterView.as_view(), name="board-filter"),
     path("filter/add-tag/", views.BoardFilterAddTagView.as_view(), name="board-filter-add-tag"),
+    path("filter/exclude-tag/", views.BoardFilterExcludeTagView.as_view(), name="board-filter-exclude-tag"),
     path("filters/save/", views.SavedFilterSaveView.as_view(), name="filter-save"),
     path("filters/<int:pk>/load/", views.SavedFilterLoadView.as_view(), name="filter-load"),
     path("filters/<int:pk>/delete/", views.SavedFilterDeleteView.as_view(), name="filter-delete"),
