@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block body_class %}page-settings{% endblock %}
+{% block title %}{% block settings_title %}Settings{% endblock %} — vtodo{% endblock %}
+
+{% block content %}
+<section class="page-shell page-shell--narrow">
+  <header class="page-hero page-hero--settings surface-panel">
+    <div class="hero-copy">
+      <span class="eyebrow">Settings and structure</span>
+      <h1 class="page-title">Shape the board around how you actually work.</h1>
+      <p class="page-subtitle">
+        Update your profile, automate daily summaries, and tune the statuses and columns that keep your board feeling like your own system instead of a default template.
+      </p>
+    </div>
+
+    <div class="hero-aside">
+      <div class="hero-stats">
+        <div class="stat-pill">
+          <span class="stat-value">{{ statuses_count }}</span>
+          <span class="stat-label">task statuses</span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-value">{{ columns_count }}</span>
+          <span class="stat-label">board columns</span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-value">{{ daily_summary_on|yesno:"On,Off" }}</span>
+          <span class="stat-label">daily summary</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  {% include "users/settings/_nav.html" %}
+
+  {% block settings_content %}{% endblock %}
+</section>
+{% endblock %}

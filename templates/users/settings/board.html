@@ -1,0 +1,96 @@
+{% extends "users/settings/_base.html" %}
+
+{% block settings_title %}Board Setup{% endblock %}
+
+{% block settings_content %}
+<div class="settings-grid">
+  <section class="settings-card surface-panel">
+    <div>
+      <h2 class="card-title">Task Statuses</h2>
+      <p class="card-subtitle">Statuses drive the workflow options on each card and power your board lanes.</p>
+    </div>
+
+    <div id="status-list" class="settings-list">
+      {% include "users/_status_list.html" %}
+    </div>
+
+    <form class="inline-form"
+          hx-post="{% url 'users:status-create' %}"
+          hx-target="#status-list"
+          hx-swap="innerHTML"
+          hx-on::after-request="this.reset()">
+      {% csrf_token %}
+      <div class="form-field">
+        <label class="field-label" for="status-name">Status name</label>
+        <input id="status-name" type="text" name="name" placeholder="Status name" required>
+      </div>
+
+      <label class="checkbox-field" for="status-is-done">
+        <input id="status-is-done" type="checkbox" name="is_done">
+        <span>
+          <strong>Done state</strong><br>
+          <span class="field-help">Marks cards as complete when selected.</span>
+        </span>
+      </label>
+
+      <div class="form-field">
+        <button type="submit" class="btn-primary">Add status</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="settings-card settings-card--wide surface-panel">
+    <div>
+      <h2 class="card-title">Board Columns</h2>
+      <p class="card-subtitle">
+        Columns filter the same task list into a clearer flow. Leave filters blank to create a catch-all lane.
+      </p>
+    </div>
+
+    <div id="column-list" class="settings-list">
+      {% include "users/_column_list.html" %}
+    </div>
+
+    <form class="column-create-form"
+          hx-post="{% url 'users:column-create' %}"
+          hx-target="#column-list"
+          hx-swap="innerHTML"
+          hx-on::after-request="this.reset()">
+      {% csrf_token %}
+
+      <div class="form-field">
+        <label class="field-label" for="column-label">Column label</label>
+        <input id="column-label" type="text" name="label" placeholder="Column label" required>
+      </div>
+
+      <div class="form-grid form-grid--two">
+        <div class="form-field">
+          <label class="field-label" for="column-statuses">Status slugs</label>
+          <input id="column-statuses" type="text" name="statuses" placeholder="todo,in_progress">
+        </div>
+
+        <div class="form-field">
+          <label class="field-label" for="column-tags">Tags</label>
+          <input id="column-tags" type="text" name="tags" placeholder="work,urgent">
+        </div>
+      </div>
+
+      <div class="form-grid form-grid--two">
+        <div class="form-field">
+          <label class="field-label" for="column-due">Due date filter</label>
+          <select id="column-due" name="due">
+            <option value="">No due date filter</option>
+            <option value="today">Due today</option>
+            <option value="this_week">Due this week</option>
+            <option value="overdue">Overdue</option>
+          </select>
+        </div>
+
+        <div class="form-field" style="justify-content: end; display: flex;">
+          <button type="submit" class="btn-primary">Add column</button>
+        </div>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "users/settings/_base.html" %}
+
+{% block settings_title %}API{% endblock %}
+
+{% block settings_content %}
+<div class="settings-grid">
+  <section class="settings-card settings-card--wide surface-panel">
+    <div>
+      <h2 class="card-title">API Token</h2>
+      <p class="card-subtitle">
+        Use this token to authenticate with the <a class="auth-link" href="/api/docs/">REST API</a>.
+      </p>
+    </div>
+
+    <div id="api-token-section"
+         hx-get="{% url 'users:api-token' %}"
+         hx-trigger="load">
+    </div>
+  </section>
+</div>
+{% endblock %}
