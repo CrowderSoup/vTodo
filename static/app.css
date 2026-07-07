@@ -1090,7 +1090,7 @@ hr {
 }
 
 .tag-pill--exclude {
-  border-radius: 0 999px 999px 0;
+  border-radius: 0 999px 999px 0 !important;
   border-left: 1px solid var(--border);
   padding-left: 0.42rem;
   padding-right: 0.42rem;
