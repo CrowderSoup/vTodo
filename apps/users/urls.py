@@ -5,7 +5,10 @@ from . import views
 app_name = "users"
 
 urlpatterns = [
-    path("", views.SettingsView.as_view(), name="settings"),
+    path("", views.SettingsGeneralView.as_view(), name="settings"),
+    path("board/", views.SettingsBoardView.as_view(), name="settings-board"),
+    path("integrations/", views.SettingsIntegrationsView.as_view(), name="settings-integrations"),
+    path("api/", views.SettingsApiView.as_view(), name="settings-api"),
     path("statuses/create/", views.TaskStatusCreateView.as_view(), name="status-create"),
     path("statuses/<int:pk>/delete/", views.TaskStatusDeleteView.as_view(), name="status-delete"),
     path("columns/create/", views.ColumnCreateView.as_view(), name="column-create"),

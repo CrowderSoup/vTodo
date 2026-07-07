@@ -1,0 +1,55 @@
+{% extends "users/settings/_base.html" %}
+
+{% block settings_title %}General{% endblock %}
+
+{% block settings_content %}
+<form method="post" action="{% url 'users:settings' %}" class="settings-grid">
+  {% csrf_token %}
+
+  <section class="settings-card surface-panel">
+    <div>
+      <h2 class="card-title">Profile</h2>
+      <p class="card-subtitle">This is the identity shown around the app and alongside your integrations.</p>
+    </div>
+
+    <div class="form-field">
+      <label class="field-label" for="display_name">Display name</label>
+      <input type="text" id="display_name" name="display_name" value="{{ user.display_name }}">
+    </div>
+
+    <div class="form-field">
+      <label class="field-label" for="avatar_url">Avatar URL</label>
+      <input type="url"
+             id="avatar_url"
+             name="avatar_url"
+             value="{{ user.avatar_url }}"
+             placeholder="https://example.com/avatar.jpg">
+    </div>
+  </section>
+
+  <section class="settings-card surface-panel">
+    <div>
+      <h2 class="card-title">Task Capture</h2>
+      <p class="card-subtitle">Choose where the board FAB should send brand-new tasks by default.</p>
+    </div>
+
+    <div class="form-field">
+      <label class="field-label" for="default_column">Default lane</label>
+      <select id="default_column" name="default_column">
+        <option value="">First lane on the board</option>
+        {% for column in columns %}
+        <option value="{{ column.pk }}" {% if default_column_id == column.pk %}selected{% endif %}>{{ column.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <p class="field-help">Leave this unset to use your first lane whenever you create a task from the floating add button.</p>
+  </section>
+
+  <section class="settings-card settings-card--wide surface-panel">
+    <div class="settings-actions">
+      <button type="submit" class="btn-primary">Save settings</button>
+    </div>
+  </section>
+</form>
+{% endblock %}

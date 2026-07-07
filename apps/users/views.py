@@ -8,23 +8,41 @@ from django.urls import reverse
 from django.views import View
 
 
-class SettingsView(LoginRequiredMixin, View):
+def _hero_stats(user):
+    from apps.tasks.models import TaskStatus
+    from apps.boards.models import Board
+
+    statuses_count = TaskStatus.objects.filter(user=user).count()
+    try:
+        board = Board.objects.get(user=user)
+        columns_count = board.columns.count()
+    except Board.DoesNotExist:
+        columns_count = 0
+
+    return {
+        "statuses_count": statuses_count,
+        "columns_count": columns_count,
+        "daily_summary_on": user.daily_summary_enabled,
+    }
+
+
+class SettingsGeneralView(LoginRequiredMixin, View):
     def get(self, request):
-        from apps.tasks.models import TaskStatus
         from apps.boards.models import Board
 
-        statuses = TaskStatus.objects.filter(user=request.user)
         try:
             board = Board.objects.get(user=request.user)
             columns = board.columns.all()
         except Board.DoesNotExist:
             columns = []
 
-        return render(request, "users/settings.html", {
-            "statuses": statuses,
+        context = {
             "columns": columns,
             "default_column_id": request.user.default_column_id,
-        })
+            "active_tab": "general",
+        }
+        context.update(_hero_stats(request.user))
+        return render(request, "users/settings/general.html", context)
 
     def post(self, request):
         from apps.boards.models import Board
@@ -32,14 +50,6 @@ class SettingsView(LoginRequiredMixin, View):
         user = request.user
         user.display_name = request.POST.get("display_name", "").strip()
         user.avatar_url = request.POST.get("avatar_url", "").strip()
-        user.daily_summary_enabled = request.POST.get("daily_summary_enabled") == "on"
-
-        time_str = request.POST.get("daily_summary_time", "08:00")
-        try:
-            parts = time_str.split(":")
-            user.daily_summary_time = time(int(parts[0]), int(parts[1]))
-        except (ValueError, IndexError):
-            pass
 
         default_column = None
         default_column_id = request.POST.get("default_column", "").strip()
@@ -51,17 +61,60 @@ class SettingsView(LoginRequiredMixin, View):
                 default_column = None
         user.default_column = default_column
 
-        user.save(
-            update_fields=[
-                "display_name",
-                "avatar_url",
-                "daily_summary_enabled",
-                "daily_summary_time",
-                "default_column",
-            ]
-        )
+        user.save(update_fields=["display_name", "avatar_url", "default_column"])
         messages.success(request, "Settings saved.")
         return redirect(reverse("users:settings"))
+
+
+class SettingsIntegrationsView(LoginRequiredMixin, View):
+    def get(self, request):
+        context = {"active_tab": "integrations"}
+        context.update(_hero_stats(request.user))
+        return render(request, "users/settings/integrations.html", context)
+
+    def post(self, request):
+        user = request.user
+        user.daily_summary_enabled = request.POST.get("daily_summary_enabled") == "on"
+
+        time_str = request.POST.get("daily_summary_time", "08:00")
+        try:
+            parts = time_str.split(":")
+            user.daily_summary_time = time(int(parts[0]), int(parts[1]))
+        except (ValueError, IndexError):
+            pass
+
+        user.save(update_fields=["daily_summary_enabled", "daily_summary_time"])
+        messages.success(request, "Settings saved.")
+        return redirect(reverse("users:settings-integrations"))
+
+
+class SettingsBoardView(LoginRequiredMixin, View):
+    def get(self, request):
+        from apps.tasks.models import TaskStatus
+        from apps.boards.models import Board
+
+        statuses = TaskStatus.objects.filter(user=request.user)
+        try:
+            board = Board.objects.get(user=request.user)
+            columns = board.columns.all()
+        except Board.DoesNotExist:
+            columns = []
+
+        context = {
+            "statuses": statuses,
+            "columns": columns,
+            "default_column_id": request.user.default_column_id,
+            "active_tab": "board",
+        }
+        context.update(_hero_stats(request.user))
+        return render(request, "users/settings/board.html", context)
+
+
+class SettingsApiView(LoginRequiredMixin, View):
+    def get(self, request):
+        context = {"active_tab": "api"}
+        context.update(_hero_stats(request.user))
+        return render(request, "users/settings/api.html", context)
 
 
 class TaskStatusCreateView(LoginRequiredMixin, View):
