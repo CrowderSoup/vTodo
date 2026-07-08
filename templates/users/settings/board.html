@@ -92,5 +92,18 @@
       </div>
     </form>
   </section>
+
+  <section class="settings-card settings-card--wide surface-panel">
+    <div>
+      <h2 class="card-title">Saved Views</h2>
+      <p class="card-subtitle">
+        Filter combinations you've saved from the board. Create new ones using "Save view" on the board's filter bar.
+      </p>
+    </div>
+
+    <div id="saved-views-list" class="settings-list">
+      {% include "users/_saved_views_list.html" %}
+    </div>
+  </section>
 </div>
 {% endblock %}

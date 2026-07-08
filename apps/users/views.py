@@ -88,6 +88,16 @@ class SettingsIntegrationsView(LoginRequiredMixin, View):
         return redirect(reverse("users:settings-integrations"))
 
 
+def _saved_filters_with_labels(board):
+    columns_by_pk = {column.pk: column.label for column in board.columns.all()}
+    saved_filters = list(board.saved_filters.all())
+    for sf in saved_filters:
+        sf.hidden_column_labels = [
+            columns_by_pk.get(pk, "") for pk in sf.filter_config.get("hidden_columns", [])
+        ]
+    return saved_filters
+
+
 class SettingsBoardView(LoginRequiredMixin, View):
     def get(self, request):
         from apps.tasks.models import TaskStatus
@@ -97,12 +107,15 @@ class SettingsBoardView(LoginRequiredMixin, View):
         try:
             board = Board.objects.get(user=request.user)
             columns = board.columns.all()
+            saved_filters = _saved_filters_with_labels(board)
         except Board.DoesNotExist:
             columns = []
+            saved_filters = []
 
         context = {
             "statuses": statuses,
             "columns": columns,
+            "saved_filters": saved_filters,
             "default_column_id": request.user.default_column_id,
             "active_tab": "board",
         }
@@ -193,6 +206,17 @@ class ColumnDeleteView(LoginRequiredMixin, View):
             "columns": columns,
             "default_column_id": request.user.default_column_id,
         })
+
+
+class SavedViewDeleteView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        from apps.boards.models import Board, SavedFilter
+
+        board = get_object_or_404(Board, user=request.user)
+        saved_filter = get_object_or_404(SavedFilter, pk=pk, board=board)
+        saved_filter.delete()
+        saved_filters = _saved_filters_with_labels(board)
+        return render(request, "users/_saved_views_list.html", {"saved_filters": saved_filters})
 
 
 class ApiTokenView(LoginRequiredMixin, View):
