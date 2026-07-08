@@ -41,8 +41,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     # Daily summary settings
     daily_summary_enabled = models.BooleanField(default=False)
     daily_summary_time = models.TimeField(default="08:00")
-    default_column = models.ForeignKey(
-        "boards.Column",
+    default_status = models.ForeignKey(
+        "tasks.TaskStatus",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
