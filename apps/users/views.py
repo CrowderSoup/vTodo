@@ -28,40 +28,32 @@ def _hero_stats(user):
 
 class SettingsGeneralView(LoginRequiredMixin, View):
     def get(self, request):
-        from apps.boards.models import Board
+        from apps.tasks.models import TaskStatus
 
-        try:
-            board = Board.objects.get(user=request.user)
-            columns = board.columns.all()
-        except Board.DoesNotExist:
-            columns = []
+        statuses = TaskStatus.objects.filter(user=request.user)
 
         context = {
-            "columns": columns,
-            "default_column_id": request.user.default_column_id,
+            "statuses": statuses,
+            "default_status_id": request.user.default_status_id,
             "active_tab": "general",
         }
         context.update(_hero_stats(request.user))
         return render(request, "users/settings/general.html", context)
 
     def post(self, request):
-        from apps.boards.models import Board
+        from apps.tasks.models import TaskStatus
 
         user = request.user
         user.display_name = request.POST.get("display_name", "").strip()
         user.avatar_url = request.POST.get("avatar_url", "").strip()
 
-        default_column = None
-        default_column_id = request.POST.get("default_column", "").strip()
-        if default_column_id.isdigit():
-            try:
-                board = Board.objects.get(user=user)
-                default_column = board.columns.filter(pk=int(default_column_id)).first()
-            except Board.DoesNotExist:
-                default_column = None
-        user.default_column = default_column
+        default_status = None
+        default_status_id = request.POST.get("default_status", "").strip()
+        if default_status_id.isdigit():
+            default_status = TaskStatus.objects.filter(user=user, pk=int(default_status_id)).first()
+        user.default_status = default_status
 
-        user.save(update_fields=["display_name", "avatar_url", "default_column"])
+        user.save(update_fields=["display_name", "avatar_url", "default_status"])
         messages.success(request, "Settings saved.")
         return redirect(reverse("users:settings"))
 
@@ -116,7 +108,7 @@ class SettingsBoardView(LoginRequiredMixin, View):
             "statuses": statuses,
             "columns": columns,
             "saved_filters": saved_filters,
-            "default_column_id": request.user.default_column_id,
+            "default_status_id": request.user.default_status_id,
             "active_tab": "board",
         }
         context.update(_hero_stats(request.user))
@@ -149,7 +141,10 @@ class TaskStatusCreateView(LoginRequiredMixin, View):
             defaults={"name": name, "is_done": is_done, "order": order},
         )
         statuses = TaskStatus.objects.filter(user=request.user)
-        return render(request, "users/_status_list.html", {"statuses": statuses})
+        return render(request, "users/_status_list.html", {
+            "statuses": statuses,
+            "default_status_id": request.user.default_status_id,
+        })
 
 
 class TaskStatusDeleteView(LoginRequiredMixin, View):
@@ -158,8 +153,12 @@ class TaskStatusDeleteView(LoginRequiredMixin, View):
 
         status = get_object_or_404(TaskStatus, pk=pk, user=request.user)
         status.delete()
+        request.user.refresh_from_db(fields=["default_status"])
         statuses = TaskStatus.objects.filter(user=request.user)
-        return render(request, "users/_status_list.html", {"statuses": statuses})
+        return render(request, "users/_status_list.html", {
+            "statuses": statuses,
+            "default_status_id": request.user.default_status_id,
+        })
 
 
 class ColumnCreateView(LoginRequiredMixin, View):
@@ -187,10 +186,7 @@ class ColumnCreateView(LoginRequiredMixin, View):
             order=order,
         )
         columns = board.columns.all()
-        return render(request, "users/_column_list.html", {
-            "columns": columns,
-            "default_column_id": request.user.default_column_id,
-        })
+        return render(request, "users/_column_list.html", {"columns": columns})
 
 
 class ColumnDeleteView(LoginRequiredMixin, View):
@@ -200,12 +196,8 @@ class ColumnDeleteView(LoginRequiredMixin, View):
         board = get_object_or_404(Board, user=request.user)
         column = get_object_or_404(Column, pk=pk, board=board)
         column.delete()
-        request.user.refresh_from_db(fields=["default_column"])
         columns = board.columns.all()
-        return render(request, "users/_column_list.html", {
-            "columns": columns,
-            "default_column_id": request.user.default_column_id,
-        })
+        return render(request, "users/_column_list.html", {"columns": columns})
 
 
 class SavedViewDeleteView(LoginRequiredMixin, View):

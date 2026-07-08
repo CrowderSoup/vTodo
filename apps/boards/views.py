@@ -54,27 +54,37 @@ def _resolve_status_slug(status, statuses):
     return valid_slugs[0] if valid_slugs else "todo"
 
 
-def _resolve_task_create_column(user, requested_column_id=""):
-    board = Board.objects.filter(user=user).prefetch_related("columns").first()
-    if not board:
-        return None
+def _column_for_status(columns, status_slug):
+    """Finds the lane that would display a task carrying this status, for labeling purposes."""
+    for column in columns:
+        if status_slug in column.filter_config.get("statuses", []):
+            return column
+    for column in columns:
+        if not column.filter_config.get("statuses", []):
+            return column
+    return columns[0] if columns else None
 
-    columns = list(board.columns.all())
-    if not columns:
-        return None
+
+def _resolve_task_create_selection(user, statuses, requested_column_id=""):
+    """Returns (column_or_None, status_slug) for a new task via the create panel."""
+    board = Board.objects.filter(user=user).prefetch_related("columns").first()
+    columns = list(board.columns.all()) if board else []
 
     if str(requested_column_id).isdigit():
         requested_pk = int(requested_column_id)
         for column in columns:
             if column.pk == requested_pk:
-                return column
+                return column, column.default_status(user)
 
-    if user.default_column_id:
-        for column in columns:
-            if column.pk == user.default_column_id:
-                return column
+    if user.default_status_id:
+        status_slug = _resolve_status_slug(user.default_status.slug, statuses)
+        return _column_for_status(columns, status_slug), status_slug
 
-    return columns[0]
+    if columns:
+        column = columns[0]
+        return column, column.default_status(user)
+
+    return None, _resolve_status_slug("", statuses)
 
 
 def _task_render_context(user, task):
@@ -99,12 +109,7 @@ def _task_panel_context(user, task):
 
 def _task_panel_create_context(user, column_id="", form_values=None, form_error=""):
     statuses, done_slug, active_slug = _status_context(user)
-    selected_column = _resolve_task_create_column(user, column_id)
-    selected_status = (
-        selected_column.default_status(user)
-        if selected_column
-        else _resolve_status_slug("", statuses)
-    )
+    selected_column, selected_status = _resolve_task_create_selection(user, statuses, column_id)
     selected_status_name = next((item.name for item in statuses if item.slug == selected_status), selected_status)
     form_values = form_values or {}
 

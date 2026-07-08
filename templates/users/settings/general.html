@@ -30,20 +30,20 @@
   <section class="settings-card surface-panel">
     <div>
       <h2 class="card-title">Task Capture</h2>
-      <p class="card-subtitle">Choose where the board FAB should send brand-new tasks by default.</p>
+      <p class="card-subtitle">Choose the status brand-new tasks should get by default.</p>
     </div>
 
     <div class="form-field">
-      <label class="field-label" for="default_column">Default lane</label>
-      <select id="default_column" name="default_column">
-        <option value="">First lane on the board</option>
-        {% for column in columns %}
-        <option value="{{ column.pk }}" {% if default_column_id == column.pk %}selected{% endif %}>{{ column.label }}</option>
+      <label class="field-label" for="default_status">Default status</label>
+      <select id="default_status" name="default_status">
+        <option value="">First status on your board</option>
+        {% for status in statuses %}
+        <option value="{{ status.pk }}" {% if default_status_id == status.pk %}selected{% endif %}>{{ status.name }}</option>
         {% endfor %}
       </select>
     </div>
 
-    <p class="field-help">Leave this unset to use your first lane whenever you create a task from the floating add button.</p>
+    <p class="field-help">Leave this unset to use your first status whenever you create a task from the floating add button.</p>
   </section>
 
   <section class="settings-card settings-card--wide surface-panel">

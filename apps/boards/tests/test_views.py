@@ -270,23 +270,24 @@ def test_task_panel_create_renders_without_comments_form(logged_in_client):
 
 
 @pytest.mark.django_db
-def test_task_panel_create_uses_default_column_when_user_has_one(logged_in_client):
+def test_task_panel_create_uses_default_status_when_user_has_one(logged_in_client):
     client, user = logged_in_client
-    default_column = user.board.columns.get(label="In Progress")
-    user.default_column = default_column
-    user.save(update_fields=["default_column"])
+    default_status = user.task_statuses.get(slug="in_progress")
+    user.default_status = default_status
+    user.save(update_fields=["default_status"])
+    expected_column = user.board.columns.get(label="In Progress")
 
     response = client.get(reverse("boards:task-panel-create"))
     assert response.status_code == 200
-    assert response.context["selected_column_id"] == default_column.pk
+    assert response.context["selected_column_id"] == expected_column.pk
     assert response.context["selected_status"] == "in_progress"
 
 
 @pytest.mark.django_db
-def test_task_panel_create_explicit_column_overrides_default_column(logged_in_client):
+def test_task_panel_create_explicit_column_overrides_default_status(logged_in_client):
     client, user = logged_in_client
-    user.default_column = user.board.columns.get(label="Done")
-    user.save(update_fields=["default_column"])
+    user.default_status = user.task_statuses.get(slug="done")
+    user.save(update_fields=["default_status"])
     explicit_column = user.board.columns.get(label="To Do")
 
     response = client.get(f'{reverse("boards:task-panel-create")}?column={explicit_column.pk}')
@@ -298,9 +299,9 @@ def test_task_panel_create_explicit_column_overrides_default_column(logged_in_cl
 @pytest.mark.django_db
 def test_task_panel_create_creates_task_and_refreshes_board(logged_in_client):
     client, user = logged_in_client
-    default_column = user.board.columns.get(label="In Progress")
-    user.default_column = default_column
-    user.save(update_fields=["default_column"])
+    default_status = user.task_statuses.get(slug="in_progress")
+    user.default_status = default_status
+    user.save(update_fields=["default_status"])
 
     response = client.post(
         reverse("boards:task-panel-create"),

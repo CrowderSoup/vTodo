@@ -12,9 +12,9 @@ def logged_in_client(client, db):
 
 
 @pytest.mark.django_db
-def test_settings_post_saves_default_column(logged_in_client):
+def test_settings_post_saves_default_status(logged_in_client):
     client, user = logged_in_client
-    default_column = user.board.columns.get(label="Done")
+    default_status = user.task_statuses.get(slug="done")
 
     response = client.post(
         reverse("users:settings"),
@@ -22,20 +22,20 @@ def test_settings_post_saves_default_column(logged_in_client):
             "display_name": "",
             "avatar_url": "",
             "daily_summary_time": "08:00",
-            "default_column": str(default_column.pk),
+            "default_status": str(default_status.pk),
         },
     )
 
     user.refresh_from_db()
     assert response.status_code == 302
-    assert user.default_column_id == default_column.pk
+    assert user.default_status_id == default_status.pk
 
 
 @pytest.mark.django_db
-def test_settings_post_rejects_default_column_from_another_user(logged_in_client):
+def test_settings_post_rejects_default_status_from_another_user(logged_in_client):
     client, user = logged_in_client
     other_user = User.objects.create_user()
-    other_column = other_user.board.columns.first()
+    other_status = other_user.task_statuses.first()
 
     response = client.post(
         reverse("users:settings"),
@@ -43,13 +43,13 @@ def test_settings_post_rejects_default_column_from_another_user(logged_in_client
             "display_name": "",
             "avatar_url": "",
             "daily_summary_time": "08:00",
-            "default_column": str(other_column.pk),
+            "default_status": str(other_status.pk),
         },
     )
 
     user.refresh_from_db()
     assert response.status_code == 302
-    assert user.default_column_id is None
+    assert user.default_status_id is None
 
 
 @pytest.mark.django_db
