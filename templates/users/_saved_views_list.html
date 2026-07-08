@@ -1,0 +1,37 @@
+{% for sf in saved_filters %}
+<div class="config-row">
+  <div class="config-main">
+    <div class="config-title">
+      <strong>{{ sf.name }}</strong>
+    </div>
+    <div class="config-description">
+      {% with config=sf.filter_config %}
+      {% for tag in config.tags %}
+      <span class="pill">Tags: {{ tag }}</span>
+      {% endfor %}
+      {% for tag in config.exclude_tags %}
+      <span class="pill">Not: {{ tag }}</span>
+      {% endfor %}
+      {% if config.due %}
+      <span class="pill">Due: {{ config.due }}</span>
+      {% endif %}
+      {% for label in sf.hidden_column_labels %}
+      <span class="pill">Hidden: {{ label }}</span>
+      {% endfor %}
+      {% if not config.tags and not config.exclude_tags and not config.due and not sf.hidden_column_labels %}
+      <span class="pill">All active tasks</span>
+      {% endif %}
+      {% endwith %}
+    </div>
+  </div>
+  <button class="btn-danger btn-icon"
+          hx-post="{% url 'users:saved-view-delete' sf.pk %}"
+          hx-target="#saved-views-list"
+          hx-swap="innerHTML"
+          hx-confirm="Delete saved view &ldquo;{{ sf.name|escapejs }}&rdquo;?">×</button>
+</div>
+{% empty %}
+<div class="surface-card" style="padding: 1rem 1.1rem;">
+  <p class="field-help">No saved views yet. Save a filter combination from the board to see it here.</p>
+</div>
+{% endfor %}
