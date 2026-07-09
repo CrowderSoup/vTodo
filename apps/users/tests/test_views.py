@@ -118,6 +118,24 @@ def test_column_create_with_team_scope(logged_in_client):
 
 
 @pytest.mark.django_db
+def test_column_create_response_shows_team_name_not_raw_scope(logged_in_client):
+    from apps.teams.models import Team, TeamMembership
+
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=user, role=TeamMembership.ROLE_OWNER)
+
+    response = client.post(
+        reverse("users:column-create"),
+        {"label": "Team Lane", "team": team.pk},
+    )
+
+    content = response.content.decode()
+    assert "Rocketry" in content
+    assert f"team:{team.pk}" not in content
+
+
+@pytest.mark.django_db
 def test_column_create_rejects_non_member_team(logged_in_client):
     from apps.teams.models import Team
 

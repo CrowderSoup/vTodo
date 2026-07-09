@@ -676,3 +676,26 @@ def test_task_panel_create_renders_team_select_for_member(logged_in_client):
 
     assert response.status_code == 200
     assert b"Rocketry" in response.content
+
+
+@pytest.mark.django_db
+def test_task_panel_create_defaults_to_column_team_scope(logged_in_client):
+    """The column's "Add task" button links with the column's own scope_team_id, so
+    opening the create panel from a team-scoped column should preselect that team
+    instead of falling back to personal."""
+    from apps.boards.models import Column
+
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=user)
+
+    board = Board.objects.get(user=user)
+    column = Column.objects.create(
+        board=board, label="Team", filter_config={"scope": f"team:{team.pk}"}, order=99
+    )
+    assert column.scope_team_id == str(team.pk)
+
+    response = client.get(
+        reverse("boards:task-panel-create"), {"column": column.pk, "team": column.scope_team_id}
+    )
+    assert response.context["selected_team_id"] == team.pk
