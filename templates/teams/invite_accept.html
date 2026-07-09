@@ -14,6 +14,12 @@
     {% elif not invite.is_valid %}
     <h2 class="card-title">This invite is no longer valid.</h2>
     <p class="card-subtitle">It may have expired or already been used. Ask a team owner to send a new one.</p>
+    {% elif email_mismatch %}
+    <h2 class="card-title">This invite was sent to a different email.</h2>
+    <p class="card-subtitle">
+      You're signed in as {{ request.user.display_name|default:request.user.username }}, but this invite
+      was addressed to {{ invite.email }}. Log out and sign in with that email address to accept it.
+    </p>
     {% else %}
     <h2 class="card-title">Join {{ invite.team.name }}?</h2>
     <p class="card-subtitle">You've been invited to collaborate on the “{{ invite.team.name }}” team.</p>

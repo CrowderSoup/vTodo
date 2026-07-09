@@ -20,6 +20,10 @@ def _owner_membership_or_404(user, team_pk):
     )
 
 
+def _invite_email_matches(user, invite):
+    return user.email_identities.filter(email__iexact=invite.email, verified=True).exists()
+
+
 class TeamCreateView(LoginRequiredMixin, View):
     def post(self, request):
         name = request.POST.get("name", "").strip()
@@ -80,15 +84,24 @@ class TeamInviteAcceptView(LoginRequiredMixin, View):
     def get(self, request, token):
         invite = get_object_or_404(TeamInvite, token=token)
         already_member = TeamMembership.objects.filter(team=invite.team, user=request.user).exists()
+        email_mismatch = not already_member and not _invite_email_matches(request.user, invite)
         return render(request, "teams/invite_accept.html", {
             "invite": invite,
             "already_member": already_member,
+            "email_mismatch": email_mismatch,
         })
 
     def post(self, request, token):
         invite = get_object_or_404(TeamInvite, token=token)
         if not invite.is_valid:
             messages.error(request, "This invite has expired or was already used.")
+            return redirect(reverse("boards:board"))
+
+        if not _invite_email_matches(request.user, invite):
+            messages.error(
+                request,
+                f"This invite was sent to {invite.email}. Log in with that email address to accept it.",
+            )
             return redirect(reverse("boards:board"))
 
         TeamMembership.objects.get_or_create(
@@ -105,27 +118,41 @@ class TeamMemberRemoveView(LoginRequiredMixin, View):
     def post(self, request, team_pk, user_pk):
         _owner_membership_or_404(request.user, team_pk)
 
-        owner_count = TeamMembership.objects.filter(team_id=team_pk, role=TeamMembership.ROLE_OWNER).count()
-        target = get_object_or_404(TeamMembership, team_id=team_pk, user_id=user_pk)
-        if target.role == TeamMembership.ROLE_OWNER and owner_count <= 1:
-            messages.error(request, "A team must have at least one owner.")
-            return redirect(reverse("users:settings-teams"))
+        with transaction.atomic():
+            # Lock the team's owner rows so a concurrent remove/leave can't also
+            # pass the "at least one owner remains" check before either commits.
+            owner_count = (
+                TeamMembership.objects.select_for_update()
+                .filter(team_id=team_pk, role=TeamMembership.ROLE_OWNER)
+                .count()
+            )
+            target = get_object_or_404(TeamMembership, team_id=team_pk, user_id=user_pk)
+            if target.role == TeamMembership.ROLE_OWNER and owner_count <= 1:
+                messages.error(request, "A team must have at least one owner.")
+                return redirect(reverse("users:settings-teams"))
 
-        target.delete()
+            target.delete()
+
         messages.success(request, "Removed from team.")
         return redirect(reverse("users:settings-teams"))
 
 
 class TeamLeaveView(LoginRequiredMixin, View):
     def post(self, request, team_pk):
-        membership = get_object_or_404(TeamMembership, team_id=team_pk, user=request.user)
-        if membership.role == TeamMembership.ROLE_OWNER:
-            owner_count = TeamMembership.objects.filter(team_id=team_pk, role=TeamMembership.ROLE_OWNER).count()
-            if owner_count <= 1:
-                messages.error(request, "Promote another member to owner before leaving.")
-                return redirect(reverse("users:settings-teams"))
+        with transaction.atomic():
+            membership = get_object_or_404(TeamMembership, team_id=team_pk, user=request.user)
+            if membership.role == TeamMembership.ROLE_OWNER:
+                owner_count = (
+                    TeamMembership.objects.select_for_update()
+                    .filter(team_id=team_pk, role=TeamMembership.ROLE_OWNER)
+                    .count()
+                )
+                if owner_count <= 1:
+                    messages.error(request, "Promote another member to owner before leaving.")
+                    return redirect(reverse("users:settings-teams"))
 
-        membership.delete()
+            membership.delete()
+
         messages.success(request, "You left the team.")
         return redirect(reverse("users:settings-teams"))
 

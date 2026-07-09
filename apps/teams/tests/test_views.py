@@ -2,6 +2,7 @@ import pytest
 from django.core import mail
 from django.urls import reverse
 
+from apps.emailauth.models import EmailIdentity
 from apps.teams.models import Team, TeamInvite, TeamMembership
 from apps.teams.views import INVITE_RATE_LIMIT
 from apps.users.models import User
@@ -67,6 +68,7 @@ def test_invite_create_rate_limited(logged_in_client):
 @pytest.mark.django_db
 def test_invite_accept_creates_membership(logged_in_client):
     client, user = logged_in_client
+    EmailIdentity.objects.create(user=user, email="a@example.com", verified=True)
     owner = User.objects.create_user()
     team = Team.objects.create(name="Rocketry")
     TeamMembership.objects.create(team=team, user=owner, role=TeamMembership.ROLE_OWNER)
@@ -78,6 +80,35 @@ def test_invite_accept_creates_membership(logged_in_client):
     assert TeamMembership.objects.filter(team=team, user=user).exists()
     invite.refresh_from_db()
     assert invite.accepted_at is not None
+
+
+@pytest.mark.django_db
+def test_invite_accept_rejects_email_mismatch(logged_in_client):
+    client, user = logged_in_client
+    owner = User.objects.create_user()
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=owner, role=TeamMembership.ROLE_OWNER)
+    invite = TeamInvite.generate(team, "a@example.com", owner)
+
+    response = client.post(reverse("teams:invite-accept", args=[invite.token]))
+
+    assert response.status_code == 302
+    assert not TeamMembership.objects.filter(team=team, user=user).exists()
+    invite.refresh_from_db()
+    assert invite.accepted_at is None
+
+
+@pytest.mark.django_db
+def test_invite_accept_get_flags_email_mismatch(logged_in_client):
+    client, user = logged_in_client
+    owner = User.objects.create_user()
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=owner, role=TeamMembership.ROLE_OWNER)
+    invite = TeamInvite.generate(team, "a@example.com", owner)
+
+    response = client.get(reverse("teams:invite-accept", args=[invite.token]))
+
+    assert response.context["email_mismatch"] is True
 
 
 @pytest.mark.django_db
