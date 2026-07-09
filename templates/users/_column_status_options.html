@@ -1,0 +1,8 @@
+{% for status in statuses %}
+<label class="checkbox-field">
+  <input type="checkbox" name="statuses" value="{{ status.slug }}">
+  <span>{{ status.name }}</span>
+</label>
+{% empty %}
+<p class="field-help">No statuses yet for this scope. Add one above first.</p>
+{% endfor %}

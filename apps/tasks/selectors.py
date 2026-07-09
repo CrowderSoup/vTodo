@@ -35,6 +35,13 @@ def visible_statuses_qs(user, team=None):
     return TaskStatus.objects.filter(user=user, team__isnull=True)
 
 
+def all_visible_statuses_qs(user):
+    """Every status the user can use: their personal statuses plus every team's they belong to."""
+    return TaskStatus.objects.filter(
+        Q(user=user, team__isnull=True) | Q(team_id__in=user_team_ids(user))
+    ).select_related("team")
+
+
 def resolve_status_for_task(task):
     """The TaskStatus row matching task.status, scoped to whoever/whatever owns the task."""
     if task.team_id:

@@ -67,11 +67,10 @@ def _saved_filters_with_labels(board):
 
 class SettingsBoardView(LoginRequiredMixin, View):
     def get(self, request):
-        from apps.tasks.models import TaskStatus
-        from apps.tasks.selectors import user_teams_qs
+        from apps.tasks.selectors import all_visible_statuses_qs, user_teams_qs
         from apps.boards.models import Board
 
-        statuses = TaskStatus.objects.filter(user=request.user, team__isnull=True)
+        statuses = all_visible_statuses_qs(request.user)
         try:
             board = Board.objects.get(user=request.user)
             columns = board.columns.all()
@@ -142,6 +141,7 @@ class TaskStatusCreateView(LoginRequiredMixin, View):
         from django.utils.text import slugify
 
         from apps.tasks.models import TaskStatus
+        from apps.tasks.selectors import all_visible_statuses_qs
 
         team = _resolve_owned_team(request.user, request.POST.get("team", "").strip())
         if team is False:
@@ -158,16 +158,14 @@ class TaskStatusCreateView(LoginRequiredMixin, View):
             TaskStatus.objects.get_or_create(
                 team=team, slug=slug, defaults={"name": name, "is_done": is_done, "order": order}
             )
-            statuses = TaskStatus.objects.filter(team=team)
         else:
             order = TaskStatus.objects.filter(user=request.user, team__isnull=True).count()
             TaskStatus.objects.get_or_create(
                 user=request.user, slug=slug, defaults={"name": name, "is_done": is_done, "order": order}
             )
-            statuses = TaskStatus.objects.filter(user=request.user, team__isnull=True)
 
         return render(request, "users/_status_list.html", {
-            "statuses": statuses,
+            "statuses": all_visible_statuses_qs(request.user),
             "default_status_id": request.user.default_status_id,
         })
 
@@ -177,7 +175,7 @@ class TaskStatusDeleteView(LoginRequiredMixin, View):
         from django.db.models import Q
 
         from apps.tasks.models import TaskStatus
-        from apps.tasks.selectors import user_team_ids
+        from apps.tasks.selectors import all_visible_statuses_qs, user_team_ids
 
         status = get_object_or_404(
             TaskStatus.objects.filter(
@@ -186,15 +184,10 @@ class TaskStatusDeleteView(LoginRequiredMixin, View):
             pk=pk,
         )
 
-        team = status.team
         status.delete()
         request.user.refresh_from_db(fields=["default_status"])
-        if team:
-            statuses = TaskStatus.objects.filter(team=team)
-        else:
-            statuses = TaskStatus.objects.filter(user=request.user, team__isnull=True)
         return render(request, "users/_status_list.html", {
-            "statuses": statuses,
+            "statuses": all_visible_statuses_qs(request.user),
             "default_status_id": request.user.default_status_id,
         })
 
@@ -216,11 +209,10 @@ class ColumnCreateView(LoginRequiredMixin, View):
 
         assignee = request.POST.get("assignee", "any").strip() or "any"
 
-        statuses_raw = request.POST.get("statuses", "")
         tags_raw = request.POST.get("tags", "")
         due = request.POST.get("due") or None
 
-        statuses = [s.strip() for s in statuses_raw.split(",") if s.strip()]
+        statuses = [s.strip() for s in request.POST.getlist("statuses") if s.strip()]
         tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
 
         board = get_object_or_404(Board, user=request.user)
@@ -239,6 +231,18 @@ class ColumnCreateView(LoginRequiredMixin, View):
         )
         columns = board.columns.all()
         return render(request, "users/_column_list.html", {"columns": columns})
+
+
+class ColumnStatusOptionsView(LoginRequiredMixin, View):
+    def get(self, request):
+        from apps.tasks.selectors import visible_statuses_qs
+
+        team = _resolve_owned_team(request.user, request.GET.get("team", "").strip())
+        if team is False:
+            return HttpResponse(status=422)
+
+        statuses = visible_statuses_qs(request.user, team=team)
+        return render(request, "users/_column_status_options.html", {"statuses": statuses})
 
 
 class ColumnDeleteView(LoginRequiredMixin, View):

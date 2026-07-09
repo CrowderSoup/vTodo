@@ -12,6 +12,7 @@ urlpatterns = [
     path("statuses/create/", views.TaskStatusCreateView.as_view(), name="status-create"),
     path("statuses/<int:pk>/delete/", views.TaskStatusDeleteView.as_view(), name="status-delete"),
     path("columns/create/", views.ColumnCreateView.as_view(), name="column-create"),
+    path("columns/status-options/", views.ColumnStatusOptionsView.as_view(), name="column-status-options"),
     path("columns/<int:pk>/delete/", views.ColumnDeleteView.as_view(), name="column-delete"),
     path("saved-views/<int:pk>/delete/", views.SavedViewDeleteView.as_view(), name="saved-view-delete"),
     path("api-token/", views.ApiTokenView.as_view(), name="api-token"),

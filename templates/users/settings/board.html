@@ -74,18 +74,6 @@
         <input id="column-label" type="text" name="label" placeholder="Column label" required>
       </div>
 
-      <div class="form-grid form-grid--two">
-        <div class="form-field">
-          <label class="field-label" for="column-statuses">Status slugs</label>
-          <input id="column-statuses" type="text" name="statuses" placeholder="todo,in_progress">
-        </div>
-
-        <div class="form-field">
-          <label class="field-label" for="column-tags">Tags</label>
-          <input id="column-tags" type="text" name="tags" placeholder="work,urgent">
-        </div>
-      </div>
-
       {% if user_teams %}
       <div class="form-grid form-grid--two">
         <div class="form-field">
@@ -108,6 +96,24 @@
         </div>
       </div>
       {% endif %}
+
+      <div class="form-grid form-grid--two">
+        <div class="form-field">
+          <label class="field-label">Statuses</label>
+          <div id="column-status-options"
+               class="checkbox-group"
+               hx-get="{% url 'users:column-status-options' %}"
+               hx-trigger="load, change from:#column-team"
+               hx-include="#column-team"
+               hx-swap="innerHTML">
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label class="field-label" for="column-tags">Tags</label>
+          <input id="column-tags" type="text" name="tags" placeholder="work,urgent">
+        </div>
+      </div>
 
       <div class="form-grid form-grid--two">
         <div class="form-field">
