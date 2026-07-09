@@ -18,7 +18,9 @@ class Board(models.Model):
 class Column(models.Model):
     board = models.ForeignKey(Board, on_delete=models.CASCADE, related_name="columns")
     label = models.CharField(max_length=100)
-    # filter_config schema: {"statuses": [...], "tags": [...], "due": null|"overdue"|"today"|"this_week"}
+    # filter_config schema: {"statuses": [...], "tags": [...], "due": null|"overdue"|"today"|"this_week",
+    #                         "scope": "personal"|"team:<id>"|"all" (default "personal"),
+    #                         "assignee": "any"|"me"|"unassigned"|"<user_id>" (default "any")}
     filter_config = models.JSONField(default=dict)
     order = models.PositiveSmallIntegerField(default=0)
     color = models.CharField(max_length=7, blank=True, default="")
@@ -29,13 +31,13 @@ class Column(models.Model):
     def __str__(self):
         return f"{self.label} ({self.board})"
 
-    def default_status(self, user):
+    def default_status(self, user, team=None):
         """Returns the status slug to assign to tasks added in this column."""
         statuses = self.filter_config.get("statuses", [])
         if statuses:
             return statuses[0]
-        from apps.tasks.models import TaskStatus
-        first = TaskStatus.objects.filter(user=user).first()
+        from apps.tasks.selectors import visible_statuses_qs
+        first = visible_statuses_qs(user, team=team).first()
         return first.slug if first else "todo"
 
 

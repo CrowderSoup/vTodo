@@ -6,6 +6,7 @@ from django.utils import timezone
 from apps.boards.models import Board
 from apps.boards.views import _render_markdown
 from apps.tasks.models import Task, TaskStatus
+from apps.teams.models import Team, TeamMembership
 from apps.users.models import User
 
 
@@ -503,3 +504,175 @@ def test_board_requires_login(client):
     response = client.get(reverse("boards:board"))
     assert response.status_code == 302
     assert "/login" in response["Location"] or "login" in response["Location"]
+
+
+# ---------------------------------------------------------------------------
+# Teams regression — non-teammates still can't reach each other's tasks
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_task_detail_404s_for_non_teammates_task(logged_in_client):
+    """A user with no team memberships still can't reach another user's personal task."""
+    client, _ = logged_in_client
+    other = User.objects.create_user()
+    task = Task.objects.create(user=other, title="Not yours", status="todo")
+    response = client.get(reverse("boards:task-detail", kwargs={"pk": task.pk}))
+    assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# TaskAssignView
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_task_assign_claims_unassigned_team_task(logged_in_client):
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=user)
+    task = Task.objects.create(user=user, team=team, title="Team task", status="todo")
+
+    response = client.post(
+        reverse("boards:task-assign", kwargs={"pk": task.pk}),
+        {"assignee_id": user.pk},
+    )
+
+    assert response.status_code == 200
+    task.refresh_from_db()
+    assert task.assignee_id == user.pk
+    assert task.activity.count() == 1
+
+
+@pytest.mark.django_db
+def test_task_assign_rejects_non_member(logged_in_client):
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=user)
+    outsider = User.objects.create_user()
+    task = Task.objects.create(user=user, team=team, title="Team task", status="todo")
+
+    response = client.post(
+        reverse("boards:task-assign", kwargs={"pk": task.pk}),
+        {"assignee_id": outsider.pk},
+    )
+
+    assert response.status_code == 422
+    task.refresh_from_db()
+    assert task.assignee_id is None
+
+
+@pytest.mark.django_db
+def test_task_assign_rejects_personal_task(logged_in_client):
+    client, user = logged_in_client
+    task = Task.objects.create(user=user, title="Personal task", status="todo")
+
+    response = client.post(
+        reverse("boards:task-assign", kwargs={"pk": task.pk}),
+        {"assignee_id": user.pk},
+    )
+
+    assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Board & Column team-scoping
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_board_shows_teammates_task_in_team_scoped_column(logged_in_client):
+    from apps.boards.models import Column
+
+    client, user = logged_in_client
+    other = User.objects.create_user()
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=user)
+    TeamMembership.objects.create(team=team, user=other)
+    team_task = Task.objects.create(user=other, team=team, title="Team task", status="todo")
+
+    board = Board.objects.get(user=user)
+    Column.objects.create(
+        board=board, label="Team", filter_config={"scope": f"team:{team.pk}"}, order=99
+    )
+
+    response = client.get(reverse("boards:board"))
+    columns_with_tasks = response.context["columns_with_tasks"]
+    team_column_tasks = next(tasks for col, tasks, _ in columns_with_tasks if col.label == "Team")
+    personal_column_tasks = [t for col, tasks, _ in columns_with_tasks for t in tasks if col.label != "Team"]
+
+    assert team_task in team_column_tasks
+    assert team_task not in personal_column_tasks
+
+
+@pytest.mark.django_db
+def test_board_excludes_other_teams_task_from_team_scoped_column(logged_in_client):
+    from apps.boards.models import Column
+
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+    other_team = Team.objects.create(name="Other")
+    outsider = User.objects.create_user()
+    TeamMembership.objects.create(team=team, user=user)
+    TeamMembership.objects.create(team=other_team, user=outsider)
+    other_team_task = Task.objects.create(user=outsider, team=other_team, title="Other team task", status="todo")
+
+    board = Board.objects.get(user=user)
+    Column.objects.create(
+        board=board, label="Team", filter_config={"scope": f"team:{team.pk}"}, order=99
+    )
+
+    response = client.get(reverse("boards:board"))
+    all_tasks = [t for _, tasks, _ in response.context["columns_with_tasks"] for t in tasks]
+    assert other_team_task not in all_tasks
+
+
+@pytest.mark.django_db
+def test_task_create_with_team_succeeds_for_member(logged_in_client):
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=user)
+
+    response = client.post(reverse("boards:task-create"), {"title": "Team task", "team": team.pk})
+
+    assert response.status_code == 200
+    task = Task.objects.get(title="Team task")
+    assert task.team_id == team.pk
+
+
+@pytest.mark.django_db
+def test_task_create_with_team_rejects_non_member(logged_in_client):
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+
+    response = client.post(reverse("boards:task-create"), {"title": "Team task", "team": team.pk})
+
+    assert response.status_code == 422
+    assert not Task.objects.filter(title="Team task").exists()
+
+
+@pytest.mark.django_db
+def test_task_panel_renders_assignee_select_and_activity_for_team_task(logged_in_client):
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=user)
+    task = Task.objects.create(user=user, team=team, title="Team task", status="todo")
+    client.post(reverse("boards:task-assign", kwargs={"pk": task.pk}), {"assignee_id": user.pk})
+
+    response = client.get(reverse("boards:task-panel", kwargs={"pk": task.pk}))
+
+    assert response.status_code == 200
+    assert b"Assignee" in response.content
+    assert b"Activity" in response.content
+
+
+@pytest.mark.django_db
+def test_task_panel_create_renders_team_select_for_member(logged_in_client):
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=user)
+
+    response = client.get(reverse("boards:task-panel-create"), {"team": team.pk})
+
+    assert response.status_code == 200
+    assert b"Rocketry" in response.content

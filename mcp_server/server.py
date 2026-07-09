@@ -27,10 +27,16 @@ def _err(e: VtodoAPIError) -> str:
 
 
 @mcp.tool()
-def list_tasks(status: str | None = None, tags: list[str] | None = None) -> str:
-    """List tasks, optionally filtered by status slug and/or tags."""
+def list_tasks(
+    status: str | None = None, tags: list[str] | None = None, team_id: int | None = None
+) -> str:
+    """List tasks, optionally filtered by status slug, tags, and/or team.
+
+    Without team_id, returns your personal tasks plus tasks from every team you
+    belong to. Pass team_id to see only that team's shared tasks.
+    """
     try:
-        return _ok(_client.list_tasks(status=status, tags=tags))
+        return _ok(_client.list_tasks(status=status, tags=tags, team_id=team_id))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -51,10 +57,18 @@ def create_task(
     status: str | None = None,
     due_date: str | None = None,
     tags: list[str] | None = None,
+    team_id: int | None = None,
 ) -> str:
-    """Create a new task. due_date format: YYYY-MM-DD."""
+    """Create a new task. due_date format: YYYY-MM-DD.
+
+    Pass team_id to create a shared task on that team instead of a personal
+    one — status must then be one of that team's status slugs (see
+    list_statuses(team_id=...)). You must be a member of the team.
+    """
     try:
-        return _ok(_client.create_task(title, notes=notes, status=status, due_date=due_date, tags=tags))
+        return _ok(_client.create_task(
+            title, notes=notes, status=status, due_date=due_date, tags=tags, team_id=team_id
+        ))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -105,6 +119,28 @@ def move_task(id: int, new_status: str) -> str:
         return _err(e)
 
 
+@mcp.tool()
+def assign_task(id: int, assignee_id: int | None = None) -> str:
+    """Assign (or unassign, by omitting assignee_id) a team task to a team member.
+
+    Only works on team tasks. Any member of the task's team can claim or
+    reassign it — the assignee must also be a member of that team.
+    """
+    try:
+        return _ok(_client.assign_task(id, assignee_id=assignee_id))
+    except VtodoAPIError as e:
+        return _err(e)
+
+
+@mcp.tool()
+def list_task_activity(task_id: int) -> str:
+    """List the assignment audit trail for a team task, oldest first."""
+    try:
+        return _ok(_client.list_task_activity(task_id))
+    except VtodoAPIError as e:
+        return _err(e)
+
+
 # ── Comment tools ──────────────────────────────────────────────────────────────
 
 
@@ -140,10 +176,11 @@ def delete_comment(comment_id: int) -> str:
 
 
 @mcp.tool()
-def list_statuses() -> str:
-    """List all task statuses (columns)."""
+def list_statuses(team_id: int | None = None) -> str:
+    """List task statuses. Without team_id, lists your personal statuses;
+    pass team_id to list a team's shared statuses instead."""
     try:
-        return _ok(_client.list_statuses())
+        return _ok(_client.list_statuses(team_id=team_id))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -153,10 +190,15 @@ def create_status(
     name: str,
     color: str | None = None,
     is_done: bool | None = None,
+    team_id: int | None = None,
 ) -> str:
-    """Create a new status column. color is a hex string e.g. #ff0000."""
+    """Create a new status. color is a hex string e.g. #ff0000.
+
+    Pass team_id to add a shared status to that team's workflow instead of
+    your personal one. Any team member can do this.
+    """
     try:
-        return _ok(_client.create_status(name, color=color, is_done=is_done))
+        return _ok(_client.create_status(name, color=color, is_done=is_done, team_id=team_id))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -188,6 +230,18 @@ def delete_status(slug: str) -> str:
     try:
         _client.delete_status(slug)
         return f"Status '{slug}' deleted."
+    except VtodoAPIError as e:
+        return _err(e)
+
+
+# ── Team tools ─────────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+def list_teams() -> str:
+    """List the teams you belong to."""
+    try:
+        return _ok(_client.list_teams())
     except VtodoAPIError as e:
         return _err(e)
 

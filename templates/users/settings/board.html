@@ -20,6 +20,17 @@
           hx-swap="innerHTML"
           hx-on::after-request="this.reset()">
       {% csrf_token %}
+      {% if user_teams %}
+      <div class="form-field">
+        <label class="field-label" for="status-team">Team</label>
+        <select id="status-team" name="team">
+          <option value="">Personal</option>
+          {% for team in user_teams %}
+          <option value="{{ team.pk }}">{{ team.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
       <div class="form-field">
         <label class="field-label" for="status-name">Status name</label>
         <input id="status-name" type="text" name="name" placeholder="Status name" required>
@@ -74,6 +85,29 @@
           <input id="column-tags" type="text" name="tags" placeholder="work,urgent">
         </div>
       </div>
+
+      {% if user_teams %}
+      <div class="form-grid form-grid--two">
+        <div class="form-field">
+          <label class="field-label" for="column-team">Show tasks from</label>
+          <select id="column-team" name="team">
+            <option value="">Personal (mine only)</option>
+            {% for team in user_teams %}
+            <option value="{{ team.pk }}">{{ team.name }} (team)</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-field">
+          <label class="field-label" for="column-assignee">Assignee filter</label>
+          <select id="column-assignee" name="assignee">
+            <option value="any">Anyone</option>
+            <option value="me">Assigned to me</option>
+            <option value="unassigned">Unassigned</option>
+          </select>
+        </div>
+      </div>
+      {% endif %}
 
       <div class="form-grid form-grid--two">
         <div class="form-field">

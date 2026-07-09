@@ -1,0 +1,17 @@
+{% if activity %}
+<div class="comment-list">
+  {% for entry in activity %}
+  <div class="surface-card comment-card">
+    <div class="comment-meta">
+      <span>{% if entry.actor %}{{ entry.actor.display_name|default:entry.actor.username }}{% else %}Someone{% endif %} changed {{ entry.field }}</span>
+      <span>{{ entry.created_at|date:"N j, Y g:i a" }}</span>
+    </div>
+    <div class="task-panel-notes">{{ entry.old_value }} &rarr; {{ entry.new_value }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="surface-card" style="padding: 1rem 1.1rem;">
+  <p class="field-help">No activity yet.</p>
+</div>
+{% endif %}

@@ -54,6 +54,25 @@
     </select>
   </section>
 
+  {% if task.team %}
+  <section class="task-panel-section">
+    <span class="section-title">Assignee</span>
+    <select id="task-panel-assignee-{{ task.pk }}"
+            class="task-panel-status-select"
+            name="assignee_id"
+            aria-label="Task assignee"
+            hx-post="{% url 'boards:task-assign' task.pk %}"
+            hx-trigger="change"
+            hx-target="#task-panel-content"
+            hx-swap="innerHTML">
+      <option value="" {% if not task.assignee_id %}selected{% endif %}>Unassigned</option>
+      {% for membership in team_members %}
+      <option value="{{ membership.user.pk }}" {% if task.assignee_id == membership.user.pk %}selected{% endif %}>{{ membership.user.display_name|default:membership.user.username }}</option>
+      {% endfor %}
+    </select>
+  </section>
+  {% endif %}
+
   <section class="task-panel-section">
     <span class="section-title">Notes</span>
     {% if notes_html %}
@@ -83,6 +102,15 @@
       </div>
     </form>
   </section>
+
+  {% if task.team %}
+  <section class="task-panel-section">
+    <span class="section-title">Activity</span>
+    <div id="task-activity">
+      {% include "partials/task_activity.html" %}
+    </div>
+  </section>
+  {% endif %}
 </div>
 
 <div class="task-panel-footer">
