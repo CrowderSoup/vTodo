@@ -1,6 +1,5 @@
 <nav class="settings-subnav" aria-label="Settings sections">
   <a class="settings-subnav-link {% if active_tab == 'general' %}is-active{% endif %}" href="{% url 'users:settings' %}">General</a>
   <a class="settings-subnav-link {% if active_tab == 'board' %}is-active{% endif %}" href="{% url 'users:settings-board' %}">Board Setup</a>
-  <a class="settings-subnav-link {% if active_tab == 'integrations' %}is-active{% endif %}" href="{% url 'users:settings-integrations' %}">Integrations</a>
   <a class="settings-subnav-link {% if active_tab == 'api' %}is-active{% endif %}" href="{% url 'users:settings-api' %}">API</a>
 </nav>

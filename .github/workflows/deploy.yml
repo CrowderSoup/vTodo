@@ -35,6 +35,8 @@ jobs:
           EMAIL_HOST_PASSWORD=$EMAIL_HOST_PASSWORD
           VTODO_API_TOKEN=$VTODO_API_TOKEN
           VTODO_MCP_TOKEN=$VTODO_MCP_TOKEN
+          GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
+          GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
           EOF
 
       - name: Deploy
@@ -47,3 +49,5 @@ jobs:
           EMAIL_HOST_PASSWORD: ${{ secrets.EMAIL_HOST_PASSWORD }}
           VTODO_API_TOKEN: ${{ secrets.VTODO_API_TOKEN }}
           VTODO_MCP_TOKEN: ${{ secrets.VTODO_MCP_TOKEN }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}

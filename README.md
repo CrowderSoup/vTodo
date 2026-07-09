@@ -1,15 +1,14 @@
 # vtodo
 
-A personal kanban-style task manager built with Django. Log in with your own website via [IndieAuth](https://indieauth.net/) or with a passwordless email OTP, then manage tasks on a customizable board. Optionally post daily summaries to your [Micropub](https://micropub.spec.indieweb.org/) endpoint.
+A personal kanban-style task manager built with Django. Log in with Google or with a passwordless email OTP, then manage tasks on a customizable board.
 
 ## Features
 
 - **Kanban board** — columns that filter tasks by status, tags, or due date (overdue / today / this week)
 - **Custom task statuses** — define your own ordered statuses with optional colors
 - **Task details** — title, notes, tags, due date, completion tracking
-- **IndieAuth login** — sign in with your website URL using PKCE
+- **Google sign-in** — OAuth login via django-allauth (more providers easy to add)
 - **Email OTP login** — passwordless magic-link / one-time-code via email
-- **Micropub integration** — store your Micropub endpoint and token; send daily summaries as `h-entry` posts
 - **HTMX-powered UI** — fast partial-page updates without a full JS framework
 - **Docker-ready** — single Dockerfile, configurable via environment variables
 
@@ -17,7 +16,7 @@ A personal kanban-style task manager built with Django. Log in with your own web
 
 - Python 3.12+
 - PostgreSQL
-- Redis (Celery broker for background tasks)
+- Redis (caching and OTP rate-limiting)
 
 ## Local development
 
@@ -41,12 +40,6 @@ uv run manage.py migrate
 
 # 6. Start the development server
 uv run manage.py runserver
-
-# 7. (Optional) Start a Celery worker for background tasks
-uv run celery -A config worker -l info
-
-# 8. (Optional) Start Celery beat for scheduled tasks (daily summaries)
-uv run celery -A config beat -l info
 ```
 
 ## Running with Docker
@@ -70,7 +63,8 @@ All configuration is through environment variables. Copy `.env.example` to `.env
 | `CELERY_BROKER_URL` | Redis URL for Celery | `redis://localhost:6379/0` |
 | `ALLOWED_HOSTS` | Comma-separated allowed hostnames | `localhost,127.0.0.1` |
 | `CSRF_TRUSTED_ORIGINS` | Comma-separated trusted origins | `http://localhost:8000` |
-| `INDIEAUTH_CLIENT_ID` | Client ID sent to IndieAuth providers | `http://localhost:8000/` |
+| `GOOGLE_CLIENT_ID` | OAuth client ID from Google Cloud Console | |
+| `GOOGLE_CLIENT_SECRET` | OAuth client secret from Google Cloud Console | |
 | `EMAIL_BACKEND` | Django email backend | `console` (prints to stdout) |
 | `EMAIL_HOST` | SMTP host | |
 | `EMAIL_PORT` | SMTP port | `587` |
@@ -81,9 +75,9 @@ All configuration is through environment variables. Copy `.env.example` to `.env
 
 ## Authentication
 
-### IndieAuth
+### Google OAuth
 
-Enter your website URL on the login page. Your site must advertise an `authorization_endpoint` and `token_endpoint` (via `<link>` tags or HTTP headers). vtodo uses PKCE for security. On first login a new account is created automatically.
+Click "Sign in with Google" on the login page. Requires `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` from a Google Cloud Console OAuth 2.0 Client (Web application type), with the authorized redirect URI set to `<your-domain>/accounts/google/login/callback/`. A new account is created automatically on first login, matched by verified email to any existing email-OTP account with the same address.
 
 ### Email OTP
 

@@ -230,7 +230,7 @@
   }
 
   function switchTab(name) {
-    ["indieweb", "email"].forEach(function (tabName) {
+    ["google", "email"].forEach(function (tabName) {
       var tab = document.getElementById("tab-" + tabName);
       var panel = document.getElementById("panel-" + tabName);
       if (!tab || !panel) {
@@ -247,8 +247,8 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     syncThemeLabel();
-    if (document.getElementById("tab-indieweb")) {
-      var activeTab = window.location.hash.replace("#", "") === "email" ? "email" : "indieweb";
+    if (document.getElementById("tab-google")) {
+      var activeTab = window.location.hash.replace("#", "") === "email" ? "email" : "google";
       switchTab(activeTab);
     }
 

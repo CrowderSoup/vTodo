@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
+{% load socialaccount %}
 
 {% block body_class %}page-auth{% endblock %}
 {% block title %}Sign in — vtodo{% endblock %}
@@ -10,18 +11,18 @@
     <div>
       <div class="auth-brand">
         <img class="auth-logo" src="{% static 'logo.png' %}" alt="vtodo">
-        <span class="eyebrow">indieweb-first task board</span>
+        <span class="eyebrow">a calmer task board</span>
       </div>
       <h1 class="auth-heading">A more polished place for the work you actually care about.</h1>
       <p class="auth-copy">
-        vtodo keeps the kanban board small, fast, and yours. Sign in with your website or email, then manage work with customizable columns, quick notes, and calm HTMX interactions.
+        vtodo keeps the kanban board small, fast, and yours. Sign in with Google or email, then manage work with customizable columns, quick notes, and calm HTMX interactions.
       </p>
     </div>
 
     <div class="auth-feature-list">
       <span class="auth-feature">Custom statuses</span>
       <span class="auth-feature">Saved views</span>
-      <span class="auth-feature">Micropub summaries</span>
+      <span class="auth-feature">Google sign-in</span>
       <span class="auth-feature">Keyboard-light flow</span>
     </div>
   </div>
@@ -32,22 +33,18 @@
     <p class="card-subtitle">Both options create the same account experience once you’re inside.</p>
 
     <div class="auth-tabs" role="tablist">
-      <button class="auth-tab" role="tab" id="tab-indieweb" aria-controls="panel-indieweb" aria-selected="true" type="button" onclick="switchTab('indieweb')">
-        IndieWeb
+      <button class="auth-tab" role="tab" id="tab-google" aria-controls="panel-google" aria-selected="true" type="button" onclick="switchTab('google')">
+        Google
       </button>
       <button class="auth-tab" role="tab" id="tab-email" aria-controls="panel-email" aria-selected="false" type="button" onclick="switchTab('email')">
         Email
       </button>
     </div>
 
-    <div id="panel-indieweb" class="auth-panel" role="tabpanel" aria-labelledby="tab-indieweb">
-      <form class="auth-form" method="post" action="{% url 'indieauth:start' %}">
+    <div id="panel-google" class="auth-panel" role="tabpanel" aria-labelledby="tab-google">
+      <form class="auth-form" method="post" action="{% provider_login_url 'google' %}">
         {% csrf_token %}
-        <div class="form-field">
-          <label class="field-label" for="me">Your website URL</label>
-          <input type="url" id="me" name="me" placeholder="https://yoursite.com" required>
-        </div>
-        <button type="submit" class="btn-primary">Sign in with your website</button>
+        <button type="submit" class="btn-primary">Sign in with Google</button>
       </form>
     </div>
 

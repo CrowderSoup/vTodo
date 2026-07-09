@@ -53,7 +53,6 @@ env:
     DEBUG: "False"
     ALLOWED_HOSTS: vtodo.crowdersoup.com,localhost,127.0.0.1,*
     CSRF_TRUSTED_ORIGINS: https://vtodo.crowdersoup.com
-    INDIEAUTH_CLIENT_ID: https://vtodo.crowdersoup.com/
     EMAIL_BACKEND: django.core.mail.backends.smtp.EmailBackend
     EMAIL_HOST: smtppro.zoho.com
     EMAIL_PORT: "465"
@@ -65,6 +64,8 @@ env:
     - DATABASE_URL
     - CELERY_BROKER_URL   # redis://vtodo-redis:6379/0
     - EMAIL_HOST_PASSWORD
+    - GOOGLE_CLIENT_ID
+    - GOOGLE_CLIENT_SECRET
 
 accessories:
   redis:

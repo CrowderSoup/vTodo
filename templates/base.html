@@ -58,7 +58,7 @@
           <span id="theme-label">Dark</span> mode
         </button>
 
-        <form method="post" action="{% url 'indieauth:logout' %}">
+        <form method="post" action="{% url 'accounts:logout' %}">
           {% csrf_token %}
           <button type="submit" class="btn-secondary btn-small">Log out</button>
         </form>

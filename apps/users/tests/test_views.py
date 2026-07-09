@@ -21,7 +21,6 @@ def test_settings_post_saves_default_status(logged_in_client):
         {
             "display_name": "",
             "avatar_url": "",
-            "daily_summary_time": "08:00",
             "default_status": str(default_status.pk),
         },
     )
@@ -42,7 +41,6 @@ def test_settings_post_rejects_default_status_from_another_user(logged_in_client
         {
             "display_name": "",
             "avatar_url": "",
-            "daily_summary_time": "08:00",
             "default_status": str(other_status.pk),
         },
     )
