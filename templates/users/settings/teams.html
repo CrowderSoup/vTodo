@@ -1,0 +1,101 @@
+{% extends "users/settings/_base.html" %}
+
+{% block settings_title %}Teams{% endblock %}
+
+{% block settings_content %}
+<div class="settings-grid">
+  <section class="settings-card settings-card--wide surface-panel">
+    <div>
+      <h2 class="card-title">Create a team</h2>
+      <p class="card-subtitle">Teams share a task pool, a workflow, and an assignee for each task.</p>
+    </div>
+
+    <form class="inline-form" method="post" action="{% url 'teams:create' %}">
+      {% csrf_token %}
+      <div class="form-field">
+        <label class="field-label" for="team-name">Team name</label>
+        <input id="team-name" type="text" name="name" placeholder="Team name" required>
+      </div>
+      <div class="form-field">
+        <button type="submit" class="btn-primary">Create team</button>
+      </div>
+    </form>
+  </section>
+
+  {% for entry in teams %}
+  <section class="settings-card settings-card--wide surface-panel">
+    <div>
+      <h2 class="card-title">{{ entry.team.name }}</h2>
+      <p class="card-subtitle">
+        You are {% if entry.is_owner %}an owner{% else %}a member{% endif %} of this team.
+      </p>
+    </div>
+
+    <div class="settings-list">
+      {% for membership in entry.members %}
+      <div class="config-row">
+        <div class="config-main">
+          <div class="config-title">
+            <span>{{ membership.user.display_name|default:membership.user.username }}</span>
+            {% if membership.role == "owner" %}<span class="pill">Owner</span>{% endif %}
+          </div>
+        </div>
+        {% if entry.is_owner %}
+        <form method="post" action="{% url 'teams:member-remove' entry.team.pk membership.user.pk %}">
+          {% csrf_token %}
+          <button type="submit" class="btn-danger btn-icon"
+                  onclick="return confirm('Remove {{ membership.user.display_name|default:membership.user.username|escapejs }} from {{ entry.team.name|escapejs }}?');">×</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if entry.is_owner %}
+    <form class="inline-form" method="post" action="{% url 'teams:invite-create' entry.team.pk %}">
+      {% csrf_token %}
+      <div class="form-field">
+        <label class="field-label" for="invite-email-{{ entry.team.pk }}">Invite by email</label>
+        <input id="invite-email-{{ entry.team.pk }}" type="email" name="email" placeholder="teammate@example.com" required>
+      </div>
+      <div class="form-field">
+        <button type="submit" class="btn-primary">Send invite</button>
+      </div>
+    </form>
+
+    {% if entry.pending_invites %}
+    <div class="settings-list">
+      {% for invite in entry.pending_invites %}
+      <div class="config-row">
+        <div class="config-main">
+          <div class="config-title"><span>{{ invite.email }}</span></div>
+          <div class="config-description"><span class="pill">Expires {{ invite.expires_at|date:"M j, Y" }}</span></div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endif %}
+
+    <div class="panel-footer-secondary">
+      {% if entry.is_owner %}
+      <form method="post" action="{% url 'teams:delete' entry.team.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn-danger"
+                onclick="return confirm('Delete {{ entry.team.name|escapejs }}? Team tasks become personal tasks for whoever created them.');">Delete team</button>
+      </form>
+      {% else %}
+      <form method="post" action="{% url 'teams:leave' entry.team.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn-secondary">Leave team</button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+  {% empty %}
+  <div class="surface-card" style="padding: 1rem 1.1rem;">
+    <p class="field-help">You're not on any teams yet. Create one to start assigning tasks to teammates.</p>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

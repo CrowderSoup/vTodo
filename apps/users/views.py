@@ -68,9 +68,10 @@ def _saved_filters_with_labels(board):
 class SettingsBoardView(LoginRequiredMixin, View):
     def get(self, request):
         from apps.tasks.models import TaskStatus
+        from apps.tasks.selectors import user_teams_qs
         from apps.boards.models import Board
 
-        statuses = TaskStatus.objects.filter(user=request.user)
+        statuses = TaskStatus.objects.filter(user=request.user, team__isnull=True)
         try:
             board = Board.objects.get(user=request.user)
             columns = board.columns.all()
@@ -84,6 +85,7 @@ class SettingsBoardView(LoginRequiredMixin, View):
             "columns": columns,
             "saved_filters": saved_filters,
             "default_status_id": request.user.default_status_id,
+            "user_teams": list(user_teams_qs(request.user)),
             "active_tab": "board",
         }
         context.update(_hero_stats(request.user))
@@ -97,25 +99,73 @@ class SettingsApiView(LoginRequiredMixin, View):
         return render(request, "users/settings/api.html", context)
 
 
+class SettingsTeamsView(LoginRequiredMixin, View):
+    def get(self, request):
+        from apps.teams.models import TeamMembership
+
+        memberships = (
+            TeamMembership.objects.filter(user=request.user)
+            .select_related("team")
+            .prefetch_related("team__memberships__user", "team__invites")
+        )
+        teams = []
+        for membership in memberships:
+            team = membership.team
+            teams.append({
+                "team": team,
+                "role": membership.role,
+                "is_owner": membership.role == TeamMembership.ROLE_OWNER,
+                "members": list(team.memberships.select_related("user")),
+                "pending_invites": [inv for inv in team.invites.all() if inv.is_valid],
+            })
+
+        context = {"teams": teams, "active_tab": "teams"}
+        context.update(_hero_stats(request.user))
+        return render(request, "users/settings/teams.html", context)
+
+
+def _resolve_owned_team(user, team_id_str):
+    """Returns None (personal) or a Team the user belongs to, else False for an invalid id."""
+    if not team_id_str:
+        return None
+    from apps.tasks.selectors import user_teams_qs
+
+    if not team_id_str.isdigit():
+        return False
+    team = user_teams_qs(user).filter(pk=int(team_id_str)).first()
+    return team if team else False
+
+
 class TaskStatusCreateView(LoginRequiredMixin, View):
     def post(self, request):
+        from django.http import HttpResponse
+        from django.utils.text import slugify
+
         from apps.tasks.models import TaskStatus
+
+        team = _resolve_owned_team(request.user, request.POST.get("team", "").strip())
+        if team is False:
+            return HttpResponse(status=422)
 
         name = request.POST.get("name", "").strip()
         is_done = request.POST.get("is_done") == "on"
         if not name:
-            from django.http import HttpResponse
             return HttpResponse(status=422)
 
-        order = TaskStatus.objects.filter(user=request.user).count()
-        from django.utils.text import slugify
         slug = slugify(name)
-        TaskStatus.objects.get_or_create(
-            user=request.user,
-            slug=slug,
-            defaults={"name": name, "is_done": is_done, "order": order},
-        )
-        statuses = TaskStatus.objects.filter(user=request.user)
+        if team:
+            order = TaskStatus.objects.filter(team=team).count()
+            TaskStatus.objects.get_or_create(
+                team=team, slug=slug, defaults={"name": name, "is_done": is_done, "order": order}
+            )
+            statuses = TaskStatus.objects.filter(team=team)
+        else:
+            order = TaskStatus.objects.filter(user=request.user, team__isnull=True).count()
+            TaskStatus.objects.get_or_create(
+                user=request.user, slug=slug, defaults={"name": name, "is_done": is_done, "order": order}
+            )
+            statuses = TaskStatus.objects.filter(user=request.user, team__isnull=True)
+
         return render(request, "users/_status_list.html", {
             "statuses": statuses,
             "default_status_id": request.user.default_status_id,
@@ -124,12 +174,25 @@ class TaskStatusCreateView(LoginRequiredMixin, View):
 
 class TaskStatusDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        from apps.tasks.models import TaskStatus
+        from django.db.models import Q
 
-        status = get_object_or_404(TaskStatus, pk=pk, user=request.user)
+        from apps.tasks.models import TaskStatus
+        from apps.tasks.selectors import user_team_ids
+
+        status = get_object_or_404(
+            TaskStatus.objects.filter(
+                Q(user=request.user, team__isnull=True) | Q(team_id__in=user_team_ids(request.user))
+            ),
+            pk=pk,
+        )
+
+        team = status.team
         status.delete()
         request.user.refresh_from_db(fields=["default_status"])
-        statuses = TaskStatus.objects.filter(user=request.user)
+        if team:
+            statuses = TaskStatus.objects.filter(team=team)
+        else:
+            statuses = TaskStatus.objects.filter(user=request.user, team__isnull=True)
         return render(request, "users/_status_list.html", {
             "statuses": statuses,
             "default_status_id": request.user.default_status_id,
@@ -138,12 +201,20 @@ class TaskStatusDeleteView(LoginRequiredMixin, View):
 
 class ColumnCreateView(LoginRequiredMixin, View):
     def post(self, request):
+        from django.http import HttpResponse
+
         from apps.boards.models import Board, Column
 
         label = request.POST.get("label", "").strip()
         if not label:
-            from django.http import HttpResponse
             return HttpResponse(status=422)
+
+        team = _resolve_owned_team(request.user, request.POST.get("team", "").strip())
+        if team is False:
+            return HttpResponse(status=422)
+        scope = f"team:{team.pk}" if team else "personal"
+
+        assignee = request.POST.get("assignee", "any").strip() or "any"
 
         statuses_raw = request.POST.get("statuses", "")
         tags_raw = request.POST.get("tags", "")
@@ -157,7 +228,13 @@ class ColumnCreateView(LoginRequiredMixin, View):
         Column.objects.create(
             board=board,
             label=label,
-            filter_config={"statuses": statuses, "tags": tags, "due": due},
+            filter_config={
+                "statuses": statuses,
+                "tags": tags,
+                "due": due,
+                "scope": scope,
+                "assignee": assignee,
+            },
             order=order,
         )
         columns = board.columns.all()

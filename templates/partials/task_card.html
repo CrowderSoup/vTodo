@@ -20,6 +20,15 @@
     {% endif %}
   </div>
 
+  {% if task.team %}
+  <div class="tag-row">
+    <span class="pill">{{ task.team.name }}</span>
+    <span class="pill">
+      {% if task.assignee %}{{ task.assignee.display_name|default:task.assignee.username }}{% else %}Unassigned{% endif %}
+    </span>
+  </div>
+  {% endif %}
+
   {% if task.tags %}
   <div class="tag-row">
     {% for tag in task.tags %}

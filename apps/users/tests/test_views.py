@@ -59,3 +59,98 @@ def test_settings_includes_shared_confirm_modal(logged_in_client):
     assert response.status_code == 200
     assert 'id="confirm-modal"' in content
     assert 'id="confirm-modal-cancel"' in content
+
+
+# ---------------------------------------------------------------------------
+# SettingsTeamsView
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_settings_teams_lists_owned_team_with_pending_invite(logged_in_client):
+    from apps.teams.models import Team, TeamInvite, TeamMembership
+
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=user, role=TeamMembership.ROLE_OWNER)
+    TeamInvite.generate(team, "a@example.com", user)
+
+    response = client.get(reverse("users:settings-teams"))
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert "Rocketry" in content
+    assert "a@example.com" in content
+
+
+@pytest.mark.django_db
+def test_settings_teams_empty_state_for_no_teams(logged_in_client):
+    client, _ = logged_in_client
+    response = client.get(reverse("users:settings-teams"))
+    assert response.status_code == 200
+    assert b"not on any teams yet" in response.content
+
+
+# ---------------------------------------------------------------------------
+# Team-scoped column/status creation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_column_create_with_team_scope(logged_in_client):
+    from apps.teams.models import Team, TeamMembership
+
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=user, role=TeamMembership.ROLE_OWNER)
+
+    response = client.post(
+        reverse("users:column-create"),
+        {"label": "Team Lane", "team": team.pk, "assignee": "unassigned"},
+    )
+
+    assert response.status_code == 200
+    from apps.boards.models import Column
+
+    column = Column.objects.get(label="Team Lane")
+    assert column.filter_config["scope"] == f"team:{team.pk}"
+    assert column.filter_config["assignee"] == "unassigned"
+
+
+@pytest.mark.django_db
+def test_column_create_rejects_non_member_team(logged_in_client):
+    from apps.teams.models import Team
+
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+
+    response = client.post(reverse("users:column-create"), {"label": "Team Lane", "team": team.pk})
+
+    assert response.status_code == 422
+
+
+@pytest.mark.django_db
+def test_status_create_with_team_scope(logged_in_client):
+    from apps.tasks.models import TaskStatus
+    from apps.teams.models import Team, TeamMembership
+
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=user, role=TeamMembership.ROLE_MEMBER)
+
+    response = client.post(reverse("users:status-create"), {"name": "Review", "team": team.pk})
+
+    assert response.status_code == 200
+    assert TaskStatus.objects.filter(team=team, slug="review").exists()
+
+
+@pytest.mark.django_db
+def test_status_create_rejects_non_member_team(logged_in_client):
+    from apps.teams.models import Team
+
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+
+    response = client.post(reverse("users:status-create"), {"name": "Review", "team": team.pk})
+
+    assert response.status_code == 422

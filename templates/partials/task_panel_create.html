@@ -20,6 +20,23 @@
     {% csrf_token %}
     <input type="hidden" name="column" value="{{ selected_column_id }}">
 
+    {% if user_teams %}
+    <div class="form-field">
+      <label class="field-label" for="task-panel-create-team">Team</label>
+      <select id="task-panel-create-team" name="team"
+              hx-get="{% url 'boards:task-panel-create' %}"
+              hx-trigger="change"
+              hx-target="#task-panel-content"
+              hx-swap="innerHTML"
+              hx-include="[name='column']">
+        <option value="" {% if not selected_team_id %}selected{% endif %}>Personal</option>
+        {% for team in user_teams %}
+        <option value="{{ team.pk }}" {% if selected_team_id == team.pk %}selected{% endif %}>{{ team.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
     <div class="form-field">
       <label class="field-label" for="task-panel-create-title">Title</label>
       <input id="task-panel-create-title" type="text" name="title" value="{{ title_value }}" required autofocus>

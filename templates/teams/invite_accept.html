@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block body_class %}page-auth{% endblock %}
+{% block title %}Team invite — vtodo{% endblock %}
+
+{% block content %}
+<section class="auth-shell">
+  <div class="auth-card surface-panel">
+    <span class="eyebrow">Team invite</span>
+    {% if already_member %}
+    <h2 class="card-title">You're already on {{ invite.team.name }}.</h2>
+    <p class="card-subtitle">No action needed — head back to your board.</p>
+    <a class="btn-primary" href="{% url 'boards:board' %}">Go to board</a>
+    {% elif not invite.is_valid %}
+    <h2 class="card-title">This invite is no longer valid.</h2>
+    <p class="card-subtitle">It may have expired or already been used. Ask a team owner to send a new one.</p>
+    {% elif email_mismatch %}
+    <h2 class="card-title">This invite was sent to a different email.</h2>
+    <p class="card-subtitle">
+      You're signed in as {{ request.user.display_name|default:request.user.username }}, but this invite
+      was addressed to {{ invite.email }}. Log out and sign in with that email address to accept it.
+    </p>
+    {% else %}
+    <h2 class="card-title">Join {{ invite.team.name }}?</h2>
+    <p class="card-subtitle">You've been invited to collaborate on the “{{ invite.team.name }}” team.</p>
+    <form method="post" action="{% url 'teams:invite-accept' invite.token %}">
+      {% csrf_token %}
+      <button type="submit" class="btn-primary">Accept invite</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

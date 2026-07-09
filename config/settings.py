@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     "apps.users.apps.UsersConfig",
     "apps.accounts.apps.AccountsConfig",
     "apps.emailauth.apps.EmailAuthConfig",
+    "apps.teams.apps.TeamsConfig",
     "apps.boards.apps.BoardsConfig",
     "apps.tasks.apps.TasksConfig",
     "apps.integrations.apps.IntegrationsConfig",

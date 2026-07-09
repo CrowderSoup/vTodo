@@ -5,7 +5,13 @@
       <strong>{{ column.label }}</strong>
     </div>
     <div class="config-description">
-      {% with statuses=column.filter_config.statuses tags=column.filter_config.tags due=column.filter_config.due %}
+      {% with statuses=column.filter_config.statuses tags=column.filter_config.tags due=column.filter_config.due scope=column.filter_config.scope assignee=column.filter_config.assignee %}
+      {% if scope and scope != "personal" %}
+      <span class="pill">Scope: {{ scope }}</span>
+      {% endif %}
+      {% if assignee and assignee != "any" %}
+      <span class="pill">Assignee: {{ assignee }}</span>
+      {% endif %}
       {% if statuses %}
       <span class="pill">Statuses: {{ statuses|join:", " }}</span>
       {% endif %}

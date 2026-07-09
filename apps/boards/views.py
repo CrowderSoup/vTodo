@@ -10,17 +10,49 @@ from django.utils import timezone
 from django.views import View
 
 from apps.tasks.models import Task, TaskComment, TaskStatus
+from apps.tasks.selectors import (
+    AssignmentError,
+    assign_task,
+    get_task_or_404,
+    user_teams_qs,
+    visible_statuses_qs,
+    visible_tasks_qs,
+)
+from apps.users.models import User
 
 from .models import Board, Column, SavedFilter
 
 TASK_CHECKBOX_PATTERN = re.compile(r"<(?P<tag>li|p)>\[(?P<state>[xX ])\]\s*(?P<body>.*?)</(?P=tag)>", re.DOTALL)
 
 
-def _task_matches_column(task, filter_config):
+def _task_matches_scope(task, scope, user):
+    scope = scope or "personal"
+    if scope == "all":
+        return True
+    if scope.startswith("team:"):
+        return str(task.team_id) == scope.split(":", 1)[1]
+    return task.team_id is None
+
+
+def _task_matches_assignee(task, assignee_filter, user):
+    if not assignee_filter or assignee_filter == "any":
+        return True
+    if assignee_filter == "me":
+        return task.assignee_id == user.id
+    if assignee_filter == "unassigned":
+        return task.assignee_id is None
+    return str(task.assignee_id) == str(assignee_filter)
+
+
+def _task_matches_column(task, filter_config, user):
     statuses = filter_config.get("statuses", [])
     tags = filter_config.get("tags", [])
     due = filter_config.get("due")
 
+    if not _task_matches_scope(task, filter_config.get("scope"), user):
+        return False
+    if not _task_matches_assignee(task, filter_config.get("assignee"), user):
+        return False
     if statuses and task.status not in statuses:
         return False
     if tags and not any(t in task.tags for t in tags):
@@ -40,11 +72,25 @@ def _task_matches_column(task, filter_config):
     return True
 
 
-def _status_context(user):
-    statuses = list(TaskStatus.objects.filter(user=user))
+def _status_context_for(user, team=None):
+    statuses = list(visible_statuses_qs(user, team=team))
     done_slug = next((s.slug for s in statuses if s.is_done), "done")
     active_slug = next((s.slug for s in statuses if not s.is_done), "todo")
     return statuses, done_slug, active_slug
+
+
+def _status_context(user):
+    return _status_context_for(user, team=None)
+
+
+def _resolve_team_param(user, team_id_str):
+    """Returns None (personal), a Team the user belongs to, or False (invalid/not a member)."""
+    if not team_id_str:
+        return None
+    if not team_id_str.isdigit():
+        return False
+    team = user_teams_qs(user).filter(pk=int(team_id_str)).first()
+    return team if team else False
 
 
 def _resolve_status_slug(status, statuses):
@@ -65,7 +111,7 @@ def _column_for_status(columns, status_slug):
     return columns[0] if columns else None
 
 
-def _resolve_task_create_selection(user, statuses, requested_column_id=""):
+def _resolve_task_create_selection(user, statuses, requested_column_id="", team=None):
     """Returns (column_or_None, status_slug) for a new task via the create panel."""
     board = Board.objects.filter(user=user).prefetch_related("columns").first()
     columns = list(board.columns.all()) if board else []
@@ -74,21 +120,21 @@ def _resolve_task_create_selection(user, statuses, requested_column_id=""):
         requested_pk = int(requested_column_id)
         for column in columns:
             if column.pk == requested_pk:
-                return column, column.default_status(user)
+                return column, column.default_status(user, team=team)
 
-    if user.default_status_id:
+    if team is None and user.default_status_id:
         status_slug = _resolve_status_slug(user.default_status.slug, statuses)
         return _column_for_status(columns, status_slug), status_slug
 
     if columns:
         column = columns[0]
-        return column, column.default_status(user)
+        return column, column.default_status(user, team=team)
 
     return None, _resolve_status_slug("", statuses)
 
 
 def _task_render_context(user, task):
-    statuses, done_slug, active_slug = _status_context(user)
+    statuses, done_slug, active_slug = _status_context_for(user, task.team)
     return {
         "task": task,
         "statuses": statuses,
@@ -103,13 +149,15 @@ def _task_panel_context(user, task):
     context.update({
         "notes_html": _render_markdown(task.notes) if task.notes else "",
         "comments": _render_comments(task),
+        "activity": task.activity.all() if task.team_id else [],
+        "team_members": list(task.team.memberships.select_related("user")) if task.team_id else [],
     })
     return context
 
 
-def _task_panel_create_context(user, column_id="", form_values=None, form_error=""):
-    statuses, done_slug, active_slug = _status_context(user)
-    selected_column, selected_status = _resolve_task_create_selection(user, statuses, column_id)
+def _task_panel_create_context(user, column_id="", team=None, form_values=None, form_error=""):
+    statuses, done_slug, active_slug = _status_context_for(user, team)
+    selected_column, selected_status = _resolve_task_create_selection(user, statuses, column_id, team=team)
     selected_status_name = next((item.name for item in statuses if item.slug == selected_status), selected_status)
     form_values = form_values or {}
 
@@ -123,6 +171,9 @@ def _task_panel_create_context(user, column_id="", form_values=None, form_error=
         "selected_column_name": selected_column.label if selected_column else "your board",
         "selected_status": selected_status,
         "selected_status_name": selected_status_name,
+        "selected_team": team,
+        "selected_team_id": team.pk if team else "",
+        "user_teams": list(user_teams_qs(user)),
         "title_value": form_values.get("title", ""),
         "notes_value": form_values.get("notes", ""),
         "due_date_value": form_values.get("due_date", ""),
@@ -144,7 +195,7 @@ def _build_board_context(user, session=None):
     filter_due = board_filter.get("due", "").strip()
     hidden_column_pks = set(board_filter.get("hidden_columns", []))
 
-    all_tasks = list(Task.objects.filter(user=user, is_archived=False).order_by("order", "created_at"))
+    all_tasks = list(visible_tasks_qs(user).filter(is_archived=False).order_by("order", "created_at"))
     tasks = list(all_tasks)
 
     if filter_tags:
@@ -171,7 +222,7 @@ def _build_board_context(user, session=None):
             continue
         col_tasks = []
         for task in tasks:
-            if task.pk not in claimed and _task_matches_column(task, column.filter_config):
+            if task.pk not in claimed and _task_matches_column(task, column.filter_config, user):
                 col_tasks.append(task)
                 claimed.add(task.pk)
         columns_with_tasks.append((column, col_tasks, column.default_status(user)))
@@ -330,7 +381,7 @@ class TaskReorderView(LoginRequiredMixin, View):
         except (json.JSONDecodeError, AttributeError):
             return HttpResponse(status=400)
 
-        tasks = {t.pk: t for t in Task.objects.filter(user=request.user, pk__in=order)}
+        tasks = {t.pk: t for t in visible_tasks_qs(request.user).filter(pk__in=order)}
         for i, pk in enumerate(order):
             if pk in tasks:
                 tasks[pk].order = i
@@ -341,20 +392,24 @@ class TaskReorderView(LoginRequiredMixin, View):
 
 class TaskCreateView(LoginRequiredMixin, View):
     def post(self, request):
-        statuses, _, _ = _status_context(request.user)
+        team = _resolve_team_param(request.user, request.POST.get("team", "").strip())
+        if team is False:
+            return HttpResponse(status=422)
+
+        statuses, _, _ = _status_context_for(request.user, team)
         status = _resolve_status_slug(request.POST.get("status", "").strip(), statuses)
         title = request.POST.get("title", "").strip()
 
         if not title:
             return HttpResponse(status=422)
 
-        task = Task.objects.create(user=request.user, title=title, status=status)
+        task = Task.objects.create(user=request.user, team=team, title=title, status=status)
         return render(request, "partials/task_card.html", _task_render_context(request.user, task))
 
 
 class TaskUpdateView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        task = get_object_or_404(Task, pk=pk, user=request.user)
+        task = get_task_or_404(request.user, pk)
         title = request.POST.get("title", "").strip()
         notes = request.POST.get("notes", "")
         due_date = request.POST.get("due_date") or None
@@ -382,15 +437,16 @@ class TaskUpdateView(LoginRequiredMixin, View):
 
 class TaskMoveView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        task = get_object_or_404(Task, pk=pk, user=request.user)
+        task = get_task_or_404(request.user, pk)
         new_status = request.POST.get("new_status", "")
 
-        valid_slugs = list(TaskStatus.objects.filter(user=request.user).values_list("slug", flat=True))
+        task_statuses = visible_statuses_qs(request.user, team=task.team)
+        valid_slugs = list(task_statuses.values_list("slug", flat=True))
         if new_status not in valid_slugs:
             return HttpResponse(status=422)
 
         task.status = new_status
-        is_done = TaskStatus.objects.filter(user=request.user, slug=new_status, is_done=True).exists()
+        is_done = task_statuses.filter(slug=new_status, is_done=True).exists()
         if is_done and not task.completed_at:
             task.completed_at = timezone.now()
             task.save(update_fields=["status", "completed_at", "updated_at"])
@@ -409,9 +465,27 @@ class TaskMoveView(LoginRequiredMixin, View):
         return render(request, "boards/_columns.html", context)
 
 
+class TaskAssignView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        task = get_task_or_404(request.user, pk)
+        assignee_id = request.POST.get("assignee_id", "").strip()
+        assignee = get_object_or_404(User, pk=assignee_id) if assignee_id else None
+
+        try:
+            assign_task(request.user, task, assignee)
+        except AssignmentError:
+            return HttpResponse(status=422)
+
+        if request.headers.get("HX-Target") == "task-panel-content":
+            context = _task_panel_context(request.user, task)
+            return render(request, "partials/task_panel_content.html", context)
+
+        return render(request, "partials/task_card.html", _task_render_context(request.user, task))
+
+
 class TaskDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        task = get_object_or_404(Task, pk=pk, user=request.user)
+        task = get_task_or_404(request.user, pk)
         task.delete()
         return HttpResponse("")
 
@@ -423,12 +497,12 @@ class ColumnArchiveView(LoginRequiredMixin, View):
 
         # Mirror the claimed-task logic from _build_board_context to find exactly
         # which tasks are visible in this column.
-        all_tasks = list(Task.objects.filter(user=request.user, is_archived=False).order_by("order", "created_at"))
+        all_tasks = list(visible_tasks_qs(request.user).filter(is_archived=False).order_by("order", "created_at"))
         claimed = set()
         to_archive = []
         for col in board.columns.all():
             for task in all_tasks:
-                if task.pk not in claimed and _task_matches_column(task, col.filter_config):
+                if task.pk not in claimed and _task_matches_column(task, col.filter_config, request.user):
                     if col.pk == column.pk:
                         to_archive.append(task.pk)
                     claimed.add(task.pk)
@@ -443,7 +517,7 @@ class TaskDetailView(LoginRequiredMixin, View):
     """Return the read-only task card partial. Used by the edit form's Cancel button."""
 
     def get(self, request, pk):
-        task = get_object_or_404(Task, pk=pk, user=request.user)
+        task = get_task_or_404(request.user, pk)
         return render(request, "partials/task_card.html", _task_render_context(request.user, task))
 
 
@@ -451,7 +525,7 @@ class TaskEditView(LoginRequiredMixin, View):
     """Return the edit form partial. Triggered by clicking the task title."""
 
     def get(self, request, pk):
-        task = get_object_or_404(Task, pk=pk, user=request.user)
+        task = get_task_or_404(request.user, pk)
         return render(request, "partials/task_edit_form.html", {"task": task})
 
 
@@ -459,7 +533,7 @@ class TaskPanelView(LoginRequiredMixin, View):
     """Return the panel read-mode content."""
 
     def get(self, request, pk):
-        task = get_object_or_404(Task, pk=pk, user=request.user)
+        task = get_task_or_404(request.user, pk)
         context = _task_panel_context(request.user, task)
         return render(request, "partials/task_panel_content.html", context)
 
@@ -468,10 +542,17 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
     """Return the panel create-mode content and handle initial task creation."""
 
     def get(self, request):
-        context = _task_panel_create_context(request.user, request.GET.get("column", "").strip())
+        team = _resolve_team_param(request.user, request.GET.get("team", "").strip())
+        if team is False:
+            team = None
+        context = _task_panel_create_context(request.user, request.GET.get("column", "").strip(), team=team)
         return render(request, "partials/task_panel_create.html", context)
 
     def post(self, request):
+        team = _resolve_team_param(request.user, request.POST.get("team", "").strip())
+        if team is False:
+            return HttpResponse(status=422)
+
         form_values = {
             "title": request.POST.get("title", "").strip(),
             "notes": request.POST.get("notes", ""),
@@ -483,6 +564,7 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
         context = _task_panel_create_context(
             request.user,
             request.POST.get("column", "").strip(),
+            team=team,
             form_values=form_values,
         )
 
@@ -498,6 +580,7 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
 
         task = Task.objects.create(
             user=request.user,
+            team=team,
             title=form_values["title"],
             notes=form_values["notes"],
             status=context["selected_status"],
@@ -516,7 +599,7 @@ class TaskPanelEditView(LoginRequiredMixin, View):
     """Return the panel edit-mode content."""
 
     def get(self, request, pk):
-        task = get_object_or_404(Task, pk=pk, user=request.user)
+        task = get_task_or_404(request.user, pk)
         context = _task_render_context(request.user, task)
         return render(request, "partials/task_panel_edit.html", context)
 
@@ -525,7 +608,7 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
     """Save task from the panel; returns updated panel read-mode + OOB card update."""
 
     def post(self, request, pk):
-        task = get_object_or_404(Task, pk=pk, user=request.user)
+        task = get_task_or_404(request.user, pk)
         title = request.POST.get("title", "").strip()
         notes = request.POST.get("notes", "")
         due_date = request.POST.get("due_date") or None
@@ -578,7 +661,7 @@ def _render_comments(task):
 
 class TaskCommentCreateView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        task = get_object_or_404(Task, pk=pk, user=request.user)
+        task = get_task_or_404(request.user, pk)
         body = request.POST.get("body", "").strip()
         if body:
             TaskComment.objects.create(task=task, body=body)
@@ -590,7 +673,7 @@ class TaskCommentCreateView(LoginRequiredMixin, View):
 
 class TaskCommentDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk, comment_pk):
-        task = get_object_or_404(Task, pk=pk, user=request.user)
+        task = get_task_or_404(request.user, pk)
         comment = get_object_or_404(TaskComment, pk=comment_pk, task=task)
         comment.delete()
         return render(request, "partials/task_comments.html", {
