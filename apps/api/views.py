@@ -10,6 +10,7 @@ from apps.tasks.selectors import (
     AssignmentError,
     assign_task,
     user_team_ids,
+    user_teams_qs,
     visible_statuses_qs,
     visible_tasks_qs,
 )
@@ -136,6 +137,4 @@ class TeamViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = TeamSerializer
 
     def get_queryset(self):
-        from apps.tasks.selectors import user_teams_qs
-
         return user_teams_qs(self.request.user)

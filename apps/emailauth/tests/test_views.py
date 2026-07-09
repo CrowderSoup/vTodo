@@ -121,3 +121,68 @@ def test_verify_otp_marks_code_used(client):
 
     otp.refresh_from_db()
     assert otp.used_at is not None
+
+
+# ---------------------------------------------------------------------------
+# next= redirect preservation (e.g. team invite links)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_request_otp_stashes_next_in_session(client):
+    client.post(
+        reverse("emailauth:request"),
+        {"email": "next@example.com", "next": "/teams/invite/abc/accept/"},
+    )
+    assert client.session["login_next"] == "/teams/invite/abc/accept/"
+
+
+@pytest.mark.django_db
+def test_request_otp_ignores_unsafe_next(client):
+    client.post(
+        reverse("emailauth:request"),
+        {"email": "unsafe@example.com", "next": "https://evil.example.com/"},
+    )
+    assert "login_next" not in client.session
+
+
+@pytest.mark.django_db
+def test_request_otp_empty_email_preserves_next_on_redirect(client):
+    response = client.post(
+        reverse("emailauth:request"),
+        {"email": "", "next": "/teams/invite/abc/accept/"},
+    )
+    assert response.status_code == 302
+    assert "next=%2Fteams%2Finvite%2Fabc%2Faccept%2F" in response["Location"]
+
+
+@pytest.mark.django_db
+def test_verify_otp_redirects_to_stashed_next(client):
+    user = User.objects.create_user()
+    identity = EmailIdentity.objects.create(user=user, email="next2@example.com")
+    otp = EmailOTP.generate(identity)
+
+    session = client.session
+    session["email_identity_pk"] = identity.pk
+    session["login_next"] = "/teams/invite/abc/accept/"
+    session.save()
+
+    response = client.post(reverse("emailauth:verify"), {"code": otp.code})
+    assert response.status_code == 302
+    assert response["Location"] == "/teams/invite/abc/accept/"
+    assert "login_next" not in client.session
+
+
+@pytest.mark.django_db
+def test_verify_otp_falls_back_to_board_without_next(client):
+    user = User.objects.create_user()
+    identity = EmailIdentity.objects.create(user=user, email="noboard@example.com")
+    otp = EmailOTP.generate(identity)
+
+    session = client.session
+    session["email_identity_pk"] = identity.pk
+    session.save()
+
+    response = client.post(reverse("emailauth:verify"), {"code": otp.code})
+    assert response.status_code == 302
+    assert response["Location"] == reverse("boards:board")

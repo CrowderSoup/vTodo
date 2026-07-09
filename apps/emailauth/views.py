@@ -1,5 +1,6 @@
 import logging
 import uuid
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth import login
@@ -10,6 +11,8 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 
+from apps.accounts.utils import safe_next_url
+
 from .models import EmailIdentity, EmailOTP
 
 logger = logging.getLogger(__name__)
@@ -18,21 +21,29 @@ OTP_RATE_LIMIT = 3
 OTP_RATE_WINDOW = 3600  # seconds (1 hour)
 
 
+def _login_redirect_url(next_url):
+    url = reverse("accounts:login")
+    if next_url:
+        url += f"?{urlencode({'next': next_url})}"
+    return url + "#email"
+
+
 class RequestOTPView(View):
     """Accept email address, send OTP code, redirect to verify screen."""
 
     def post(self, request):
+        next_url = safe_next_url(request, request.POST.get("next"))
         email = request.POST.get("email", "").strip().lower()
         if not email:
             messages.error(request, "Please enter your email address.")
-            return redirect(reverse("accounts:login") + "#email")
+            return redirect(_login_redirect_url(next_url))
 
         # Rate limiting: max OTP_RATE_LIMIT sends per email per hour
         rate_key = f"otp_rate:{email}"
         count = cache.get(rate_key, 0)
         if count >= OTP_RATE_LIMIT:
             messages.error(request, "Too many login attempts. Please try again later.")
-            return redirect(reverse("accounts:login") + "#email")
+            return redirect(_login_redirect_url(next_url))
 
         # Get or create identity + user
         try:
@@ -61,12 +72,16 @@ class RequestOTPView(View):
         except Exception:
             logger.exception("Failed to send OTP email to %s", email)
             messages.error(request, "Failed to send login code. Please try again later.")
-            return redirect(reverse("accounts:login") + "#email")
+            return redirect(_login_redirect_url(next_url))
 
         # Increment rate limit counter
         cache.set(rate_key, count + 1, OTP_RATE_WINDOW)
 
         request.session["email_identity_pk"] = identity.pk
+        if next_url:
+            request.session["login_next"] = next_url
+        else:
+            request.session.pop("login_next", None)
         return redirect(reverse("emailauth:verify"))
 
 
@@ -111,5 +126,6 @@ class VerifyOTPView(View):
             identity.save(update_fields=["verified"])
 
         request.session.pop("email_identity_pk", None)
+        next_url = safe_next_url(request, request.session.pop("login_next", None))
         login(request, identity.user, backend="django.contrib.auth.backends.ModelBackend")
-        return redirect(reverse("boards:board"))
+        return redirect(next_url or reverse("boards:board"))

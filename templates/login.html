@@ -42,7 +42,7 @@
     </div>
 
     <div id="panel-google" class="auth-panel" role="tabpanel" aria-labelledby="tab-google">
-      <form class="auth-form" method="post" action="{% provider_login_url 'google' %}">
+      <form class="auth-form" method="post" action="{% provider_login_url 'google' next=next %}">
         {% csrf_token %}
         <button type="submit" class="btn-primary">Sign in with Google</button>
       </form>
@@ -51,6 +51,7 @@
     <div id="panel-email" class="auth-panel" role="tabpanel" aria-labelledby="tab-email" hidden>
       <form class="auth-form" method="post" action="{% url 'emailauth:request' %}">
         {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
         <div class="form-field">
           <label class="field-label" for="email">Your email address</label>
           <input type="email" id="email" name="email" placeholder="you@example.com" required>
