@@ -1514,6 +1514,16 @@ hr {
   margin-top: 0.2rem;
 }
 
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.checkbox-group .checkbox-field {
+  padding: 0.5rem 0.7rem;
+}
+
 .settings-actions {
   display: flex;
   justify-content: flex-end;

@@ -4,6 +4,7 @@
     <div class="config-title">
       <span>{{ status.name }}</span>
       <code>{{ status.slug }}</code>
+      {% if status.team %}<span class="pill">{{ status.team.name }}</span>{% else %}<span class="pill">Personal</span>{% endif %}
       {% if status.is_done %}<span class="badge badge--done">done</span>{% endif %}
       {% if status.pk == default_status_id %}
       <span class="pill">Default status</span>
