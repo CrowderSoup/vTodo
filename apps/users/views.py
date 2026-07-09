@@ -1,5 +1,3 @@
-from datetime import time
-
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
@@ -22,7 +20,6 @@ def _hero_stats(user):
     return {
         "statuses_count": statuses_count,
         "columns_count": columns_count,
-        "daily_summary_on": user.daily_summary_enabled,
     }
 
 
@@ -56,28 +53,6 @@ class SettingsGeneralView(LoginRequiredMixin, View):
         user.save(update_fields=["display_name", "avatar_url", "default_status"])
         messages.success(request, "Settings saved.")
         return redirect(reverse("users:settings"))
-
-
-class SettingsIntegrationsView(LoginRequiredMixin, View):
-    def get(self, request):
-        context = {"active_tab": "integrations"}
-        context.update(_hero_stats(request.user))
-        return render(request, "users/settings/integrations.html", context)
-
-    def post(self, request):
-        user = request.user
-        user.daily_summary_enabled = request.POST.get("daily_summary_enabled") == "on"
-
-        time_str = request.POST.get("daily_summary_time", "08:00")
-        try:
-            parts = time_str.split(":")
-            user.daily_summary_time = time(int(parts[0]), int(parts[1]))
-        except (ValueError, IndexError):
-            pass
-
-        user.save(update_fields=["daily_summary_enabled", "daily_summary_time"])
-        messages.success(request, "Settings saved.")
-        return redirect(reverse("users:settings-integrations"))
 
 
 def _saved_filters_with_labels(board):

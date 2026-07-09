@@ -33,14 +33,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     display_name = models.CharField(max_length=255, blank=True, default="")
     avatar_url = models.URLField(max_length=2000, blank=True, default="")
 
-    # Micropub config — only populated for IndieAuth users who granted publish scope.
-    # All Micropub features must check has_micropub before using these.
-    micropub_endpoint = models.URLField(max_length=2000, blank=True, default="")
-    micropub_token = models.TextField(blank=True, default="")
-
-    # Daily summary settings
-    daily_summary_enabled = models.BooleanField(default=False)
-    daily_summary_time = models.TimeField(default="08:00")
     default_status = models.ForeignKey(
         "tasks.TaskStatus",
         null=True,
@@ -57,10 +49,6 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     USERNAME_FIELD = "username"
     REQUIRED_FIELDS = []
-
-    @property
-    def has_micropub(self):
-        return bool(self.micropub_endpoint and self.micropub_token)
 
     def __str__(self):
         return self.display_name or self.username

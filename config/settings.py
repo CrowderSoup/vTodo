@@ -24,16 +24,16 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 INSTALLED_APPS = [
     # Local apps — users first because AUTH_USER_MODEL depends on it
     "apps.users.apps.UsersConfig",
-    "apps.indieauth.apps.IndieAuthConfig",
+    "apps.accounts.apps.AccountsConfig",
     "apps.emailauth.apps.EmailAuthConfig",
     "apps.boards.apps.BoardsConfig",
     "apps.tasks.apps.TasksConfig",
     "apps.integrations.apps.IntegrationsConfig",
-    "apps.micropub.apps.MicropubConfig",
     # Django contrib
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
+    "django.contrib.sites",
     "django.contrib.messages",
     "django.contrib.staticfiles",
     # Third party
@@ -43,7 +43,13 @@ INSTALLED_APPS = [
     "rest_framework.authtoken",
     "drf_spectacular",
     "apps.api.apps.ApiConfig",
+    "allauth",
+    "allauth.account",
+    "allauth.socialaccount",
+    "allauth.socialaccount.providers.google",
 ]
+
+SITE_ID = 1
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -69,6 +75,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -103,6 +110,11 @@ LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/board/"
 LOGOUT_REDIRECT_URL = "/login/"
 
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "allauth.account.auth_backends.AuthenticationBackend",
+]
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LANGUAGE_CODE = "en-us"
@@ -131,12 +143,6 @@ CACHES = {
 # Celery
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
-CELERY_BEAT_SCHEDULE = {
-    "send-daily-summaries": {
-        "task": "apps.micropub.tasks.send_daily_summaries",
-        "schedule": 3600.0,  # runs hourly; task filters by user's chosen hour
-    },
-}
 
 # Email
 EMAIL_BACKEND = env(
@@ -182,8 +188,22 @@ LOGGING = {
     },
 }
 
-# IndieAuth client identity URL
-INDIEAUTH_CLIENT_ID = env("INDIEAUTH_CLIENT_ID", default="http://localhost:8000/")
+# Google OAuth (django-allauth) — settings-based provider app, no DB SocialApp/admin needed
+SOCIALACCOUNT_PROVIDERS = {
+    "google": {
+        "APP": {
+            "client_id": env("GOOGLE_CLIENT_ID", default=""),
+            "secret": env("GOOGLE_CLIENT_SECRET", default=""),
+            "key": "",
+        },
+        "SCOPE": ["profile", "email"],
+        "AUTH_PARAMS": {"access_type": "online"},
+    },
+}
+SOCIALACCOUNT_ADAPTER = "apps.accounts.adapters.SocialAccountAdapter"
+# The User model has no `email` field (email lives on apps.emailauth.EmailIdentity) —
+# tell allauth's account app not to assume/sync one.
+ACCOUNT_USER_MODEL_EMAIL_FIELD = None
 
 # Content Security Policy (Django 6.0 built-in)
 # See: https://docs.djangoproject.com/en/6.0/ref/middleware/#content-security-policy

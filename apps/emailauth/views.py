@@ -25,14 +25,14 @@ class RequestOTPView(View):
         email = request.POST.get("email", "").strip().lower()
         if not email:
             messages.error(request, "Please enter your email address.")
-            return redirect(reverse("indieauth:login") + "#email")
+            return redirect(reverse("accounts:login") + "#email")
 
         # Rate limiting: max OTP_RATE_LIMIT sends per email per hour
         rate_key = f"otp_rate:{email}"
         count = cache.get(rate_key, 0)
         if count >= OTP_RATE_LIMIT:
             messages.error(request, "Too many login attempts. Please try again later.")
-            return redirect(reverse("indieauth:login") + "#email")
+            return redirect(reverse("accounts:login") + "#email")
 
         # Get or create identity + user
         try:
@@ -61,7 +61,7 @@ class RequestOTPView(View):
         except Exception:
             logger.exception("Failed to send OTP email to %s", email)
             messages.error(request, "Failed to send login code. Please try again later.")
-            return redirect(reverse("indieauth:login") + "#email")
+            return redirect(reverse("accounts:login") + "#email")
 
         # Increment rate limit counter
         cache.set(rate_key, count + 1, OTP_RATE_WINDOW)
@@ -76,7 +76,7 @@ class VerifyOTPView(View):
     def get(self, request):
         identity_pk = request.session.get("email_identity_pk")
         if not identity_pk:
-            return redirect(reverse("indieauth:login") + "#email")
+            return redirect(reverse("accounts:login") + "#email")
         identity = get_object_or_404(EmailIdentity, pk=identity_pk)
         return render(request, "emailauth/verify.html", {"email": identity.email})
 
@@ -84,7 +84,7 @@ class VerifyOTPView(View):
         identity_pk = request.session.get("email_identity_pk")
         if not identity_pk:
             messages.error(request, "Session expired. Please request a new code.")
-            return redirect(reverse("indieauth:login") + "#email")
+            return redirect(reverse("accounts:login") + "#email")
 
         identity = get_object_or_404(EmailIdentity, pk=identity_pk)
         submitted_code = request.POST.get("code", "").strip()

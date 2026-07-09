@@ -7,8 +7,9 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, Spec
 urlpatterns = [
     path("up/", lambda request: HttpResponse("OK")),
     path("", RedirectView.as_view(url="/login/", permanent=False)),
-    # Combined login page lives at the indieauth namespace root
-    path("login/", include("apps.indieauth.urls", namespace="indieauth")),
+    # Combined login page — Email OTP + Google OAuth tabs
+    path("login/", include("apps.accounts.urls", namespace="accounts")),
+    path("accounts/", include("allauth.urls")),
     path("auth/email/", include("apps.emailauth.urls", namespace="emailauth")),
     path("board/", include("apps.boards.urls", namespace="boards")),
     path("settings/", include("apps.users.urls", namespace="users")),

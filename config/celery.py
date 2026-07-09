@@ -6,4 +6,4 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 
 app = Celery("vtodo")
 app.config_from_object("django.conf:settings", namespace="CELERY")
-app.autodiscover_tasks(["apps.micropub"])
+app.autodiscover_tasks()
