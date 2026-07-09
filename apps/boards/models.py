@@ -31,6 +31,14 @@ class Column(models.Model):
     def __str__(self):
         return f"{self.label} ({self.board})"
 
+    @property
+    def scope_team_id(self):
+        """The team pk this column is scoped to, or "" for personal/all scope."""
+        scope = self.filter_config.get("scope") or ""
+        if scope.startswith("team:"):
+            return scope.split(":", 1)[1]
+        return ""
+
     def default_status(self, user, team=None):
         """Returns the status slug to assign to tasks added in this column."""
         statuses = self.filter_config.get("statuses", [])

@@ -55,6 +55,19 @@ class SettingsGeneralView(LoginRequiredMixin, View):
         return redirect(reverse("users:settings"))
 
 
+def _columns_with_team_names(columns, user):
+    """Attach scope_team_name to each column so the template can show "Rocketry"
+    instead of the raw "team:3" scope value."""
+    from apps.tasks.selectors import user_teams_qs
+
+    columns = list(columns)
+    team_ids = {c.scope_team_id for c in columns if c.scope_team_id}
+    names = {str(pk): name for pk, name in user_teams_qs(user).filter(pk__in=team_ids).values_list("pk", "name")} if team_ids else {}
+    for c in columns:
+        c.scope_team_name = names.get(c.scope_team_id)
+    return columns
+
+
 def _saved_filters_with_labels(board):
     columns_by_pk = {column.pk: column.label for column in board.columns.all()}
     saved_filters = list(board.saved_filters.all())
@@ -73,7 +86,7 @@ class SettingsBoardView(LoginRequiredMixin, View):
         statuses = all_visible_statuses_qs(request.user)
         try:
             board = Board.objects.get(user=request.user)
-            columns = board.columns.all()
+            columns = _columns_with_team_names(board.columns.all(), request.user)
             saved_filters = _saved_filters_with_labels(board)
         except Board.DoesNotExist:
             columns = []
@@ -229,7 +242,7 @@ class ColumnCreateView(LoginRequiredMixin, View):
             },
             order=order,
         )
-        columns = board.columns.all()
+        columns = _columns_with_team_names(board.columns.all(), request.user)
         return render(request, "users/_column_list.html", {"columns": columns})
 
 
@@ -252,7 +265,7 @@ class ColumnDeleteView(LoginRequiredMixin, View):
         board = get_object_or_404(Board, user=request.user)
         column = get_object_or_404(Column, pk=pk, board=board)
         column.delete()
-        columns = board.columns.all()
+        columns = _columns_with_team_names(board.columns.all(), request.user)
         return render(request, "users/_column_list.html", {"columns": columns})
 
 
