@@ -24,6 +24,36 @@ def _invite_email_matches(user, invite):
     return user.email_identities.filter(email__iexact=invite.email, verified=True).exists()
 
 
+def _provision_team_statuses(team):
+    """Give a new team the same starter workflow personal boards get, so it isn't
+    unusable until someone visits Settings and hand-builds a status list."""
+    from apps.tasks.models import DEFAULT_STATUS_DEFS, TaskStatus
+
+    for name, slug, order, is_done in DEFAULT_STATUS_DEFS:
+        TaskStatus.objects.get_or_create(
+            team=team, slug=slug,
+            defaults={"name": name, "order": order, "is_done": is_done},
+        )
+
+
+def _provision_team_column(user, team):
+    """Add a catch-all column scoped to this team on the user's own board, so team
+    tasks are visible the moment they create or join a team instead of requiring a
+    manual trip to Settings → Board Setup."""
+    from apps.boards.models import Board, Column
+
+    board, _ = Board.objects.get_or_create(user=user)
+    scope = f"team:{team.pk}"
+    if board.columns.filter(filter_config__scope=scope).exists():
+        return
+    Column.objects.create(
+        board=board,
+        label=team.name,
+        filter_config={"scope": scope},
+        order=board.columns.count(),
+    )
+
+
 class TeamCreateView(LoginRequiredMixin, View):
     def post(self, request):
         name = request.POST.get("name", "").strip()
@@ -34,6 +64,8 @@ class TeamCreateView(LoginRequiredMixin, View):
         with transaction.atomic():
             team = Team.objects.create(name=name)
             TeamMembership.objects.create(team=team, user=request.user, role=TeamMembership.ROLE_OWNER)
+            _provision_team_statuses(team)
+            _provision_team_column(request.user, team)
 
         messages.success(request, f"Created team “{team.name}”.")
         return redirect(reverse("users:settings-teams"))
@@ -104,9 +136,11 @@ class TeamInviteAcceptView(LoginRequiredMixin, View):
             )
             return redirect(reverse("boards:board"))
 
-        TeamMembership.objects.get_or_create(
+        _, joined = TeamMembership.objects.get_or_create(
             team=invite.team, user=request.user, defaults={"role": TeamMembership.ROLE_MEMBER}
         )
+        if joined:
+            _provision_team_column(request.user, invite.team)
         invite.accepted_at = timezone.now()
         invite.save(update_fields=["accepted_at"])
 

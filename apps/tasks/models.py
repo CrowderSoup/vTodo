@@ -4,6 +4,15 @@ from django.conf import settings
 from django.db import models
 from django.utils.text import slugify
 
+# (name, slug, order, is_done) — the starter workflow given to every new personal
+# board and every new team, so a fresh owner never faces an empty status list.
+DEFAULT_STATUS_DEFS = [
+    ("Backlog", "backlog", 0, False),
+    ("To Do", "todo", 1, False),
+    ("In Progress", "in_progress", 2, False),
+    ("Done", "done", 3, True),
+]
+
 
 class TaskStatus(models.Model):
     """Owned by exactly one of user (personal) or team (shared team workflow)."""
@@ -125,6 +134,7 @@ class Task(models.Model):
 
         return Task.objects.create(
             user=self.user,
+            team=self.team,
             title=self.title,
             notes=self.notes,
             status="backlog",

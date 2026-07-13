@@ -83,6 +83,14 @@ def _status_context(user):
     return _status_context_for(user, team=None)
 
 
+def _status_slugs_for(user, team_id, cache):
+    """Per-team done/active slug lookup, cached across a board render to avoid N+1 queries."""
+    if team_id not in cache:
+        _, done_slug, active_slug = _status_context_for(user, team_id)
+        cache[team_id] = (done_slug, active_slug)
+    return cache[team_id]
+
+
 def _resolve_team_param(user, team_id_str):
     """Returns None (personal), a Team the user belongs to, or False (invalid/not a member)."""
     if not team_id_str:
@@ -212,6 +220,7 @@ def _build_board_context(user, session=None):
             tasks = [t for t in tasks if t.due_date and today <= t.due_date <= end]
 
     statuses, done_slug, active_slug = _status_context(user)
+    slug_cache = {None: (done_slug, active_slug)}
 
     hidden_columns = []
     claimed = set()
@@ -220,12 +229,14 @@ def _build_board_context(user, session=None):
         if column.pk in hidden_column_pks:
             hidden_columns.append(column)
             continue
+        column_team_id = int(column.scope_team_id) if column.scope_team_id else None
         col_tasks = []
         for task in tasks:
             if task.pk not in claimed and _task_matches_column(task, column.filter_config, user):
+                task.done_slug, task.active_slug = _status_slugs_for(user, task.team_id, slug_cache)
                 col_tasks.append(task)
                 claimed.add(task.pk)
-        columns_with_tasks.append((column, col_tasks, column.default_status(user)))
+        columns_with_tasks.append((column, col_tasks, column.default_status(user, team=column_team_id)))
 
     saved_filters = list(board.saved_filters.all())
     active_saved_filter_name = None

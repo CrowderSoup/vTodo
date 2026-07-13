@@ -699,3 +699,30 @@ def test_task_panel_create_defaults_to_column_team_scope(logged_in_client):
         reverse("boards:task-panel-create"), {"column": column.pk, "team": column.scope_team_id}
     )
     assert response.context["selected_team_id"] == team.pk
+
+
+@pytest.mark.django_db
+def test_board_mark_complete_uses_the_tasks_own_team_done_slug(logged_in_client):
+    """A team whose "done" status has a different slug than the personal board's
+    "done" status must not have its quick-complete button wired to the wrong slug —
+    that would 422 against the task's own team and silently no-op in the UI."""
+    from apps.boards.models import Column
+
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=user)
+    TaskStatus.objects.create(team=team, name="Todo", slug="todo", is_done=False, order=0)
+    TaskStatus.objects.create(team=team, name="Shipped", slug="shipped", is_done=True, order=1)
+    task = Task.objects.create(user=user, team=team, title="Team task", status="todo")
+
+    board = Board.objects.get(user=user)
+    Column.objects.create(
+        board=board, label="Team", filter_config={"scope": f"team:{team.pk}"}, order=99
+    )
+
+    response = client.get(reverse("boards:board"))
+
+    assert response.status_code == 200
+    columns_with_tasks = response.context["columns_with_tasks"]
+    team_column_tasks = next(tasks for col, tasks, _ in columns_with_tasks if col.label == "Team")
+    assert team_column_tasks[0].done_slug == "shipped"

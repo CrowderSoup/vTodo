@@ -2,7 +2,9 @@ import pytest
 from django.core import mail
 from django.urls import reverse
 
+from apps.boards.models import Board
 from apps.emailauth.models import EmailIdentity
+from apps.tasks.models import TaskStatus
 from apps.teams.models import Team, TeamInvite, TeamMembership
 from apps.teams.views import INVITE_RATE_LIMIT
 from apps.users.models import User
@@ -23,6 +25,24 @@ def test_team_create_makes_owner_membership(logged_in_client):
     team = Team.objects.get(name="Rocketry")
     membership = TeamMembership.objects.get(team=team, user=user)
     assert membership.role == TeamMembership.ROLE_OWNER
+
+
+@pytest.mark.django_db
+def test_team_create_seeds_default_statuses(logged_in_client):
+    client, user = logged_in_client
+    client.post(reverse("teams:create"), {"name": "Rocketry"})
+    team = Team.objects.get(name="Rocketry")
+    slugs = set(TaskStatus.objects.filter(team=team).values_list("slug", flat=True))
+    assert slugs == {"backlog", "todo", "in_progress", "done"}
+
+
+@pytest.mark.django_db
+def test_team_create_adds_scoped_column_to_owners_board(logged_in_client):
+    client, user = logged_in_client
+    client.post(reverse("teams:create"), {"name": "Rocketry"})
+    team = Team.objects.get(name="Rocketry")
+    board = Board.objects.get(user=user)
+    assert board.columns.filter(filter_config__scope=f"team:{team.pk}").exists()
 
 
 @pytest.mark.django_db
@@ -80,6 +100,21 @@ def test_invite_accept_creates_membership(logged_in_client):
     assert TeamMembership.objects.filter(team=team, user=user).exists()
     invite.refresh_from_db()
     assert invite.accepted_at is not None
+
+
+@pytest.mark.django_db
+def test_invite_accept_adds_scoped_column_to_joining_users_board(logged_in_client):
+    client, user = logged_in_client
+    EmailIdentity.objects.create(user=user, email="a@example.com", verified=True)
+    owner = User.objects.create_user()
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=owner, role=TeamMembership.ROLE_OWNER)
+    invite = TeamInvite.generate(team, "a@example.com", owner)
+
+    client.post(reverse("teams:invite-accept", args=[invite.token]))
+
+    board = Board.objects.get(user=user)
+    assert board.columns.filter(filter_config__scope=f"team:{team.pk}").exists()
 
 
 @pytest.mark.django_db

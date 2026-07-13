@@ -69,7 +69,7 @@
       {% if not task.completed_at %}
       <button class="btn-secondary btn-icon" title="Mark complete"
               hx-post="{% url 'boards:task-move' task.pk %}"
-              hx-vals='{"new_status": "{{ done_slug }}"}'
+              hx-vals='{"new_status": "{{ task.done_slug|default:done_slug }}"}'
               hx-target="#board-content"
               hx-swap="innerHTML">✓</button>
       <button class="btn-secondary btn-icon" title="Edit task"
@@ -85,7 +85,7 @@
       {% else %}
       <button class="btn-secondary btn-icon" title="Move back to active"
               hx-post="{% url 'boards:task-move' task.pk %}"
-              hx-vals='{"new_status": "{{ active_slug }}"}'
+              hx-vals='{"new_status": "{{ task.active_slug|default:active_slug }}"}'
               hx-target="#board-content"
               hx-swap="innerHTML">↩</button>
       {% endif %}
