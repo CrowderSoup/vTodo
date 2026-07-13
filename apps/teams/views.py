@@ -54,6 +54,86 @@ def _provision_team_column(user, team):
     )
 
 
+def _delete_team_scoped_columns(user_ids, team_id):
+    """Remove every column scoped to this team from the given users' boards. Once a
+    team is gone (or a user isn't a member anymore) such a column can never show a
+    task again, so leaving it behind is just a dead lane cluttering the board."""
+    from apps.boards.models import Column
+
+    Column.objects.filter(
+        board__user_id__in=user_ids, filter_config__scope=f"team:{team_id}"
+    ).delete()
+
+
+def _cleanup_after_membership_removal(actor, user, team):
+    """When someone leaves or is removed from a team: unassign them from that
+    team's tasks (an assignee who isn't a member is a stale/invalid state — see
+    AssignmentError in apps.tasks.selectors.assign_task) and drop their now-dead
+    team-scoped board column(s)."""
+    from apps.tasks.models import Task, TaskActivity
+
+    for task in Task.objects.filter(team=team, assignee=user):
+        old_display = user.display_name or user.username
+        task.assignee = None
+        task.save(update_fields=["assignee", "updated_at"])
+        TaskActivity.objects.create(
+            task=task, actor=actor, field="assignee", old_value=old_display, new_value="Unassigned",
+        )
+
+    _delete_team_scoped_columns([user.pk], team.pk)
+
+
+def _cleanup_before_team_delete(team):
+    """Snapshot what CASCADE is about to wipe out (membership rows, and Task.team
+    which the FK's SET_NULL clears) so post-delete cleanup still knows who was
+    affected. team.pk is reset to None by Team.delete(), so it's captured too."""
+    from apps.tasks.models import Task
+
+    return {
+        "team_id": team.pk,
+        "member_user_ids": list(TeamMembership.objects.filter(team=team).values_list("user_id", flat=True)),
+        "orphaned_task_ids": list(Task.objects.filter(team=team).values_list("pk", flat=True)),
+    }
+
+
+def _cleanup_after_team_delete(snapshot):
+    """Deleting a team already CASCADEs its TaskStatus rows and SET_NULLs Task.team
+    (see apps/tasks/models.py). What's left: newly-personal tasks may carry a status
+    slug or assignee that no longer means anything without the team, and every
+    former member has a dead team-scoped column sitting on their board."""
+    from apps.tasks.models import Task, TaskStatus
+
+    personal_statuses_by_user = {}
+
+    def _personal_statuses(user):
+        if user.pk not in personal_statuses_by_user:
+            personal_statuses_by_user[user.pk] = list(
+                TaskStatus.objects.filter(user=user, team__isnull=True).order_by("order")
+            )
+        return personal_statuses_by_user[user.pk]
+
+    orphaned_tasks = Task.objects.filter(pk__in=snapshot["orphaned_task_ids"]).select_related(
+        "user", "user__default_status"
+    )
+    for task in orphaned_tasks:
+        update_fields = ["assignee", "updated_at"]
+        task.assignee = None
+
+        statuses = _personal_statuses(task.user)
+        valid_slugs = {status.slug for status in statuses}
+        if task.status not in valid_slugs:
+            default = task.user.default_status
+            fallback = default if default and default.slug in valid_slugs else (statuses[0] if statuses else None)
+            task.status = fallback.slug if fallback else "todo"
+            if not (fallback and fallback.is_done):
+                task.completed_at = None
+            update_fields += ["status", "completed_at"]
+
+        task.save(update_fields=update_fields)
+
+    _delete_team_scoped_columns(snapshot["member_user_ids"], snapshot["team_id"])
+
+
 class TeamCreateView(LoginRequiredMixin, View):
     def post(self, request):
         name = request.POST.get("name", "").strip()
@@ -165,7 +245,9 @@ class TeamMemberRemoveView(LoginRequiredMixin, View):
                 messages.error(request, "A team must have at least one owner.")
                 return redirect(reverse("users:settings-teams"))
 
+            team, target_user = target.team, target.user
             target.delete()
+            _cleanup_after_membership_removal(request.user, target_user, team)
 
         messages.success(request, "Removed from team.")
         return redirect(reverse("users:settings-teams"))
@@ -185,7 +267,9 @@ class TeamLeaveView(LoginRequiredMixin, View):
                     messages.error(request, "Promote another member to owner before leaving.")
                     return redirect(reverse("users:settings-teams"))
 
+            team = membership.team
             membership.delete()
+            _cleanup_after_membership_removal(request.user, request.user, team)
 
         messages.success(request, "You left the team.")
         return redirect(reverse("users:settings-teams"))
@@ -196,6 +280,11 @@ class TeamDeleteView(LoginRequiredMixin, View):
         _owner_membership_or_404(request.user, team_pk)
         team = get_object_or_404(Team, pk=team_pk)
         team_name = team.name
-        team.delete()
+
+        with transaction.atomic():
+            snapshot = _cleanup_before_team_delete(team)
+            team.delete()
+            _cleanup_after_team_delete(snapshot)
+
         messages.success(request, f"Deleted team “{team_name}”.")
         return redirect(reverse("users:settings-teams"))
