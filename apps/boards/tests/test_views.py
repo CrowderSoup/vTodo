@@ -27,6 +27,17 @@ def logged_in_client(client, user_with_board):
     return client, user_with_board
 
 
+def _create_team_board(team):
+    """Teams created directly via Team.objects.create() (bypassing TeamCreateView)
+    don't get the shared board TeamCreateView normally provisions -- tests that need
+    one set it up explicitly, same as they already do for TaskStatus."""
+    from apps.boards.models import Board, Column
+
+    board = Board.objects.create(team=team, name=team.name)
+    Column.objects.create(board=board, label=team.name, filter_config={}, order=0)
+    return board
+
+
 # ---------------------------------------------------------------------------
 # BoardView — new stat context variables
 # ---------------------------------------------------------------------------
@@ -104,9 +115,10 @@ def test_board_overdue_count(logged_in_client):
 @pytest.mark.django_db
 def test_board_active_filter_count_with_tag_filter(logged_in_client):
     """active_filter_count increments for each active tag filter."""
-    client, _ = logged_in_client
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
     session = client.session
-    session["board_filter"] = {"tags": ["urgent", "bug"], "due": "", "hidden_columns": []}
+    session["board_filter"] = {str(board.pk): {"tags": ["urgent", "bug"], "due": "", "hidden_columns": []}}
     session.save()
     response = client.get(reverse("boards:board"))
     assert response.context["active_filter_count"] == 2
@@ -115,9 +127,10 @@ def test_board_active_filter_count_with_tag_filter(logged_in_client):
 @pytest.mark.django_db
 def test_board_active_filter_count_with_due_filter(logged_in_client):
     """active_filter_count increments by 1 when a due filter is set."""
-    client, _ = logged_in_client
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
     session = client.session
-    session["board_filter"] = {"tags": [], "due": "today", "hidden_columns": []}
+    session["board_filter"] = {str(board.pk): {"tags": [], "due": "today", "hidden_columns": []}}
     session.save()
     response = client.get(reverse("boards:board"))
     assert response.context["active_filter_count"] == 1
@@ -130,7 +143,7 @@ def test_board_active_filter_count_combined(logged_in_client):
     board = Board.objects.get(user=user)
     column_pk = board.columns.first().pk
     session = client.session
-    session["board_filter"] = {"tags": ["x"], "due": "overdue", "hidden_columns": [column_pk]}
+    session["board_filter"] = {str(board.pk): {"tags": ["x"], "due": "overdue", "hidden_columns": [column_pk]}}
     session.save()
     response = client.get(reverse("boards:board"))
     assert response.context["active_filter_count"] == 3
@@ -139,9 +152,10 @@ def test_board_active_filter_count_combined(logged_in_client):
 @pytest.mark.django_db
 def test_board_active_filter_count_with_exclude_tag_filter(logged_in_client):
     """active_filter_count increments for each active exclude-tag filter."""
-    client, _ = logged_in_client
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
     session = client.session
-    session["board_filter"] = {"tags": [], "exclude_tags": ["urgent", "bug"], "due": "", "hidden_columns": []}
+    session["board_filter"] = {str(board.pk): {"tags": [], "exclude_tags": ["urgent", "bug"], "due": "", "hidden_columns": []}}
     session.save()
     response = client.get(reverse("boards:board"))
     assert response.context["active_filter_count"] == 2
@@ -151,10 +165,11 @@ def test_board_active_filter_count_with_exclude_tag_filter(logged_in_client):
 def test_board_exclude_tag_filter_hides_matching_tasks(logged_in_client):
     """Tasks with an excluded tag are hidden from the board, others remain visible."""
     client, user = logged_in_client
+    board = Board.objects.get(user=user)
     Task.objects.create(user=user, title="Has tag", status="todo", tags=["urgent"])
     Task.objects.create(user=user, title="No tag", status="todo", tags=["misc"])
     session = client.session
-    session["board_filter"] = {"tags": [], "exclude_tags": ["urgent"], "due": "", "hidden_columns": []}
+    session["board_filter"] = {str(board.pk): {"tags": [], "exclude_tags": ["urgent"], "due": "", "hidden_columns": []}}
     session.save()
     response = client.get(reverse("boards:board"))
     assert response.context["visible_task_count"] == 1
@@ -163,22 +178,24 @@ def test_board_exclude_tag_filter_hides_matching_tasks(logged_in_client):
 @pytest.mark.django_db
 def test_board_filter_add_exclude_tag_view_adds_tag(logged_in_client):
     """Posting to board-filter-exclude-tag appends the tag to the session's exclude list."""
-    client, _ = logged_in_client
-    response = client.post(reverse("boards:board-filter-exclude-tag"), {"tag": "urgent"})
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    response = client.post(reverse("boards:board-filter-exclude-tag"), {"tag": "urgent", "board_id": board.pk})
     assert response.status_code == 200
-    assert client.session["board_filter"]["exclude_tags"] == ["urgent"]
+    assert client.session["board_filter"][str(board.pk)]["exclude_tags"] == ["urgent"]
 
 
 @pytest.mark.django_db
 def test_board_filter_add_exclude_tag_removes_from_include(logged_in_client):
     """Excluding a tag that is currently an include-filter removes it from the include list."""
-    client, _ = logged_in_client
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
     session = client.session
-    session["board_filter"] = {"tags": ["urgent"], "exclude_tags": [], "due": "", "hidden_columns": []}
+    session["board_filter"] = {str(board.pk): {"tags": ["urgent"], "exclude_tags": [], "due": "", "hidden_columns": []}}
     session.save()
-    response = client.post(reverse("boards:board-filter-exclude-tag"), {"tag": "urgent"})
+    response = client.post(reverse("boards:board-filter-exclude-tag"), {"tag": "urgent", "board_id": board.pk})
     assert response.status_code == 200
-    board_filter = client.session["board_filter"]
+    board_filter = client.session["board_filter"][str(board.pk)]
     assert board_filter["tags"] == []
     assert board_filter["exclude_tags"] == ["urgent"]
 
@@ -186,13 +203,14 @@ def test_board_filter_add_exclude_tag_removes_from_include(logged_in_client):
 @pytest.mark.django_db
 def test_board_filter_add_tag_removes_from_exclude(logged_in_client):
     """Including a tag that is currently an exclude-filter removes it from the exclude list."""
-    client, _ = logged_in_client
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
     session = client.session
-    session["board_filter"] = {"tags": [], "exclude_tags": ["urgent"], "due": "", "hidden_columns": []}
+    session["board_filter"] = {str(board.pk): {"tags": [], "exclude_tags": ["urgent"], "due": "", "hidden_columns": []}}
     session.save()
-    response = client.post(reverse("boards:board-filter-add-tag"), {"tag": "urgent"})
+    response = client.post(reverse("boards:board-filter-add-tag"), {"tag": "urgent", "board_id": board.pk})
     assert response.status_code == 200
-    board_filter = client.session["board_filter"]
+    board_filter = client.session["board_filter"][str(board.pk)]
     assert board_filter["tags"] == ["urgent"]
     assert board_filter["exclude_tags"] == []
 
@@ -243,7 +261,7 @@ def test_board_renders_fab_for_task_creation(logged_in_client):
     content = response.content.decode()
     assert response.status_code == 200
     assert 'class="board-fab"' in content
-    assert f'hx-get="{reverse("boards:task-panel-create")}"' in content
+    assert f'hx-get="{reverse("boards:task-panel-create")}?team="' in content
 
 
 @pytest.mark.django_db
@@ -260,7 +278,7 @@ def test_board_includes_shared_confirm_modal(logged_in_client):
 @pytest.mark.django_db
 def test_task_panel_create_renders_without_comments_form(logged_in_client):
     client, user = logged_in_client
-    first_column = user.board.columns.first()
+    first_column = Board.objects.get(user=user).columns.first()
     response = client.get(reverse("boards:task-panel-create"))
     content = response.content.decode()
     assert response.status_code == 200
@@ -276,7 +294,7 @@ def test_task_panel_create_uses_default_status_when_user_has_one(logged_in_clien
     default_status = user.task_statuses.get(slug="in_progress")
     user.default_status = default_status
     user.save(update_fields=["default_status"])
-    expected_column = user.board.columns.get(label="In Progress")
+    expected_column = Board.objects.get(user=user).columns.get(label="In Progress")
 
     response = client.get(reverse("boards:task-panel-create"))
     assert response.status_code == 200
@@ -289,7 +307,7 @@ def test_task_panel_create_explicit_column_overrides_default_status(logged_in_cl
     client, user = logged_in_client
     user.default_status = user.task_statuses.get(slug="done")
     user.save(update_fields=["default_status"])
-    explicit_column = user.board.columns.get(label="To Do")
+    explicit_column = Board.objects.get(user=user).columns.get(label="To Do")
 
     response = client.get(f'{reverse("boards:task-panel-create")}?column={explicit_column.pk}')
     assert response.status_code == 200
@@ -531,6 +549,7 @@ def test_task_assign_claims_unassigned_team_task(logged_in_client):
     client, user = logged_in_client
     team = Team.objects.create(name="Rocketry")
     TeamMembership.objects.create(team=team, user=user)
+    _create_team_board(team)
     task = Task.objects.create(user=user, team=team, title="Team task", status="todo")
 
     response = client.post(
@@ -581,50 +600,50 @@ def test_task_assign_rejects_personal_task(logged_in_client):
 
 
 @pytest.mark.django_db
-def test_board_shows_teammates_task_in_team_scoped_column(logged_in_client):
-    from apps.boards.models import Column
-
+def test_team_board_shows_teammates_tasks(logged_in_client):
+    """A team's shared board shows every member's tasks on that team, not just the
+    viewer's own."""
     client, user = logged_in_client
     other = User.objects.create_user()
     team = Team.objects.create(name="Rocketry")
     TeamMembership.objects.create(team=team, user=user)
     TeamMembership.objects.create(team=team, user=other)
+    _create_team_board(team)
     team_task = Task.objects.create(user=other, team=team, title="Team task", status="todo")
 
-    board = Board.objects.get(user=user)
-    Column.objects.create(
-        board=board, label="Team", filter_config={"scope": f"team:{team.pk}"}, order=99
-    )
+    response = client.get(reverse("boards:board-team", args=[team.pk]))
+    all_tasks = [t for _, tasks, _ in response.context["columns_with_tasks"] for t in tasks]
 
-    response = client.get(reverse("boards:board"))
-    columns_with_tasks = response.context["columns_with_tasks"]
-    team_column_tasks = next(tasks for col, tasks, _ in columns_with_tasks if col.label == "Team")
-    personal_column_tasks = [t for col, tasks, _ in columns_with_tasks for t in tasks if col.label != "Team"]
-
-    assert team_task in team_column_tasks
-    assert team_task not in personal_column_tasks
+    assert team_task in all_tasks
 
 
 @pytest.mark.django_db
-def test_board_excludes_other_teams_task_from_team_scoped_column(logged_in_client):
-    from apps.boards.models import Column
-
+def test_team_board_excludes_other_teams_tasks(logged_in_client):
+    """Board isolation: a team's board never shows another team's tasks, even for a
+    user who belongs to both teams."""
     client, user = logged_in_client
     team = Team.objects.create(name="Rocketry")
     other_team = Team.objects.create(name="Other")
     outsider = User.objects.create_user()
     TeamMembership.objects.create(team=team, user=user)
     TeamMembership.objects.create(team=other_team, user=outsider)
+    _create_team_board(team)
+    _create_team_board(other_team)
     other_team_task = Task.objects.create(user=outsider, team=other_team, title="Other team task", status="todo")
 
-    board = Board.objects.get(user=user)
-    Column.objects.create(
-        board=board, label="Team", filter_config={"scope": f"team:{team.pk}"}, order=99
-    )
-
-    response = client.get(reverse("boards:board"))
+    response = client.get(reverse("boards:board-team", args=[team.pk]))
     all_tasks = [t for _, tasks, _ in response.context["columns_with_tasks"] for t in tasks]
     assert other_team_task not in all_tasks
+
+
+@pytest.mark.django_db
+def test_team_board_404s_for_non_member(logged_in_client):
+    client, user = logged_in_client
+    team = Team.objects.create(name="Rocketry")
+    _create_team_board(team)
+
+    response = client.get(reverse("boards:board-team", args=[team.pk]))
+    assert response.status_code == 404
 
 
 @pytest.mark.django_db
@@ -632,6 +651,7 @@ def test_task_create_with_team_succeeds_for_member(logged_in_client):
     client, user = logged_in_client
     team = Team.objects.create(name="Rocketry")
     TeamMembership.objects.create(team=team, user=user)
+    _create_team_board(team)
 
     response = client.post(reverse("boards:task-create"), {"title": "Team task", "team": team.pk})
 
@@ -656,6 +676,7 @@ def test_task_panel_renders_assignee_select_and_activity_for_team_task(logged_in
     client, user = logged_in_client
     team = Team.objects.create(name="Rocketry")
     TeamMembership.objects.create(team=team, user=user)
+    _create_team_board(team)
     task = Task.objects.create(user=user, team=team, title="Team task", status="todo")
     client.post(reverse("boards:task-assign", kwargs={"pk": task.pk}), {"assignee_id": user.pk})
 
@@ -667,62 +688,53 @@ def test_task_panel_renders_assignee_select_and_activity_for_team_task(logged_in
 
 
 @pytest.mark.django_db
-def test_task_panel_create_renders_team_select_for_member(logged_in_client):
+def test_task_panel_create_has_no_team_select(logged_in_client):
+    """The team is implied by which board the create panel was opened from now
+    (via the hidden 'team' field), not a user-facing dropdown."""
     client, user = logged_in_client
     team = Team.objects.create(name="Rocketry")
     TeamMembership.objects.create(team=team, user=user)
+    _create_team_board(team)
 
     response = client.get(reverse("boards:task-panel-create"), {"team": team.pk})
 
     assert response.status_code == 200
-    assert b"Rocketry" in response.content
+    assert b'id="task-panel-create-team"' not in response.content
+    assert response.context["selected_team_id"] == team.pk
 
 
 @pytest.mark.django_db
-def test_task_panel_create_defaults_to_column_team_scope(logged_in_client):
-    """The column's "Add task" button links with the column's own scope_team_id, so
-    opening the create panel from a team-scoped column should preselect that team
-    instead of falling back to personal."""
-    from apps.boards.models import Column
-
+def test_task_panel_create_preselects_team_from_board(logged_in_client):
+    """Opening the create panel from a team board's "Add task" link (which now
+    carries ?team=<board's team id>) preselects that team instead of falling back
+    to personal."""
     client, user = logged_in_client
     team = Team.objects.create(name="Rocketry")
     TeamMembership.objects.create(team=team, user=user)
-
-    board = Board.objects.get(user=user)
-    column = Column.objects.create(
-        board=board, label="Team", filter_config={"scope": f"team:{team.pk}"}, order=99
-    )
-    assert column.scope_team_id == str(team.pk)
+    team_board = _create_team_board(team)
+    column = team_board.columns.first()
 
     response = client.get(
-        reverse("boards:task-panel-create"), {"column": column.pk, "team": column.scope_team_id}
+        reverse("boards:task-panel-create"), {"column": column.pk, "team": team.pk}
     )
     assert response.context["selected_team_id"] == team.pk
 
 
 @pytest.mark.django_db
-def test_board_mark_complete_uses_the_tasks_own_team_done_slug(logged_in_client):
+def test_team_board_mark_complete_uses_the_teams_own_done_slug(logged_in_client):
     """A team whose "done" status has a different slug than the personal board's
     "done" status must not have its quick-complete button wired to the wrong slug —
     that would 422 against the task's own team and silently no-op in the UI."""
-    from apps.boards.models import Column
-
     client, user = logged_in_client
     team = Team.objects.create(name="Rocketry")
     TeamMembership.objects.create(team=team, user=user)
     TaskStatus.objects.create(team=team, name="Todo", slug="todo", is_done=False, order=0)
     TaskStatus.objects.create(team=team, name="Shipped", slug="shipped", is_done=True, order=1)
+    _create_team_board(team)
     task = Task.objects.create(user=user, team=team, title="Team task", status="todo")
 
-    board = Board.objects.get(user=user)
-    Column.objects.create(
-        board=board, label="Team", filter_config={"scope": f"team:{team.pk}"}, order=99
-    )
-
-    response = client.get(reverse("boards:board"))
+    response = client.get(reverse("boards:board-team", args=[team.pk]))
 
     assert response.status_code == 200
-    columns_with_tasks = response.context["columns_with_tasks"]
-    team_column_tasks = next(tasks for col, tasks, _ in columns_with_tasks if col.label == "Team")
-    assert team_column_tasks[0].done_slug == "shipped"
+    all_tasks = [t for _, tasks, _ in response.context["columns_with_tasks"] for t in tasks]
+    assert all_tasks[0].done_slug == "shipped"

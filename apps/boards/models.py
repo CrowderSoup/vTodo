@@ -3,24 +3,57 @@ from django.db import models
 
 
 class Board(models.Model):
-    user = models.OneToOneField(
+    """Owned by exactly one of user (personal board) or team (shared team board)."""
+
+    user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="board",
+        related_name="boards",
+        null=True,
+        blank=True,
+    )
+    team = models.ForeignKey(
+        "teams.Team",
+        on_delete=models.CASCADE,
+        related_name="boards",
+        null=True,
+        blank=True,
     )
     name = models.CharField(max_length=255, default="My Board")
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(user__isnull=False, team__isnull=True)
+                    | models.Q(user__isnull=True, team__isnull=False)
+                ),
+                name="board_exactly_one_owner",
+            ),
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=models.Q(team__isnull=True),
+                name="board_unique_user",
+            ),
+            models.UniqueConstraint(
+                fields=["team"],
+                condition=models.Q(user__isnull=True),
+                name="board_unique_team",
+            ),
+        ]
+
     def __str__(self):
-        return f"{self.name} ({self.user})"
+        return f"{self.name} ({self.user or self.team})"
 
 
 class Column(models.Model):
     board = models.ForeignKey(Board, on_delete=models.CASCADE, related_name="columns")
     label = models.CharField(max_length=100)
     # filter_config schema: {"statuses": [...], "tags": [...], "due": null|"overdue"|"today"|"this_week",
-    #                         "scope": "personal"|"team:<id>"|"all" (default "personal"),
     #                         "assignee": "any"|"me"|"unassigned"|"<user_id>" (default "any")}
+    # Scope (personal vs a specific team) is determined by which Board a Column belongs to,
+    # not by anything in filter_config.
     filter_config = models.JSONField(default=dict)
     order = models.PositiveSmallIntegerField(default=0)
     color = models.CharField(max_length=7, blank=True, default="")
@@ -30,14 +63,6 @@ class Column(models.Model):
 
     def __str__(self):
         return f"{self.label} ({self.board})"
-
-    @property
-    def scope_team_id(self):
-        """The team pk this column is scoped to, or "" for personal/all scope."""
-        scope = self.filter_config.get("scope") or ""
-        if scope.startswith("team:"):
-            return scope.split(":", 1)[1]
-        return ""
 
     def default_status(self, user, team=None):
         """Returns the status slug to assign to tasks added in this column."""

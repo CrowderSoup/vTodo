@@ -54,9 +54,18 @@
     <div>
       <h2 class="card-title">Board Columns</h2>
       <p class="card-subtitle">
-        Columns filter the same task list into a clearer flow. Leave filters blank to create a catch-all lane.
+        Columns filter that board's task list into a clearer flow. Leave filters blank to create a catch-all lane.
       </p>
     </div>
+
+    {% if user_teams %}
+    <nav class="settings-subnav" aria-label="Boards">
+      <a class="settings-subnav-link {% if not board.team_id %}is-active{% endif %}" href="{% url 'users:settings-board' %}">Personal</a>
+      {% for team in user_teams %}
+      <a class="settings-subnav-link {% if board.team_id == team.pk %}is-active{% endif %}" href="{% url 'users:settings-board' %}?team={{ team.pk }}">{{ team.name }}</a>
+      {% endfor %}
+    </nav>
+    {% endif %}
 
     <div id="column-list" class="settings-list">
       {% include "users/_column_list.html" %}
@@ -66,8 +75,9 @@
           hx-post="{% url 'users:column-create' %}"
           hx-target="#column-list"
           hx-swap="innerHTML"
-          hx-on::after-request="if (event.target === this) { this.reset(); document.getElementById('column-team')?.dispatchEvent(new Event('change')); }">
+          hx-on::after-request="if (event.target === this) { this.reset(); }">
       {% csrf_token %}
+      <input type="hidden" name="team" value="{{ board.team_id|default:'' }}">
 
       <div class="form-field">
         <label class="field-label" for="column-label">Column label</label>
@@ -76,16 +86,6 @@
 
       {% if user_teams %}
       <div class="form-grid form-grid--two">
-        <div class="form-field">
-          <label class="field-label" for="column-team">Show tasks from</label>
-          <select id="column-team" name="team">
-            <option value="">Personal (mine only)</option>
-            {% for team in user_teams %}
-            <option value="{{ team.pk }}">{{ team.name }} (team)</option>
-            {% endfor %}
-          </select>
-        </div>
-
         <div class="form-field">
           <label class="field-label" for="column-assignee">Assignee filter</label>
           <select id="column-assignee" name="assignee">
@@ -102,9 +102,8 @@
           <label class="field-label">Statuses</label>
           <div id="column-status-options"
                class="checkbox-group"
-               hx-get="{% url 'users:column-status-options' %}"
-               hx-trigger="load, change from:#column-team"
-               hx-include="#column-team"
+               hx-get="{% url 'users:column-status-options' %}?team={{ board.team_id|default:'' }}"
+               hx-trigger="load"
                hx-swap="innerHTML">
           </div>
         </div>

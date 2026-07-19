@@ -1,6 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views import View
@@ -55,17 +55,17 @@ class SettingsGeneralView(LoginRequiredMixin, View):
         return redirect(reverse("users:settings"))
 
 
-def _columns_with_team_names(columns, user):
-    """Attach scope_team_name to each column so the template can show "Rocketry"
-    instead of the raw "team:3" scope value."""
-    from apps.tasks.selectors import user_teams_qs
+def _resolve_settings_board(user, team_id_str):
+    """The board the Settings > Board page should show: the team board named by
+    team_id_str if it's valid and the user belongs to it, else the personal board."""
+    from apps.boards.selectors import resolve_board
 
-    columns = list(columns)
-    team_ids = {c.scope_team_id for c in columns if c.scope_team_id}
-    names = {str(pk): name for pk, name in user_teams_qs(user).filter(pk__in=team_ids).values_list("pk", "name")} if team_ids else {}
-    for c in columns:
-        c.scope_team_name = names.get(c.scope_team_id)
-    return columns
+    if team_id_str and team_id_str.isdigit():
+        try:
+            return resolve_board(user, int(team_id_str))
+        except Http404:
+            pass
+    return resolve_board(user, None)
 
 
 def _saved_filters_with_labels(board):
@@ -81,19 +81,15 @@ def _saved_filters_with_labels(board):
 class SettingsBoardView(LoginRequiredMixin, View):
     def get(self, request):
         from apps.tasks.selectors import all_visible_statuses_qs, user_teams_qs
-        from apps.boards.models import Board
 
+        board = _resolve_settings_board(request.user, request.GET.get("team", "").strip())
         statuses = all_visible_statuses_qs(request.user)
-        try:
-            board = Board.objects.get(user=request.user)
-            columns = _columns_with_team_names(board.columns.all(), request.user)
-            saved_filters = _saved_filters_with_labels(board)
-        except Board.DoesNotExist:
-            columns = []
-            saved_filters = []
+        columns = list(board.columns.all())
+        saved_filters = _saved_filters_with_labels(board)
 
         context = {
             "statuses": statuses,
+            "board": board,
             "columns": columns,
             "saved_filters": saved_filters,
             "default_status_id": request.user.default_status_id,
@@ -207,9 +203,8 @@ class TaskStatusDeleteView(LoginRequiredMixin, View):
 
 class ColumnCreateView(LoginRequiredMixin, View):
     def post(self, request):
-        from django.http import HttpResponse
-
-        from apps.boards.models import Board, Column
+        from apps.boards.models import Column
+        from apps.boards.selectors import resolve_board
 
         label = request.POST.get("label", "").strip()
         if not label:
@@ -218,7 +213,11 @@ class ColumnCreateView(LoginRequiredMixin, View):
         team = _resolve_owned_team(request.user, request.POST.get("team", "").strip())
         if team is False:
             return HttpResponse(status=422)
-        scope = f"team:{team.pk}" if team else "personal"
+        # team is already membership-validated above, so resolve its board directly
+        # rather than through _resolve_settings_board's silent fall-back-to-personal
+        # (that fall-back is meant for the Settings page's own, unvalidated ?team=
+        # query param, not for a column whose team the caller already picked).
+        board = resolve_board(request.user, team.pk if team else None)
 
         assignee = request.POST.get("assignee", "any").strip() or "any"
 
@@ -228,7 +227,6 @@ class ColumnCreateView(LoginRequiredMixin, View):
         statuses = [s.strip() for s in request.POST.getlist("statuses") if s.strip()]
         tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
 
-        board = get_object_or_404(Board, user=request.user)
         order = board.columns.count()
         Column.objects.create(
             board=board,
@@ -237,12 +235,11 @@ class ColumnCreateView(LoginRequiredMixin, View):
                 "statuses": statuses,
                 "tags": tags,
                 "due": due,
-                "scope": scope,
                 "assignee": assignee,
             },
             order=order,
         )
-        columns = _columns_with_team_names(board.columns.all(), request.user)
+        columns = list(board.columns.all())
         return render(request, "users/_column_list.html", {"columns": columns})
 
 
@@ -260,21 +257,27 @@ class ColumnStatusOptionsView(LoginRequiredMixin, View):
 
 class ColumnDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        from apps.boards.models import Board, Column
+        from apps.boards.models import Column
+        from apps.boards.selectors import user_can_access_board
 
-        board = get_object_or_404(Board, user=request.user)
-        column = get_object_or_404(Column, pk=pk, board=board)
+        column = get_object_or_404(Column.objects.select_related("board"), pk=pk)
+        if not user_can_access_board(request.user, column.board):
+            raise Http404()
+        board = column.board
         column.delete()
-        columns = _columns_with_team_names(board.columns.all(), request.user)
+        columns = list(board.columns.all())
         return render(request, "users/_column_list.html", {"columns": columns})
 
 
 class SavedViewDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        from apps.boards.models import Board, SavedFilter
+        from apps.boards.models import SavedFilter
+        from apps.boards.selectors import user_can_access_board
 
-        board = get_object_or_404(Board, user=request.user)
-        saved_filter = get_object_or_404(SavedFilter, pk=pk, board=board)
+        saved_filter = get_object_or_404(SavedFilter.objects.select_related("board"), pk=pk)
+        if not user_can_access_board(request.user, saved_filter.board):
+            raise Http404()
+        board = saved_filter.board
         saved_filter.delete()
         saved_filters = _saved_filters_with_labels(board)
         return render(request, "users/_saved_views_list.html", {"saved_filters": saved_filters})

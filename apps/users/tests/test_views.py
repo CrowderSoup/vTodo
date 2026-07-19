@@ -97,12 +97,14 @@ def test_settings_teams_empty_state_for_no_teams(logged_in_client):
 
 
 @pytest.mark.django_db
-def test_column_create_with_team_scope(logged_in_client):
+def test_column_create_with_team_creates_on_team_board(logged_in_client):
+    from apps.boards.models import Board
     from apps.teams.models import Team, TeamMembership
 
     client, user = logged_in_client
     team = Team.objects.create(name="Rocketry")
     TeamMembership.objects.create(team=team, user=user, role=TeamMembership.ROLE_OWNER)
+    team_board = Board.objects.create(team=team, name=team.name)
 
     response = client.post(
         reverse("users:column-create"),
@@ -113,26 +115,12 @@ def test_column_create_with_team_scope(logged_in_client):
     from apps.boards.models import Column
 
     column = Column.objects.get(label="Team Lane")
-    assert column.filter_config["scope"] == f"team:{team.pk}"
+    assert column.board_id == team_board.pk
+    assert "scope" not in column.filter_config
     assert column.filter_config["assignee"] == "unassigned"
-
-
-@pytest.mark.django_db
-def test_column_create_response_shows_team_name_not_raw_scope(logged_in_client):
-    from apps.teams.models import Team, TeamMembership
-
-    client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-    TeamMembership.objects.create(team=team, user=user, role=TeamMembership.ROLE_OWNER)
-
-    response = client.post(
-        reverse("users:column-create"),
-        {"label": "Team Lane", "team": team.pk},
-    )
-
-    content = response.content.decode()
-    assert "Rocketry" in content
-    assert f"team:{team.pk}" not in content
+    # Nothing leaked onto the creator's own personal board.
+    personal_board = Board.objects.get(user=user)
+    assert not personal_board.columns.filter(label="Team Lane").exists()
 
 
 @pytest.mark.django_db

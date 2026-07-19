@@ -25,6 +25,14 @@ def visible_tasks_qs(user):
     )
 
 
+def board_tasks_qs(board):
+    """Tasks belonging on a given board: a team board shows all of that team's tasks,
+    a personal board shows only its owner's personal (non-team) tasks."""
+    if board.team_id:
+        return Task.objects.filter(team_id=board.team_id)
+    return Task.objects.filter(user_id=board.user_id, team__isnull=True)
+
+
 def get_task_or_404(user, pk):
     return get_object_or_404(visible_tasks_qs(user), pk=pk)
 

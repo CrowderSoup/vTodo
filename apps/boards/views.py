@@ -4,7 +4,7 @@ import markdown as md
 from datetime import date, timedelta
 
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views import View
@@ -13,6 +13,7 @@ from apps.tasks.models import Task, TaskComment, TaskStatus
 from apps.tasks.selectors import (
     AssignmentError,
     assign_task,
+    board_tasks_qs,
     get_task_or_404,
     user_teams_qs,
     visible_statuses_qs,
@@ -21,17 +22,32 @@ from apps.tasks.selectors import (
 from apps.users.models import User
 
 from .models import Board, Column, SavedFilter
+from .selectors import resolve_board, user_can_access_board
 
 TASK_CHECKBOX_PATTERN = re.compile(r"<(?P<tag>li|p)>\[(?P<state>[xX ])\]\s*(?P<body>.*?)</(?P=tag)>", re.DOTALL)
 
 
-def _task_matches_scope(task, scope, user):
-    scope = scope or "personal"
-    if scope == "all":
-        return True
-    if scope.startswith("team:"):
-        return str(task.team_id) == scope.split(":", 1)[1]
-    return task.team_id is None
+def _board_for_team(user, team):
+    """The personal board (team is None) or a team's shared board -- team membership
+    is assumed already validated by the caller (e.g. via _resolve_team_param)."""
+    return Board.objects.get(team=team) if team else Board.objects.get(user=user)
+
+
+def _board_for_task(task):
+    """The board a task belongs on: its team's shared board, or its owner's personal board."""
+    return Board.objects.get(team_id=task.team_id) if task.team_id else Board.objects.get(user_id=task.user_id)
+
+
+def _board_from_post(request):
+    """Resolve+authorize a board named by a hidden 'board_id' field, for actions with no
+    other pk (column/saved-filter/task) to derive the board from."""
+    board_id = request.POST.get("board_id", "")
+    if not board_id.isdigit():
+        raise Http404()
+    board = get_object_or_404(Board, pk=int(board_id))
+    if not user_can_access_board(request.user, board):
+        raise Http404()
+    return board
 
 
 def _task_matches_assignee(task, assignee_filter, user):
@@ -49,8 +65,6 @@ def _task_matches_column(task, filter_config, user):
     tags = filter_config.get("tags", [])
     due = filter_config.get("due")
 
-    if not _task_matches_scope(task, filter_config.get("scope"), user):
-        return False
     if not _task_matches_assignee(task, filter_config.get("assignee"), user):
         return False
     if statuses and task.status not in statuses:
@@ -83,14 +97,6 @@ def _status_context(user):
     return _status_context_for(user, team=None)
 
 
-def _status_slugs_for(user, team_id, cache):
-    """Per-team done/active slug lookup, cached across a board render to avoid N+1 queries."""
-    if team_id not in cache:
-        _, done_slug, active_slug = _status_context_for(user, team_id)
-        cache[team_id] = (done_slug, active_slug)
-    return cache[team_id]
-
-
 def _resolve_team_param(user, team_id_str):
     """Returns None (personal), a Team the user belongs to, or False (invalid/not a member)."""
     if not team_id_str:
@@ -119,24 +125,23 @@ def _column_for_status(columns, status_slug):
     return columns[0] if columns else None
 
 
-def _resolve_task_create_selection(user, statuses, requested_column_id="", team=None):
+def _resolve_task_create_selection(user, board, statuses, requested_column_id=""):
     """Returns (column_or_None, status_slug) for a new task via the create panel."""
-    board = Board.objects.filter(user=user).prefetch_related("columns").first()
-    columns = list(board.columns.all()) if board else []
+    columns = list(board.columns.all())
 
     if str(requested_column_id).isdigit():
         requested_pk = int(requested_column_id)
         for column in columns:
             if column.pk == requested_pk:
-                return column, column.default_status(user, team=team)
+                return column, column.default_status(user, team=board.team)
 
-    if team is None and user.default_status_id:
+    if board.team_id is None and user.default_status_id:
         status_slug = _resolve_status_slug(user.default_status.slug, statuses)
         return _column_for_status(columns, status_slug), status_slug
 
     if columns:
         column = columns[0]
-        return column, column.default_status(user, team=team)
+        return column, column.default_status(user, team=board.team)
 
     return None, _resolve_status_slug("", statuses)
 
@@ -145,6 +150,7 @@ def _task_render_context(user, task):
     statuses, done_slug, active_slug = _status_context_for(user, task.team)
     return {
         "task": task,
+        "board": _board_for_task(task),
         "statuses": statuses,
         "done_slug": done_slug,
         "active_slug": active_slug,
@@ -163,9 +169,10 @@ def _task_panel_context(user, task):
     return context
 
 
-def _task_panel_create_context(user, column_id="", team=None, form_values=None, form_error=""):
+def _task_panel_create_context(user, board, column_id="", form_values=None, form_error=""):
+    team = board.team
     statuses, done_slug, active_slug = _status_context_for(user, team)
-    selected_column, selected_status = _resolve_task_create_selection(user, statuses, column_id, team=team)
+    selected_column, selected_status = _resolve_task_create_selection(user, board, statuses, column_id)
     selected_status_name = next((item.name for item in statuses if item.slug == selected_status), selected_status)
     form_values = form_values or {}
 
@@ -181,7 +188,6 @@ def _task_panel_create_context(user, column_id="", team=None, form_values=None, 
         "selected_status_name": selected_status_name,
         "selected_team": team,
         "selected_team_id": team.pk if team else "",
-        "user_teams": list(user_teams_qs(user)),
         "title_value": form_values.get("title", ""),
         "notes_value": form_values.get("notes", ""),
         "due_date_value": form_values.get("due_date", ""),
@@ -192,18 +198,30 @@ def _task_panel_create_context(user, column_id="", team=None, form_values=None, 
     }
 
 
-def _build_board_context(user, session=None):
-    board = get_object_or_404(Board, user=user)
+def _board_filter_for(board, session):
+    """This board's slice of the session's per-board tag/due/hidden-column filters."""
+    all_filters = (session.get("board_filter") or {}) if session else {}
+    return all_filters.get(str(board.pk), {})
+
+
+def _set_board_filter(request, board, board_filter):
+    all_filters = request.session.get("board_filter") or {}
+    all_filters[str(board.pk)] = board_filter
+    request.session["board_filter"] = all_filters
+    request.session.modified = True
+
+
+def _build_board_context(user, board, session=None):
     columns = list(board.columns.all())
     today = timezone.localdate()
 
-    board_filter = (session.get("board_filter") or {}) if session else {}
+    board_filter = _board_filter_for(board, session)
     filter_tags = board_filter.get("tags", [])
     exclude_tags = board_filter.get("exclude_tags", [])
     filter_due = board_filter.get("due", "").strip()
     hidden_column_pks = set(board_filter.get("hidden_columns", []))
 
-    all_tasks = list(visible_tasks_qs(user).filter(is_archived=False).order_by("order", "created_at"))
+    all_tasks = list(board_tasks_qs(board).filter(is_archived=False).order_by("order", "created_at"))
     tasks = list(all_tasks)
 
     if filter_tags:
@@ -219,8 +237,7 @@ def _build_board_context(user, session=None):
             end = today + timedelta(days=7)
             tasks = [t for t in tasks if t.due_date and today <= t.due_date <= end]
 
-    statuses, done_slug, active_slug = _status_context(user)
-    slug_cache = {None: (done_slug, active_slug)}
+    statuses, done_slug, active_slug = _status_context_for(user, board.team)
 
     hidden_columns = []
     claimed = set()
@@ -229,14 +246,13 @@ def _build_board_context(user, session=None):
         if column.pk in hidden_column_pks:
             hidden_columns.append(column)
             continue
-        column_team_id = int(column.scope_team_id) if column.scope_team_id else None
         col_tasks = []
         for task in tasks:
             if task.pk not in claimed and _task_matches_column(task, column.filter_config, user):
-                task.done_slug, task.active_slug = _status_slugs_for(user, task.team_id, slug_cache)
+                task.done_slug, task.active_slug = done_slug, active_slug
                 col_tasks.append(task)
                 claimed.add(task.pk)
-        columns_with_tasks.append((column, col_tasks, column.default_status(user, team=column_team_id)))
+        columns_with_tasks.append((column, col_tasks, column.default_status(user, team=board.team)))
 
     saved_filters = list(board.saved_filters.all())
     active_saved_filter_name = None
@@ -282,25 +298,27 @@ def _build_board_context(user, session=None):
 
 
 class BoardView(LoginRequiredMixin, View):
-    def get(self, request):
-        context = _build_board_context(request.user, request.session)
+    def get(self, request, team_id=None):
+        board = resolve_board(request.user, team_id)
+        context = _build_board_context(request.user, board, request.session)
+        context["user_teams"] = list(user_teams_qs(request.user))
         return render(request, "boards/board.html", context)
 
 
 class BoardFilterView(LoginRequiredMixin, View):
     def post(self, request):
+        board = _board_from_post(request)
         tags = request.POST.getlist("tags")
         exclude_tags = request.POST.getlist("exclude_tags")
         due = request.POST.get("due", "").strip()
         hidden_columns = [int(pk) for pk in request.POST.getlist("hidden_columns") if pk.isdigit()]
-        request.session["board_filter"] = {
+        _set_board_filter(request, board, {
             "tags": tags,
             "exclude_tags": exclude_tags,
             "due": due,
             "hidden_columns": hidden_columns,
-        }
-        request.session.modified = True
-        context = _build_board_context(request.user, request.session)
+        })
+        context = _build_board_context(request.user, board, request.session)
         return render(request, "boards/_filter_response.html", context)
 
 
@@ -308,22 +326,22 @@ class BoardFilterAddTagView(LoginRequiredMixin, View):
     """Add a single tag to the active (inclusive) filter without replacing existing ones."""
 
     def post(self, request):
+        board = _board_from_post(request)
         tag = request.POST.get("tag", "").strip()
-        board_filter = request.session.get("board_filter") or {}
+        board_filter = _board_filter_for(board, request.session)
         current_tags = board_filter.get("tags", [])
         exclude_tags = [t for t in board_filter.get("exclude_tags", []) if t != tag]
         due = board_filter.get("due", "")
         hidden_columns = board_filter.get("hidden_columns", [])
         if tag and tag not in current_tags:
             current_tags = current_tags + [tag]
-        request.session["board_filter"] = {
+        _set_board_filter(request, board, {
             "tags": current_tags,
             "exclude_tags": exclude_tags,
             "due": due,
             "hidden_columns": hidden_columns,
-        }
-        request.session.modified = True
-        context = _build_board_context(request.user, request.session)
+        })
+        context = _build_board_context(request.user, board, request.session)
         return render(request, "boards/_filter_response.html", context)
 
 
@@ -331,22 +349,22 @@ class BoardFilterExcludeTagView(LoginRequiredMixin, View):
     """Add a single tag to the active exclude filter without replacing existing ones."""
 
     def post(self, request):
+        board = _board_from_post(request)
         tag = request.POST.get("tag", "").strip()
-        board_filter = request.session.get("board_filter") or {}
+        board_filter = _board_filter_for(board, request.session)
         current_tags = [t for t in board_filter.get("tags", []) if t != tag]
         exclude_tags = board_filter.get("exclude_tags", [])
         due = board_filter.get("due", "")
         hidden_columns = board_filter.get("hidden_columns", [])
         if tag and tag not in exclude_tags:
             exclude_tags = exclude_tags + [tag]
-        request.session["board_filter"] = {
+        _set_board_filter(request, board, {
             "tags": current_tags,
             "exclude_tags": exclude_tags,
             "due": due,
             "hidden_columns": hidden_columns,
-        }
-        request.session.modified = True
-        context = _build_board_context(request.user, request.session)
+        })
+        context = _build_board_context(request.user, board, request.session)
         return render(request, "boards/_filter_response.html", context)
 
 
@@ -354,15 +372,16 @@ class ColumnHideView(LoginRequiredMixin, View):
     """Add a column to the session hidden-columns filter."""
 
     def post(self, request, pk):
-        board = get_object_or_404(Board, user=request.user)
-        column = get_object_or_404(Column, pk=pk, board=board)
-        board_filter = request.session.get("board_filter") or {}
+        column = get_object_or_404(Column.objects.select_related("board"), pk=pk)
+        if not user_can_access_board(request.user, column.board):
+            raise Http404()
+        board = column.board
+        board_filter = _board_filter_for(board, request.session)
         hidden = board_filter.get("hidden_columns", [])
         if column.pk not in hidden:
             hidden = hidden + [column.pk]
-        request.session["board_filter"] = {**board_filter, "hidden_columns": hidden}
-        request.session.modified = True
-        context = _build_board_context(request.user, request.session)
+        _set_board_filter(request, board, {**board_filter, "hidden_columns": hidden})
+        context = _build_board_context(request.user, board, request.session)
         return render(request, "boards/_filter_response.html", context)
 
 
@@ -374,8 +393,14 @@ class ColumnReorderView(LoginRequiredMixin, View):
         except (json.JSONDecodeError, AttributeError):
             return HttpResponse(status=400)
 
-        board = get_object_or_404(Board, user=request.user)
-        columns = {c.pk: c for c in board.columns.all()}
+        columns = {c.pk: c for c in Column.objects.filter(pk__in=order).select_related("board")}
+        if columns:
+            board = next(iter(columns.values())).board
+            if not user_can_access_board(request.user, board) or any(
+                c.board_id != board.pk for c in columns.values()
+            ):
+                return HttpResponse(status=403)
+
         for i, pk in enumerate(order):
             if pk in columns:
                 columns[pk].order = i
@@ -467,12 +492,13 @@ class TaskMoveView(LoginRequiredMixin, View):
                 task.completed_at = None
             task.save(update_fields=["status", "completed_at", "updated_at"])
 
+        board = _board_for_task(task)
         if request.headers.get("HX-Target") == "task-panel-content":
             context = _task_panel_context(request.user, task)
-            context.update(_build_board_context(request.user, request.session))
+            context.update(_build_board_context(request.user, board, request.session))
             return render(request, "partials/task_panel_board_response.html", context)
 
-        context = _build_board_context(request.user, request.session)
+        context = _build_board_context(request.user, board, request.session)
         return render(request, "boards/_columns.html", context)
 
 
@@ -503,12 +529,14 @@ class TaskDeleteView(LoginRequiredMixin, View):
 
 class ColumnArchiveView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        board = get_object_or_404(Board, user=request.user)
-        column = get_object_or_404(Column, pk=pk, board=board)
+        column = get_object_or_404(Column.objects.select_related("board"), pk=pk)
+        if not user_can_access_board(request.user, column.board):
+            raise Http404()
+        board = column.board
 
         # Mirror the claimed-task logic from _build_board_context to find exactly
         # which tasks are visible in this column.
-        all_tasks = list(visible_tasks_qs(request.user).filter(is_archived=False).order_by("order", "created_at"))
+        all_tasks = list(board_tasks_qs(board).filter(is_archived=False).order_by("order", "created_at"))
         claimed = set()
         to_archive = []
         for col in board.columns.all():
@@ -520,7 +548,7 @@ class ColumnArchiveView(LoginRequiredMixin, View):
 
         Task.objects.filter(pk__in=to_archive).update(is_archived=True)
 
-        context = _build_board_context(request.user, request.session)
+        context = _build_board_context(request.user, board, request.session)
         return render(request, "boards/_columns.html", context)
 
 
@@ -556,13 +584,15 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
         team = _resolve_team_param(request.user, request.GET.get("team", "").strip())
         if team is False:
             team = None
-        context = _task_panel_create_context(request.user, request.GET.get("column", "").strip(), team=team)
+        board = _board_for_team(request.user, team)
+        context = _task_panel_create_context(request.user, board, request.GET.get("column", "").strip())
         return render(request, "partials/task_panel_create.html", context)
 
     def post(self, request):
         team = _resolve_team_param(request.user, request.POST.get("team", "").strip())
         if team is False:
             return HttpResponse(status=422)
+        board = _board_for_team(request.user, team)
 
         form_values = {
             "title": request.POST.get("title", "").strip(),
@@ -574,8 +604,8 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
         }
         context = _task_panel_create_context(
             request.user,
+            board,
             request.POST.get("column", "").strip(),
-            team=team,
             form_values=form_values,
         )
 
@@ -602,7 +632,7 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
         )
 
         panel_context = _task_panel_context(request.user, task)
-        panel_context.update(_build_board_context(request.user, request.session))
+        panel_context.update(_build_board_context(request.user, board, request.session))
         return render(request, "partials/task_panel_board_response.html", panel_context)
 
 
@@ -695,35 +725,38 @@ class TaskCommentDeleteView(LoginRequiredMixin, View):
 
 class SavedFilterLoadView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        board = get_object_or_404(Board, user=request.user)
-        saved_filter = get_object_or_404(SavedFilter, pk=pk, board=board)
-        request.session["board_filter"] = saved_filter.filter_config
-        request.session.modified = True
-        context = _build_board_context(request.user, request.session)
+        saved_filter = get_object_or_404(SavedFilter.objects.select_related("board"), pk=pk)
+        if not user_can_access_board(request.user, saved_filter.board):
+            raise Http404()
+        board = saved_filter.board
+        _set_board_filter(request, board, saved_filter.filter_config)
+        context = _build_board_context(request.user, board, request.session)
         return render(request, "boards/_filter_response.html", context)
 
 
 class SavedFilterSaveView(LoginRequiredMixin, View):
     def post(self, request):
-        board = get_object_or_404(Board, user=request.user)
+        board = _board_from_post(request)
         name = request.POST.get("name", "").strip()
         if not name:
-            context = _build_board_context(request.user, request.session)
+            context = _build_board_context(request.user, board, request.session)
             return render(request, "boards/_filter_response.html", context)
-        filter_config = request.session.get("board_filter") or {}
+        filter_config = _board_filter_for(board, request.session)
         SavedFilter.objects.update_or_create(
             board=board,
             name=name,
             defaults={"filter_config": filter_config},
         )
-        context = _build_board_context(request.user, request.session)
+        context = _build_board_context(request.user, board, request.session)
         return render(request, "boards/_filter_response.html", context)
 
 
 class SavedFilterDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        board = get_object_or_404(Board, user=request.user)
-        saved_filter = get_object_or_404(SavedFilter, pk=pk, board=board)
+        saved_filter = get_object_or_404(SavedFilter.objects.select_related("board"), pk=pk)
+        if not user_can_access_board(request.user, saved_filter.board):
+            raise Http404()
+        board = saved_filter.board
         saved_filter.delete()
-        context = _build_board_context(request.user, request.session)
+        context = _build_board_context(request.user, board, request.session)
         return render(request, "boards/_filter_response.html", context)
