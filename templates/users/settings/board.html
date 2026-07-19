@@ -66,7 +66,7 @@
           hx-post="{% url 'users:column-create' %}"
           hx-target="#column-list"
           hx-swap="innerHTML"
-          hx-on::after-request="this.reset(); document.getElementById('column-team')?.dispatchEvent(new Event('change'))">
+          hx-on::after-request="if (event.target === this) { this.reset(); document.getElementById('column-team')?.dispatchEvent(new Event('change')); }">
       {% csrf_token %}
 
       <div class="form-field">
