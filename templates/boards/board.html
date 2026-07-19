@@ -5,6 +5,15 @@
 
 {% block content %}
 <section class="page-shell">
+  {% if user_teams %}
+  <nav class="settings-subnav" aria-label="Boards">
+    <a class="settings-subnav-link {% if not board.team_id %}is-active{% endif %}" href="{% url 'boards:board' %}">Personal</a>
+    {% for team in user_teams %}
+    <a class="settings-subnav-link {% if board.team_id == team.pk %}is-active{% endif %}" href="{% url 'boards:board-team' team.pk %}">{{ team.name }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
   <section class="surface-panel board-controls">
     <div id="board-filter">{% include "boards/_filter_bar.html" %}</div>
   </section>
@@ -17,7 +26,7 @@
           type="button"
           title="Add task"
           aria-label="Add task"
-          hx-get="{% url 'boards:task-panel-create' %}"
+          hx-get="{% url 'boards:task-panel-create' %}?team={{ board.team_id|default:'' }}"
           hx-target="#task-panel-content"
           hx-swap="innerHTML"
           hx-on::after-request="openTaskPanel()">

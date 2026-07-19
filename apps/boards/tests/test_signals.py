@@ -13,7 +13,7 @@ def test_board_created_on_new_user():
 @pytest.mark.django_db
 def test_four_default_columns_created():
     user = User.objects.create_user()
-    board = user.board
+    board = Board.objects.get(user=user)
     assert board.columns.count() == 4
 
 
@@ -21,7 +21,7 @@ def test_four_default_columns_created():
 def test_default_column_filter_configs():
     user = User.objects.create_user()
     slugs = set()
-    for col in user.board.columns.all():
+    for col in Board.objects.get(user=user).columns.all():
         statuses = col.filter_config.get("statuses", [])
         slugs.update(statuses)
     assert slugs == {"backlog", "todo", "in_progress", "done"}
@@ -30,7 +30,7 @@ def test_default_column_filter_configs():
 @pytest.mark.django_db
 def test_default_column_order():
     user = User.objects.create_user()
-    columns = list(user.board.columns.order_by("order"))
+    columns = list(Board.objects.get(user=user).columns.order_by("order"))
     slugs = [col.filter_config.get("statuses", [None])[0] for col in columns]
     assert slugs == ["backlog", "todo", "in_progress", "done"]
 

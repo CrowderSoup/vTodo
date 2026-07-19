@@ -6,6 +6,7 @@ app_name = "boards"
 
 urlpatterns = [
     path("", views.BoardView.as_view(), name="board"),
+    path("team/<int:team_id>/", views.BoardView.as_view(), name="board-team"),
     path("filter/", views.BoardFilterView.as_view(), name="board-filter"),
     path("filter/add-tag/", views.BoardFilterAddTagView.as_view(), name="board-filter-add-tag"),
     path("filter/exclude-tag/", views.BoardFilterExcludeTagView.as_view(), name="board-filter-exclude-tag"),

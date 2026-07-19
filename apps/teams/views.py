@@ -36,40 +36,30 @@ def _provision_team_statuses(team):
         )
 
 
-def _provision_team_column(user, team):
-    """Add a catch-all column scoped to this team on the user's own board, so team
-    tasks are visible the moment they create or join a team instead of requiring a
-    manual trip to Settings → Board Setup."""
+def _provision_team_board(team):
+    """Create the team's shared board, with the same starter columns a new personal
+    board gets, so a fresh team isn't unusable until someone visits Settings and
+    hand-builds a column list. Called once, at team creation -- joining an existing
+    team doesn't provision anything, since the shared board already exists."""
     from apps.boards.models import Board, Column
 
-    board, _ = Board.objects.get_or_create(user=user)
-    scope = f"team:{team.pk}"
-    if board.columns.filter(filter_config__scope=scope).exists():
-        return
-    Column.objects.create(
-        board=board,
-        label=team.name,
-        filter_config={"scope": scope},
-        order=board.columns.count(),
-    )
-
-
-def _delete_team_scoped_columns(user_ids, team_id):
-    """Remove every column scoped to this team from the given users' boards. Once a
-    team is gone (or a user isn't a member anymore) such a column can never show a
-    task again, so leaving it behind is just a dead lane cluttering the board."""
-    from apps.boards.models import Column
-
-    Column.objects.filter(
-        board__user_id__in=user_ids, filter_config__scope=f"team:{team_id}"
-    ).delete()
+    board = Board.objects.create(team=team, name=team.name)
+    default_columns = [
+        ("Backlog",     {"statuses": ["backlog"],     "tags": [], "due": None}, 0),
+        ("To Do",       {"statuses": ["todo"],         "tags": [], "due": None}, 1),
+        ("In Progress", {"statuses": ["in_progress"],  "tags": [], "due": None}, 2),
+        ("Done",        {"statuses": ["done"],          "tags": [], "due": None}, 3),
+    ]
+    for label, filter_config, order in default_columns:
+        Column.objects.create(board=board, label=label, filter_config=filter_config, order=order)
+    return board
 
 
 def _cleanup_after_membership_removal(actor, user, team):
     """When someone leaves or is removed from a team: unassign them from that
     team's tasks (an assignee who isn't a member is a stale/invalid state — see
-    AssignmentError in apps.tasks.selectors.assign_task) and drop their now-dead
-    team-scoped board column(s)."""
+    AssignmentError in apps.tasks.selectors.assign_task). The team's shared board
+    is untouched -- other members still need it."""
     from apps.tasks.models import Task, TaskActivity
 
     for task in Task.objects.filter(team=team, assignee=user):
@@ -80,27 +70,24 @@ def _cleanup_after_membership_removal(actor, user, team):
             task=task, actor=actor, field="assignee", old_value=old_display, new_value="Unassigned",
         )
 
-    _delete_team_scoped_columns([user.pk], team.pk)
-
 
 def _cleanup_before_team_delete(team):
-    """Snapshot what CASCADE is about to wipe out (membership rows, and Task.team
-    which the FK's SET_NULL clears) so post-delete cleanup still knows who was
-    affected. team.pk is reset to None by Team.delete(), so it's captured too."""
+    """Snapshot what CASCADE is about to wipe out (Task.team is SET_NULL, so those
+    tasks survive the team's deletion) so post-delete cleanup still knows which tasks
+    need remapping. team.pk is reset to None by Team.delete(), so it's captured too."""
     from apps.tasks.models import Task
 
     return {
         "team_id": team.pk,
-        "member_user_ids": list(TeamMembership.objects.filter(team=team).values_list("user_id", flat=True)),
         "orphaned_task_ids": list(Task.objects.filter(team=team).values_list("pk", flat=True)),
     }
 
 
 def _cleanup_after_team_delete(snapshot):
-    """Deleting a team already CASCADEs its TaskStatus rows and SET_NULLs Task.team
-    (see apps/tasks/models.py). What's left: newly-personal tasks may carry a status
-    slug or assignee that no longer means anything without the team, and every
-    former member has a dead team-scoped column sitting on their board."""
+    """Deleting a team already CASCADEs its TaskStatus rows, Board (and that board's
+    Columns/SavedFilters), and SET_NULLs Task.team (see apps/tasks/models.py and
+    apps/boards/models.py). What's left: newly-personal tasks may carry a status slug
+    or assignee that no longer means anything without the team."""
     from apps.tasks.models import Task, TaskStatus
 
     personal_statuses_by_user = {}
@@ -131,8 +118,6 @@ def _cleanup_after_team_delete(snapshot):
 
         task.save(update_fields=update_fields)
 
-    _delete_team_scoped_columns(snapshot["member_user_ids"], snapshot["team_id"])
-
 
 class TeamCreateView(LoginRequiredMixin, View):
     def post(self, request):
@@ -145,7 +130,7 @@ class TeamCreateView(LoginRequiredMixin, View):
             team = Team.objects.create(name=name)
             TeamMembership.objects.create(team=team, user=request.user, role=TeamMembership.ROLE_OWNER)
             _provision_team_statuses(team)
-            _provision_team_column(request.user, team)
+            _provision_team_board(team)
 
         messages.success(request, f"Created team “{team.name}”.")
         return redirect(reverse("users:settings-teams"))
@@ -216,11 +201,9 @@ class TeamInviteAcceptView(LoginRequiredMixin, View):
             )
             return redirect(reverse("boards:board"))
 
-        _, joined = TeamMembership.objects.get_or_create(
+        TeamMembership.objects.get_or_create(
             team=invite.team, user=request.user, defaults={"role": TeamMembership.ROLE_MEMBER}
         )
-        if joined:
-            _provision_team_column(request.user, invite.team)
         invite.accepted_at = timezone.now()
         invite.save(update_fields=["accepted_at"])
 

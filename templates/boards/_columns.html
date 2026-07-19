@@ -29,7 +29,7 @@
       <div class="column-actions">
         <button class="col-actions-btn" type="button" title="Column actions" data-disclosure-toggle>⋯</button>
         <div class="col-actions-menu">
-          <button hx-get="{% url 'boards:task-panel-create' %}?column={{ column.pk }}&team={{ column.scope_team_id }}"
+          <button hx-get="{% url 'boards:task-panel-create' %}?column={{ column.pk }}&team={{ board.team_id|default:'' }}"
                   hx-target="#task-panel-content"
                   hx-swap="innerHTML"
                   hx-on:click="this.closest('.col-actions-menu').classList.remove('open')"
