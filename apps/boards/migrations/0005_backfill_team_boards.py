@@ -17,12 +17,13 @@ def backfill_team_boards(apps, schema_editor):
     team boards are shared, each Team needs exactly one Board.
 
     Column-selection rule (deterministic, but a real one-time data-loss point --
-    see the plan doc for why this is an acceptable tradeoff for this app): prefer the
-    earliest-created owner's team-scoped columns; fall back to the earliest-created
-    member's; if nobody has any, seed the same default columns a new personal board
-    gets. Every other member's now-orphaned copy is discarded -- any per-member
-    customization on a non-chosen copy (custom statuses/tags/assignee filter/label)
-    does not survive the migration.
+    acceptable here because per-member team column customization was a rarely-used
+    side effect of the old scoped-column design, not a feature anyone relied on):
+    prefer the earliest-created owner's team-scoped columns; fall back to the
+    earliest-created member's; if nobody has any, seed the same default columns a
+    new personal board gets. Every other member's now-orphaned copy is discarded --
+    any per-member customization on a non-chosen copy (custom statuses/tags/assignee
+    filter/label) does not survive the migration.
     """
     Team = apps.get_model("teams", "Team")
     TeamMembership = apps.get_model("teams", "TeamMembership")

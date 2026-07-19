@@ -204,6 +204,7 @@ class TaskStatusDeleteView(LoginRequiredMixin, View):
 class ColumnCreateView(LoginRequiredMixin, View):
     def post(self, request):
         from apps.boards.models import Column
+        from apps.boards.selectors import resolve_board
 
         label = request.POST.get("label", "").strip()
         if not label:
@@ -212,7 +213,11 @@ class ColumnCreateView(LoginRequiredMixin, View):
         team = _resolve_owned_team(request.user, request.POST.get("team", "").strip())
         if team is False:
             return HttpResponse(status=422)
-        board = _resolve_settings_board(request.user, str(team.pk) if team else "")
+        # team is already membership-validated above, so resolve its board directly
+        # rather than through _resolve_settings_board's silent fall-back-to-personal
+        # (that fall-back is meant for the Settings page's own, unvalidated ?team=
+        # query param, not for a column whose team the caller already picked).
+        board = resolve_board(request.user, team.pk if team else None)
 
         assignee = request.POST.get("assignee", "any").strip() or "any"
 
