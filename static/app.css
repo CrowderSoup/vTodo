@@ -1805,9 +1805,16 @@ hr {
 
 [data-theme="dark"] .CodeMirror,
 [data-theme="dark"] .editor-toolbar,
-[data-theme="dark"] .editor-preview,
 [data-theme="dark"] .editor-statusbar {
   background: var(--surface-strong);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* Opaque background (not --surface-strong's translucent rgba) — the preview pane
+   sits directly over the raw CodeMirror text and a translucent fill lets it ghost through. */
+[data-theme="dark"] .editor-preview {
+  background: var(--surface-muted);
   color: var(--text);
   border-color: var(--border);
 }

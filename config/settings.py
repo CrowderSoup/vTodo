@@ -205,6 +205,9 @@ SOCIALACCOUNT_ADAPTER = "apps.accounts.adapters.SocialAccountAdapter"
 # The User model has no `email` field (email lives on apps.emailauth.EmailIdentity) —
 # tell allauth's account app not to assume/sync one.
 ACCOUNT_USER_MODEL_EMAIL_FIELD = None
+# `username` is an opaque generated slug (see apps.users.models.UserManager), not something
+# to show people — prefer the human-entered display name in allauth's messages/templates.
+ACCOUNT_USER_DISPLAY = lambda user: user.display_name or user.username  # noqa: E731
 
 # Content Security Policy (Django 6.0 built-in)
 # See: https://docs.djangoproject.com/en/6.0/ref/middleware/#content-security-policy
