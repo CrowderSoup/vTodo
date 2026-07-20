@@ -87,12 +87,11 @@ def connection(db, team, owner):
     conn = SkylightConnection(
         team=team,
         frame_id="frame123",
-        email="owner@example.com",
         calendar_account_id="cal-1",
         calendar_id="owner@gmail.com",
         connected_by=owner,
     )
-    conn.set_password("hunter2")
+    conn.set_refresh_token("initial-refresh-tok")
     conn.save()
     return conn
 

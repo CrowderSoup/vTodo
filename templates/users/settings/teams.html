@@ -119,12 +119,8 @@
       <form class="inline-form" method="post" action="{% url 'integrations:skylight-connect' entry.team.pk %}">
         {% csrf_token %}
         <div class="form-field">
-          <label class="field-label" for="skylight-email-{{ entry.team.pk }}">Skylight email</label>
-          <input id="skylight-email-{{ entry.team.pk }}" type="email" name="email" placeholder="you@example.com" required>
-        </div>
-        <div class="form-field">
-          <label class="field-label" for="skylight-password-{{ entry.team.pk }}">Skylight password</label>
-          <input id="skylight-password-{{ entry.team.pk }}" type="password" name="password" required>
+          <label class="field-label" for="skylight-refresh-token-{{ entry.team.pk }}">Skylight refresh token</label>
+          <input id="skylight-refresh-token-{{ entry.team.pk }}" type="password" name="refresh_token" autocomplete="off" required>
         </div>
         <div class="form-field">
           <label class="field-label" for="skylight-frame-{{ entry.team.pk }}">Frame ID</label>
@@ -135,11 +131,24 @@
         </div>
       </form>
       <p class="field-help">
-        Skylight has no official developer login, so vtodo needs your real account email and password
-        (stored encrypted) to sync on your behalf. The frame ID isn't something Skylight exposes anywhere
-        in its app — you'll need to find it via your browser or app's network traffic
-        (e.g. a proxy tool, or your browser's devtools Network tab) and look for
-        <code>/api/frames/&#123;frame_id&#125;/...</code> in a request URL.
+        Skylight has no developer login, so vtodo needs a one-time <strong>refresh token</strong> pulled
+        from your own browser session instead of your password. To get it:
+      </p>
+      <ol class="field-help">
+        <li>In Chrome/Firefox, open DevTools (F12 or Cmd+Opt+I) and go to the <strong>Network</strong> tab.</li>
+        <li>Go to <a href="https://app.ourskylight.com" target="_blank" rel="noopener">app.ourskylight.com</a>
+            and log in normally (or refresh the page if already logged in).</li>
+        <li>In the Network tab's filter box, type <code>oauth/token</code>.</li>
+        <li>Click the <code>token</code> request that appears, open its <strong>Response</strong> (or
+            <strong>Preview</strong>) panel, and copy the value of <code>refresh_token</code> — a long
+            string, not <code>access_token</code>.</li>
+        <li>Paste that value above. It's used once to connect, then vtodo rotates it automatically on
+            its own after that — you won't need to repeat this unless the connection needs reconnecting.</li>
+      </ol>
+      <p class="field-help">
+        The frame ID isn't exposed anywhere in the app either — while you're in that same Network tab,
+        look for a request URL containing <code>/api/frames/&#123;frame_id&#125;/...</code> and copy the
+        id from there.
       </p>
       {% endif %}
     </div>

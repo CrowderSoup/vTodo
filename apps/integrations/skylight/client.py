@@ -1,8 +1,20 @@
+import uuid
+
 import requests
 from django.utils import timezone
 
 BASE_URL = "https://app.ourskylight.com"
 REQUEST_TIMEOUT = 15
+
+# Skylight's API is unofficial/reverse-engineered and versioned via this header;
+# omitting it (or sending an unrecognized client) gets silently downgraded to a
+# stale default version that's since been sunset, which shows up as a 401 on
+# every request -- including login -- even with correct credentials.
+API_HEADERS = {
+    "User-Agent": "SkylightMobile (web)",
+    "Accept": "application/json",
+    "Skylight-Api-Version": "2026-05-01",
+}
 
 
 class SkylightAuthError(Exception):
@@ -16,28 +28,54 @@ class SkylightAPIError(Exception):
     types to cover every way a request to Skylight can fail."""
 
 
-def login(email: str, password: str) -> str:
-    """Bare credential check against POST /api/sessions. Used both to validate
-    credentials during the connect flow (before anything is saved) and by
-    SkylightClient.authenticate() for a connection that already exists."""
+TOKEN_URL = f"{BASE_URL}/oauth/token"
+CLIENT_ID = "skylight-mobile"
+
+
+def refresh(refresh_token: str) -> dict:
+    """Exchange a refresh_token for a fresh (access_token, refresh_token) pair via
+    Skylight's OAuth token endpoint. Skylight rotates the refresh_token on every
+    use -- the old one is invalidated, so callers must persist the new one every
+    time this succeeds, not just the access_token.
+
+    /api/sessions (plain email+password login) is permanently retired by
+    Skylight; this OAuth grant is the only remaining way to mint tokens without
+    an interactive browser login."""
     try:
         response = requests.post(
-            f"{BASE_URL}/api/sessions",
-            json={"email": email, "password": password},
+            TOKEN_URL,
+            data={
+                "grant_type": "refresh_token",
+                "client_id": CLIENT_ID,
+                "scope": "everything",
+                "refresh_token": refresh_token,
+                "skylight_api_client_device_fingerprint": str(uuid.uuid4()),
+                "skylight_api_client_device_platform": "web",
+                "skylight_api_client_device_name": "unknown",
+                "skylight_api_client_device_os_version": "10.15",
+                "skylight_api_client_device_app_version": "unknown",
+                "skylight_api_client_device_hardware": "Macintosh",
+                "source": "js-mobile",
+            },
+            headers=API_HEADERS,
             timeout=REQUEST_TIMEOUT,
         )
     except requests.exceptions.RequestException as exc:
-        raise SkylightAPIError(f"Couldn't reach Skylight to log in: {exc}") from exc
+        raise SkylightAPIError(f"Couldn't reach Skylight to refresh token: {exc}") from exc
     if response.status_code != 200:
-        raise SkylightAuthError(f"Skylight login failed for {email}: {response.status_code}")
-    return response.json()["data"]["attributes"]["token"]
+        raise SkylightAuthError(
+            f"Skylight rejected the refresh token: {response.status_code}: {response.text[:300]}"
+        )
+    data = response.json()
+    return {"access_token": data["access_token"], "refresh_token": data["refresh_token"]}
 
 
 class SkylightClient:
     """Thin wrapper around Skylight's unofficial, reverse-engineered API.
 
-    There is no OAuth and no documented token refresh/expiry, so this client
-    re-authenticates with the stored email/password whenever a call comes back 401.
+    Skylight's login is OAuth2, but the only grant type usable without an
+    interactive browser popup is refresh_token -- so this client re-authenticates
+    via the stored (rotating) refresh token whenever a call comes back 401.
     """
 
     def __init__(self, connection):
@@ -45,11 +83,14 @@ class SkylightClient:
         self.session = requests.Session()
 
     def authenticate(self) -> str:
-        token = login(self.connection.email, self.connection.get_password())
-        self.connection.set_token(token)
+        result = refresh(self.connection.get_refresh_token())
+        self.connection.set_token(result["access_token"])
+        self.connection.set_refresh_token(result["refresh_token"])
         self.connection.token_fetched_at = timezone.now()
-        self.connection.save(update_fields=["token_encrypted", "token_fetched_at"])
-        return token
+        self.connection.save(
+            update_fields=["token_encrypted", "refresh_token_encrypted", "token_fetched_at"]
+        )
+        return result["access_token"]
 
     def _request(self, method, path, params=None, json_body=None, _retry=True):
         token = self.connection.get_token() or self.authenticate()
@@ -59,7 +100,7 @@ class SkylightClient:
                 f"{BASE_URL}{path}",
                 params=params,
                 json=json_body,
-                headers={"Authorization": f"Bearer {token}"},
+                headers={**API_HEADERS, "Authorization": f"Bearer {token}"},
                 timeout=REQUEST_TIMEOUT,
             )
         except requests.exceptions.RequestException as exc:
