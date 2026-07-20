@@ -20,7 +20,13 @@ RUN uv sync --no-dev && rm -rf /root/.cache/uv
 
 COPY . .
 
-RUN uv run manage.py collectstatic --noinput
+# collectstatic only needs settings.py to import cleanly; it never touches
+# INTEGRATIONS_ENCRYPTION_KEY's value (that's read lazily by the Fernet cipher
+# at usage time in apps/integrations/skylight/crypto.py). Scope the placeholder
+# to this RUN via ARG (not ENV) so it never bakes into the image/runtime env --
+# the real key must still come from Kamal at deploy time.
+ARG INTEGRATIONS_ENCRYPTION_KEY=collectstatic-build-time-placeholder
+RUN INTEGRATIONS_ENCRYPTION_KEY=${INTEGRATIONS_ENCRYPTION_KEY} uv run manage.py collectstatic --noinput
 
 RUN addgroup --system app && adduser --system --ingroup app app \
     && chown -R app:app /app
