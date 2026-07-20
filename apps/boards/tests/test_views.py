@@ -176,6 +176,21 @@ def test_board_exclude_tag_filter_hides_matching_tasks(logged_in_client):
 
 
 @pytest.mark.django_db
+def test_task_card_escapes_quotes_in_tags_for_hx_vals(logged_in_client):
+    """Regression: a tag containing a double-quote used to render straight into the
+    hx-vals JSON attribute unescaped, so the browser-decoded HTML entity produced a
+    stray quote that broke the JSON and silently disabled that tag's filter button."""
+    client, user = logged_in_client
+    Task.objects.create(user=user, title="Quoted", status="todo", tags=['say "hi"'])
+
+    response = client.get(reverse("boards:board"))
+    content = response.content.decode()
+
+    assert "hx-vals='{\"tag\": \"say \\u0022hi\\u0022\"" in content
+    assert 'hx-vals=\'{"tag": "say "hi""' not in content
+
+
+@pytest.mark.django_db
 def test_board_filter_add_exclude_tag_view_adds_tag(logged_in_client):
     """Posting to board-filter-exclude-tag appends the tag to the session's exclude list."""
     client, user = logged_in_client

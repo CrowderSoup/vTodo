@@ -37,11 +37,11 @@
               hx-post="{% url 'boards:board-filter-add-tag' %}"
               hx-target="#board-content"
               hx-swap="innerHTML"
-              hx-vals='{"tag": "{{ tag }}", "board_id": "{{ board.pk }}"}'>{{ tag }}</button><button class="tag-pill tag-pill--exclude" title="Hide tasks tagged &ldquo;{{ tag }}&rdquo;"
+              hx-vals='{"tag": "{{ tag|escapejs }}", "board_id": "{{ board.pk }}"}'>{{ tag }}</button><button class="tag-pill tag-pill--exclude" title="Hide tasks tagged &ldquo;{{ tag }}&rdquo;"
               hx-post="{% url 'boards:board-filter-exclude-tag' %}"
               hx-target="#board-content"
               hx-swap="innerHTML"
-              hx-vals='{"tag": "{{ tag }}", "board_id": "{{ board.pk }}"}'>⊘</button>
+              hx-vals='{"tag": "{{ tag|escapejs }}", "board_id": "{{ board.pk }}"}'>⊘</button>
     </span>
     {% endfor %}
   </div>
