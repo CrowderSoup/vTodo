@@ -488,6 +488,26 @@ def test_reopening_a_task_restores_its_prior_status(logged_in_client):
 
 
 @pytest.mark.django_db
+def test_moving_between_done_statuses_preserves_prior_status(logged_in_client):
+    """Regression: boards can have more than one is_done status (e.g. Done + Archived).
+    Moving a task between two of them shouldn't discard the previous_status it recorded
+    when it was first completed, since it never actually left the completed state."""
+    client, user = logged_in_client
+    TaskStatus.objects.create(user=user, name="Archived", slug="archived", order=4, is_done=True)
+    task = Task.objects.create(user=user, title="In flight", status="in_progress")
+    client.post(reverse("boards:task-move", kwargs={"pk": task.pk}), {"new_status": "done"})
+    task.refresh_from_db()
+    completed_at = task.completed_at
+
+    client.post(reverse("boards:task-move", kwargs={"pk": task.pk}), {"new_status": "archived"})
+
+    task.refresh_from_db()
+    assert task.status == "archived"
+    assert task.completed_at == completed_at
+    assert task.previous_status == "in_progress"
+
+
+@pytest.mark.django_db
 def test_board_reopen_button_targets_the_tasks_prior_status(logged_in_client):
     client, user = logged_in_client
     task = Task.objects.create(

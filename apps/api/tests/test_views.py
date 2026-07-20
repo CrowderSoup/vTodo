@@ -73,6 +73,36 @@ def test_assign_action_rejects_non_member(api_client_for):
 
 
 @pytest.mark.django_db
+def test_move_action_records_prior_status_on_completion(api_client_for):
+    user = User.objects.create_user()
+    task = Task.objects.create(user=user, title="In flight", status="in_progress")
+    client = api_client_for(user)
+
+    response = client.post(reverse("task-move", kwargs={"pk": task.pk}), {"new_status": "done"})
+
+    assert response.status_code == 200
+    task.refresh_from_db()
+    assert task.status == "done"
+    assert task.previous_status == "in_progress"
+
+
+@pytest.mark.django_db
+def test_move_action_restores_prior_status_on_reopen(api_client_for):
+    user = User.objects.create_user()
+    task = Task.objects.create(user=user, title="In flight", status="in_progress")
+    client = api_client_for(user)
+    client.post(reverse("task-move", kwargs={"pk": task.pk}), {"new_status": "done"})
+
+    response = client.post(reverse("task-move", kwargs={"pk": task.pk}), {"new_status": "in_progress"})
+
+    assert response.status_code == 200
+    task.refresh_from_db()
+    assert task.status == "in_progress"
+    assert task.completed_at is None
+    assert task.previous_status == ""
+
+
+@pytest.mark.django_db
 def test_activity_action_returns_ordered_entries(api_client_for):
     user = User.objects.create_user()
     other = User.objects.create_user()
