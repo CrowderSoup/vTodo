@@ -31,7 +31,7 @@
           hx-confirm="Delete column &ldquo;{{ column.label|escapejs }}&rdquo;?">×</button>
 </div>
 {% empty %}
-<div class="surface-card" style="padding: 1rem 1.1rem;">
-  <p class="field-help">No columns yet. Add a few lanes to give your board structure.</p>
+<div class="settings-empty-state">
+  <p class="field-help">No columns yet &mdash; add one below to give this board structure.</p>
 </div>
 {% endfor %}

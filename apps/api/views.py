@@ -1,5 +1,4 @@
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -8,10 +7,11 @@ from rest_framework.response import Response
 from apps.tasks.models import Task, TaskComment, TaskStatus
 from apps.tasks.selectors import (
     AssignmentError,
+    InvalidStatusError,
     assign_task,
+    move_task,
     user_team_ids,
     user_teams_qs,
-    visible_statuses_qs,
     visible_tasks_qs,
 )
 from apps.users.models import User
@@ -76,20 +76,12 @@ class TaskViewSet(viewsets.ModelViewSet):
         task = self.get_object()
         new_status_slug = request.data.get("new_status", "")
 
-        task_statuses = visible_statuses_qs(request.user, team=task.team)
-        valid_slugs = list(task_statuses.values_list("slug", flat=True))
-        if new_status_slug not in valid_slugs:
+        try:
+            move_task(request.user, task, new_status_slug)
+        except InvalidStatusError:
             return Response(
                 {"detail": "Invalid status slug."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY
             )
-
-        task.status = new_status_slug
-        is_done = task_statuses.filter(slug=new_status_slug, is_done=True).exists()
-        if is_done and not task.completed_at:
-            task.completed_at = timezone.now()
-        elif not is_done:
-            task.completed_at = None
-        task.save(update_fields=["status", "completed_at", "updated_at"])
 
         return Response(TaskSerializer(task).data)
 

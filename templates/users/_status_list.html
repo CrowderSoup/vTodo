@@ -18,7 +18,7 @@
           hx-confirm="Delete status &ldquo;{{ status.name|escapejs }}&rdquo;? Tasks with this status will be unaffected.">×</button>
 </div>
 {% empty %}
-<div class="surface-card" style="padding: 1rem 1.1rem;">
+<div class="settings-empty-state">
   <p class="field-help">No statuses yet. Add the workflow steps you want cards to move through.</p>
 </div>
 {% endfor %}

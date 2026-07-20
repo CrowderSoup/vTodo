@@ -12,9 +12,11 @@ from django.views import View
 from apps.tasks.models import Task, TaskComment, TaskStatus
 from apps.tasks.selectors import (
     AssignmentError,
+    InvalidStatusError,
     assign_task,
     board_tasks_qs,
     get_task_or_404,
+    move_task,
     user_teams_qs,
     visible_statuses_qs,
     visible_tasks_qs,
@@ -476,21 +478,10 @@ class TaskMoveView(LoginRequiredMixin, View):
         task = get_task_or_404(request.user, pk)
         new_status = request.POST.get("new_status", "")
 
-        task_statuses = visible_statuses_qs(request.user, team=task.team)
-        valid_slugs = list(task_statuses.values_list("slug", flat=True))
-        if new_status not in valid_slugs:
+        try:
+            move_task(request.user, task, new_status)
+        except InvalidStatusError:
             return HttpResponse(status=422)
-
-        task.status = new_status
-        is_done = task_statuses.filter(slug=new_status, is_done=True).exists()
-        if is_done and not task.completed_at:
-            task.completed_at = timezone.now()
-            task.save(update_fields=["status", "completed_at", "updated_at"])
-            task.spawn_recurrence(completion_date=task.completed_at.date())
-        else:
-            if not is_done:
-                task.completed_at = None
-            task.save(update_fields=["status", "completed_at", "updated_at"])
 
         board = _board_for_task(task)
         if request.headers.get("HX-Target") == "task-panel-content":

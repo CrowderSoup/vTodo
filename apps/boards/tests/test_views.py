@@ -176,6 +176,21 @@ def test_board_exclude_tag_filter_hides_matching_tasks(logged_in_client):
 
 
 @pytest.mark.django_db
+def test_task_card_escapes_quotes_in_tags_for_hx_vals(logged_in_client):
+    """Regression: a tag containing a double-quote used to render straight into the
+    hx-vals JSON attribute unescaped, so the browser-decoded HTML entity produced a
+    stray quote that broke the JSON and silently disabled that tag's filter button."""
+    client, user = logged_in_client
+    Task.objects.create(user=user, title="Quoted", status="todo", tags=['say "hi"'])
+
+    response = client.get(reverse("boards:board"))
+    content = response.content.decode()
+
+    assert "hx-vals='{\"tag\": \"say \\u0022hi\\u0022\"" in content
+    assert 'hx-vals=\'{"tag": "say "hi""' not in content
+
+
+@pytest.mark.django_db
 def test_board_filter_add_exclude_tag_view_adds_tag(logged_in_client):
     """Posting to board-filter-exclude-tag appends the tag to the session's exclude list."""
     client, user = logged_in_client
@@ -456,6 +471,74 @@ def test_task_move_from_panel_refreshes_panel_and_board(logged_in_client):
     assert 'hx-swap-oob="innerHTML"' in content
     assert f'id="task-panel-status-{task.pk}"' in content
     assert 'id="task-comment-form"' in content
+
+
+@pytest.mark.django_db
+def test_marking_a_task_complete_records_its_prior_status(logged_in_client):
+    client, user = logged_in_client
+    task = Task.objects.create(user=user, title="In flight", status="in_progress")
+
+    client.post(reverse("boards:task-move", kwargs={"pk": task.pk}), {"new_status": "done"})
+
+    task.refresh_from_db()
+    assert task.status == "done"
+    assert task.previous_status == "in_progress"
+
+
+@pytest.mark.django_db
+def test_reopening_a_task_restores_its_prior_status(logged_in_client):
+    """Regression: reopening used to always drop the task into the board's generic
+    first status (e.g. Backlog) instead of the column it was actually completed from."""
+    client, user = logged_in_client
+    task = Task.objects.create(user=user, title="In flight", status="in_progress")
+    client.post(reverse("boards:task-move", kwargs={"pk": task.pk}), {"new_status": "done"})
+    task.refresh_from_db()
+
+    client.post(reverse("boards:task-move", kwargs={"pk": task.pk}), {"new_status": task.previous_status})
+
+    task.refresh_from_db()
+    assert task.status == "in_progress"
+    assert task.completed_at is None
+    assert task.previous_status == ""
+
+
+@pytest.mark.django_db
+def test_moving_between_done_statuses_preserves_prior_status(logged_in_client):
+    """Regression: boards can have more than one is_done status (e.g. Done + Archived).
+    Moving a task between two of them shouldn't discard the previous_status it recorded
+    when it was first completed, since it never actually left the completed state."""
+    client, user = logged_in_client
+    TaskStatus.objects.create(user=user, name="Archived", slug="archived", order=4, is_done=True)
+    task = Task.objects.create(user=user, title="In flight", status="in_progress")
+    client.post(reverse("boards:task-move", kwargs={"pk": task.pk}), {"new_status": "done"})
+    task.refresh_from_db()
+    completed_at = task.completed_at
+
+    client.post(reverse("boards:task-move", kwargs={"pk": task.pk}), {"new_status": "archived"})
+
+    task.refresh_from_db()
+    assert task.status == "archived"
+    assert task.completed_at == completed_at
+    assert task.previous_status == "in_progress"
+
+
+@pytest.mark.django_db
+def test_board_reopen_button_targets_the_tasks_prior_status(logged_in_client):
+    client, user = logged_in_client
+    task = Task.objects.create(
+        user=user,
+        title="In flight",
+        status="done",
+        completed_at=timezone.now(),
+        previous_status="in_progress",
+    )
+
+    response = client.get(reverse("boards:board"))
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert '"new_status": "in_progress"' in content
+    assert '"new_status": "backlog"' not in content
 
 
 @pytest.mark.django_db
