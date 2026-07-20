@@ -69,6 +69,27 @@ class SkylightConnectView(LoginRequiredMixin, View):
             update_fields=["refresh_token_encrypted", "token_encrypted", "token_fetched_at"]
         )
 
+        if keep_calendar and connection.calendar_account_id:
+            try:
+                calendars = SkylightClient(connection).list_source_calendars()
+            except (SkylightAuthError, SkylightAPIError):
+                calendars = None
+            # A stale calendar_account_id from a prior connection (e.g. the frame was
+            # re-permissioned, or the source calendar was removed/re-added on
+            # Skylight's side) otherwise survives silently and only surfaces later as
+            # a sync-time 422 ("calendar_account_id is unknown"). Catch it here.
+            if calendars is not None and not any(
+                cal["id"] == connection.calendar_account_id for cal in calendars
+            ):
+                connection.calendar_account_id = ""
+                connection.calendar_id = ""
+                connection.save(update_fields=["calendar_account_id", "calendar_id"])
+                messages.warning(
+                    request,
+                    "Your previously selected Skylight calendar is no longer available. "
+                    "Please pick it again.",
+                )
+
         messages.success(request, "Connected to Skylight.")
         if connection.is_ready:
             return redirect(reverse("users:settings-teams"))

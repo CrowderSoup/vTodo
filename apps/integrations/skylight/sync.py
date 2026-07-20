@@ -58,11 +58,14 @@ def _local_snapshot_from_task(task, connection):
 
 
 def _payload_for_task(task, connection):
+    # connection.calendar_id is just a display label (email/name/...), not a
+    # Skylight-editable resource field -- sending it makes Skylight reject the
+    # request with "calendar_id: is not editable". Only calendar_account_id
+    # identifies which calendar the event belongs to.
     snapshot = _local_snapshot_from_task(task, connection)
     return {
         **snapshot,
         "calendar_account_id": connection.calendar_account_id,
-        "calendar_id": connection.calendar_id,
         "kind": "standard",
         "timezone": "UTC",
     }
