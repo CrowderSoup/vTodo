@@ -459,6 +459,54 @@ def test_task_move_from_panel_refreshes_panel_and_board(logged_in_client):
 
 
 @pytest.mark.django_db
+def test_marking_a_task_complete_records_its_prior_status(logged_in_client):
+    client, user = logged_in_client
+    task = Task.objects.create(user=user, title="In flight", status="in_progress")
+
+    client.post(reverse("boards:task-move", kwargs={"pk": task.pk}), {"new_status": "done"})
+
+    task.refresh_from_db()
+    assert task.status == "done"
+    assert task.previous_status == "in_progress"
+
+
+@pytest.mark.django_db
+def test_reopening_a_task_restores_its_prior_status(logged_in_client):
+    """Regression: reopening used to always drop the task into the board's generic
+    first status (e.g. Backlog) instead of the column it was actually completed from."""
+    client, user = logged_in_client
+    task = Task.objects.create(user=user, title="In flight", status="in_progress")
+    client.post(reverse("boards:task-move", kwargs={"pk": task.pk}), {"new_status": "done"})
+    task.refresh_from_db()
+
+    client.post(reverse("boards:task-move", kwargs={"pk": task.pk}), {"new_status": task.previous_status})
+
+    task.refresh_from_db()
+    assert task.status == "in_progress"
+    assert task.completed_at is None
+    assert task.previous_status == ""
+
+
+@pytest.mark.django_db
+def test_board_reopen_button_targets_the_tasks_prior_status(logged_in_client):
+    client, user = logged_in_client
+    task = Task.objects.create(
+        user=user,
+        title="In flight",
+        status="done",
+        completed_at=timezone.now(),
+        previous_status="in_progress",
+    )
+
+    response = client.get(reverse("boards:board"))
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert '"new_status": "in_progress"' in content
+    assert '"new_status": "backlog"' not in content
+
+
+@pytest.mark.django_db
 def test_render_markdown_wraps_task_list_checkboxes():
     html = _render_markdown("- [x] Ship polish\n- [ ] Follow up")
     assert 'class="rendered-checkbox-line rendered-checkbox-line--checked"' in html

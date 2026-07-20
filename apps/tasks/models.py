@@ -91,6 +91,9 @@ class Task(models.Model):
     title = models.CharField(max_length=500)
     notes = models.TextField(blank=True, default="")
     status = models.CharField(max_length=50, default="todo")
+    # Status slug to restore when reopening a completed task — set when a move
+    # transitions the task into a done status, cleared on any move out of one.
+    previous_status = models.CharField(max_length=50, blank=True, default="")
     order = models.PositiveIntegerField(default=0)
     due_date = models.DateField(null=True, blank=True)
     tags = models.JSONField(default=list, blank=True)

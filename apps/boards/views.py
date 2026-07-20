@@ -481,16 +481,20 @@ class TaskMoveView(LoginRequiredMixin, View):
         if new_status not in valid_slugs:
             return HttpResponse(status=422)
 
+        previous_status = task.status
         task.status = new_status
         is_done = task_statuses.filter(slug=new_status, is_done=True).exists()
+        update_fields = ["status", "completed_at", "previous_status", "updated_at"]
         if is_done and not task.completed_at:
             task.completed_at = timezone.now()
-            task.save(update_fields=["status", "completed_at", "updated_at"])
+            task.previous_status = previous_status
+            task.save(update_fields=update_fields)
             task.spawn_recurrence(completion_date=task.completed_at.date())
         else:
             if not is_done:
                 task.completed_at = None
-            task.save(update_fields=["status", "completed_at", "updated_at"])
+            task.previous_status = ""
+            task.save(update_fields=update_fields)
 
         board = _board_for_task(task)
         if request.headers.get("HX-Target") == "task-panel-content":
