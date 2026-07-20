@@ -36,17 +36,20 @@ def test_settings_teams_page_renders_without_connection(owner_client):
 @pytest.mark.django_db
 def test_connect_view_creates_connection(monkeypatch, owner_client):
     client, _user, team = owner_client
-    monkeypatch.setattr("apps.integrations.views.skylight_login", lambda email, password: "tok123")
+    monkeypatch.setattr(
+        "apps.integrations.views.skylight_refresh",
+        lambda refresh_token: {"access_token": "tok123", "refresh_token": "rotated-tok"},
+    )
 
     response = client.post(
         reverse("integrations:skylight-connect", args=[team.pk]),
-        {"email": "owner@example.com", "password": "hunter2", "frame_id": "frame123"},
+        {"refresh_token": "initial-refresh-tok", "frame_id": "frame123"},
     )
 
     assert response.status_code == 302
     connection = SkylightConnection.objects.get(team=team)
-    assert connection.email == "owner@example.com"
     assert connection.get_token() == "tok123"
+    assert connection.get_refresh_token() == "rotated-tok"
     assert not connection.is_ready
     assert response.url == reverse("integrations:skylight-select-calendar", args=[team.pk])
 
@@ -54,11 +57,14 @@ def test_connect_view_creates_connection(monkeypatch, owner_client):
 @pytest.mark.django_db
 def test_connect_view_rejects_non_owner(monkeypatch, member_client):
     client, _user, team = member_client
-    monkeypatch.setattr("apps.integrations.views.skylight_login", lambda email, password: "tok123")
+    monkeypatch.setattr(
+        "apps.integrations.views.skylight_refresh",
+        lambda refresh_token: {"access_token": "tok123", "refresh_token": "rotated-tok"},
+    )
 
     response = client.post(
         reverse("integrations:skylight-connect", args=[team.pk]),
-        {"email": "owner@example.com", "password": "hunter2", "frame_id": "frame123"},
+        {"refresh_token": "initial-refresh-tok", "frame_id": "frame123"},
     )
 
     assert response.status_code == 404
@@ -66,10 +72,32 @@ def test_connect_view_rejects_non_owner(monkeypatch, member_client):
 
 
 @pytest.mark.django_db
+def test_connect_view_shows_distinct_error_for_rejected_refresh_token(monkeypatch, owner_client):
+    client, _user, team = owner_client
+    from apps.integrations.skylight.client import SkylightAuthError
+
+    def _raise(refresh_token):
+        raise SkylightAuthError("Skylight rejected the refresh token: 400")
+
+    monkeypatch.setattr("apps.integrations.views.skylight_refresh", _raise)
+
+    response = client.post(
+        reverse("integrations:skylight-connect", args=[team.pk]),
+        {"refresh_token": "bad-tok", "frame_id": "frame123"},
+        follow=True,
+    )
+
+    assert response.status_code == 200
+    messages = [str(m) for m in response.context["messages"]]
+    assert any("rejected that refresh token" in m for m in messages)
+    assert not SkylightConnection.objects.filter(team=team).exists()
+
+
+@pytest.mark.django_db
 def test_select_calendar_view_get_lists_calendars(monkeypatch, owner_client):
     client, _user, team = owner_client
-    connection = SkylightConnection(team=team, frame_id="frame123", email="owner@example.com")
-    connection.set_password("hunter2")
+    connection = SkylightConnection(team=team, frame_id="frame123")
+    connection.set_refresh_token("initial-refresh-tok")
     connection.set_token("tok123")
     connection.save()
 
@@ -87,8 +115,8 @@ def test_select_calendar_view_get_lists_calendars(monkeypatch, owner_client):
 @pytest.mark.django_db
 def test_select_calendar_view_post_saves_choice(owner_client):
     client, _user, team = owner_client
-    connection = SkylightConnection(team=team, frame_id="frame123", email="owner@example.com")
-    connection.set_password("hunter2")
+    connection = SkylightConnection(team=team, frame_id="frame123")
+    connection.set_refresh_token("initial-refresh-tok")
     connection.set_token("tok123")
     connection.save()
 
@@ -110,10 +138,10 @@ def test_mapping_view_saves_assignments(monkeypatch, owner_client):
     TeamMembership.objects.create(team=team, user=member, role=TeamMembership.ROLE_MEMBER)
 
     connection = SkylightConnection(
-        team=team, frame_id="frame123", email="owner@example.com",
+        team=team, frame_id="frame123",
         calendar_account_id="cal-1", calendar_id="owner@gmail.com",
     )
-    connection.set_password("hunter2")
+    connection.set_refresh_token("initial-refresh-tok")
     connection.set_token("tok123")
     connection.save()
 
@@ -138,10 +166,10 @@ def test_mapping_view_ignores_user_id_outside_team(monkeypatch, owner_client):
     outsider = User.objects.create_user()
 
     connection = SkylightConnection(
-        team=team, frame_id="frame123", email="owner@example.com",
+        team=team, frame_id="frame123",
         calendar_account_id="cal-1", calendar_id="owner@gmail.com",
     )
-    connection.set_password("hunter2")
+    connection.set_refresh_token("initial-refresh-tok")
     connection.set_token("tok123")
     connection.save()
 
@@ -164,10 +192,10 @@ def test_mapping_view_ignores_user_id_outside_team(monkeypatch, owner_client):
 def test_disconnect_view_removes_connection_and_links(owner_client):
     client, owner, team = owner_client
     connection = SkylightConnection(
-        team=team, frame_id="frame123", email="owner@example.com",
+        team=team, frame_id="frame123",
         calendar_account_id="cal-1", calendar_id="owner@gmail.com",
     )
-    connection.set_password("hunter2")
+    connection.set_refresh_token("initial-refresh-tok")
     connection.save()
     task = Task.objects.create(user=owner, team=team, title="Synced task")
     ExternalLink.objects.create(task=task, provider=ExternalLink.Provider.SKYLIGHT, external_id="evt-1")

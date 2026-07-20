@@ -37,9 +37,10 @@ class ExternalLink(models.Model):
 class SkylightConnection(models.Model):
     """A team's connection to a Skylight calendar frame. One per team.
 
-    Skylight has no OAuth — the owner's real email/password are stored encrypted
-    so the sync job can silently re-authenticate when the cached token is rejected
-    (Skylight's unofficial API documents no token refresh or expiry).
+    Skylight's password login is retired; the owner instead supplies a
+    refresh_token (pulled once from their own logged-in browser session) which
+    is stored encrypted. Skylight rotates the refresh_token on every use, so the
+    sync job persists a new one each time it re-authenticates.
     """
 
     team = models.OneToOneField(
@@ -50,8 +51,7 @@ class SkylightConnection(models.Model):
     # Skylight has no endpoint to discover which frame(s) belong to an account, so
     # the owner supplies this manually (found via their app/browser network traffic).
     frame_id = models.CharField(max_length=100)
-    email = models.EmailField()
-    password_encrypted = models.TextField()
+    refresh_token_encrypted = models.TextField(blank=True, default="")
     token_encrypted = models.TextField(blank=True, default="")
     token_fetched_at = models.DateTimeField(null=True, blank=True)
     # Set once the owner picks a source calendar (auto-discovered via
@@ -77,11 +77,13 @@ class SkylightConnection(models.Model):
         """A calendar has been picked, so sync can actually run."""
         return bool(self.calendar_account_id)
 
-    def set_password(self, raw_password: str) -> None:
-        self.password_encrypted = crypto.encrypt(raw_password)
+    def set_refresh_token(self, raw_refresh_token: str) -> None:
+        self.refresh_token_encrypted = crypto.encrypt(raw_refresh_token)
 
-    def get_password(self) -> str:
-        return crypto.decrypt(self.password_encrypted)
+    def get_refresh_token(self) -> str:
+        if not self.refresh_token_encrypted:
+            return ""
+        return crypto.decrypt(self.refresh_token_encrypted)
 
     def set_token(self, raw_token: str) -> None:
         self.token_encrypted = crypto.encrypt(raw_token)

@@ -9,7 +9,7 @@ from apps.teams.models import Team, TeamMembership
 
 from .models import ExternalLink, SkylightConnection, SkylightMemberMapping
 from .skylight.client import SkylightAPIError, SkylightAuthError, SkylightClient
-from .skylight.client import login as skylight_login
+from .skylight.client import refresh as skylight_refresh
 
 
 def _owner_membership_or_404(user, team_pk):
@@ -30,19 +30,20 @@ class SkylightConnectView(LoginRequiredMixin, View):
         _owner_membership_or_404(request.user, team_pk)
         team = get_object_or_404(Team, pk=team_pk)
 
-        email = request.POST.get("email", "").strip()
-        password = request.POST.get("password", "")
+        refresh_token = request.POST.get("refresh_token", "").strip()
         frame_id = request.POST.get("frame_id", "").strip()
 
-        if not email or not password or not frame_id:
-            messages.error(request, "Email, password, and frame ID are all required.")
+        if not refresh_token or not frame_id:
+            messages.error(request, "Refresh token and frame ID are both required.")
             return redirect(reverse("users:settings-teams"))
 
         try:
-            token = skylight_login(email, password)
+            result = skylight_refresh(refresh_token)
         except SkylightAuthError:
             messages.error(
-                request, "Skylight rejected those credentials. Double-check the email and password."
+                request,
+                "Skylight rejected that refresh token. Make sure you copied the full "
+                "\"refresh_token\" value (not the access_token) from a fresh login, and try again.",
             )
             return redirect(reverse("users:settings-teams"))
         except SkylightAPIError as exc:
@@ -56,16 +57,17 @@ class SkylightConnectView(LoginRequiredMixin, View):
             team=team,
             defaults={
                 "frame_id": frame_id,
-                "email": email,
                 "connected_by": request.user,
                 "is_active": True,
                 **({} if keep_calendar else {"calendar_account_id": "", "calendar_id": ""}),
             },
         )
-        connection.set_password(password)
-        connection.set_token(token)
+        connection.set_refresh_token(result["refresh_token"])
+        connection.set_token(result["access_token"])
         connection.token_fetched_at = timezone.now()
-        connection.save(update_fields=["password_encrypted", "token_encrypted", "token_fetched_at"])
+        connection.save(
+            update_fields=["refresh_token_encrypted", "token_encrypted", "token_fetched_at"]
+        )
 
         messages.success(request, "Connected to Skylight.")
         if connection.is_ready:

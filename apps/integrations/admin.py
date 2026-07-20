@@ -12,12 +12,12 @@ class SkylightMemberMappingInline(admin.TabularInline):
 @admin.register(SkylightConnection)
 class SkylightConnectionAdmin(admin.ModelAdmin):
     list_display = (
-        "team", "frame_id", "email", "is_active", "is_ready",
+        "team", "frame_id", "is_active", "is_ready",
         "last_synced_at", "last_sync_error",
     )
     list_filter = ("is_active",)
-    search_fields = ("team__name", "email", "frame_id")
-    readonly_fields = ("password_encrypted", "token_encrypted", "token_fetched_at")
+    search_fields = ("team__name", "frame_id")
+    readonly_fields = ("refresh_token_encrypted", "token_encrypted", "token_fetched_at")
     inlines = [SkylightMemberMappingInline]
 
 
