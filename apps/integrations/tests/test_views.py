@@ -133,6 +133,34 @@ def test_mapping_view_saves_assignments(monkeypatch, owner_client):
 
 
 @pytest.mark.django_db
+def test_mapping_view_ignores_user_id_outside_team(monkeypatch, owner_client):
+    client, _owner, team = owner_client
+    outsider = User.objects.create_user()
+
+    connection = SkylightConnection(
+        team=team, frame_id="frame123", email="owner@example.com",
+        calendar_account_id="cal-1", calendar_id="owner@gmail.com",
+    )
+    connection.set_password("hunter2")
+    connection.set_token("tok123")
+    connection.save()
+
+    monkeypatch.setattr(
+        "apps.integrations.views.SkylightClient.list_categories",
+        lambda self: [{"id": "cat-1", "attributes": {"label": "Garrett"}}],
+    )
+
+    response = client.post(
+        reverse("integrations:skylight-mapping", args=[team.pk]),
+        {f"category_label:cat-1": "Garrett", f"user:cat-1": str(outsider.pk)},
+    )
+
+    assert response.status_code == 302
+    mapping = SkylightMemberMapping.objects.get(connection=connection, category_id="cat-1")
+    assert mapping.user_id is None
+
+
+@pytest.mark.django_db
 def test_disconnect_view_removes_connection_and_links(owner_client):
     client, owner, team = owner_client
     connection = SkylightConnection(

@@ -10,18 +10,24 @@ class SkylightAuthError(Exception):
 
 
 class SkylightAPIError(Exception):
-    """Raised for any non-2xx response other than a retried 401."""
+    """Raised for any non-2xx response other than a retried 401, and for
+    network-level failures (timeout, connection refused, DNS, ...) reaching
+    Skylight at all -- callers only need to handle the two Skylight exception
+    types to cover every way a request to Skylight can fail."""
 
 
 def login(email: str, password: str) -> str:
     """Bare credential check against POST /api/sessions. Used both to validate
     credentials during the connect flow (before anything is saved) and by
     SkylightClient.authenticate() for a connection that already exists."""
-    response = requests.post(
-        f"{BASE_URL}/api/sessions",
-        json={"email": email, "password": password},
-        timeout=REQUEST_TIMEOUT,
-    )
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/sessions",
+            json={"email": email, "password": password},
+            timeout=REQUEST_TIMEOUT,
+        )
+    except requests.exceptions.RequestException as exc:
+        raise SkylightAPIError(f"Couldn't reach Skylight to log in: {exc}") from exc
     if response.status_code != 200:
         raise SkylightAuthError(f"Skylight login failed for {email}: {response.status_code}")
     return response.json()["data"]["attributes"]["token"]
@@ -47,14 +53,17 @@ class SkylightClient:
 
     def _request(self, method, path, params=None, json_body=None, _retry=True):
         token = self.connection.get_token() or self.authenticate()
-        response = self.session.request(
-            method,
-            f"{BASE_URL}{path}",
-            params=params,
-            json=json_body,
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=REQUEST_TIMEOUT,
-        )
+        try:
+            response = self.session.request(
+                method,
+                f"{BASE_URL}{path}",
+                params=params,
+                json=json_body,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=REQUEST_TIMEOUT,
+            )
+        except requests.exceptions.RequestException as exc:
+            raise SkylightAPIError(f"Couldn't reach Skylight: {method} {path}: {exc}") from exc
         if response.status_code == 401 and _retry:
             self.authenticate()
             return self._request(method, path, params=params, json_body=json_body, _retry=False)

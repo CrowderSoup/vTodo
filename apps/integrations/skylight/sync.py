@@ -39,7 +39,12 @@ def _category_ids_for_assignee(connection, assignee_id):
     return [mapping.category_id] if mapping else []
 
 
-def _payload_for_task(task, connection):
+def _local_snapshot_from_task(task, connection):
+    """Normalized, comparable view of a task's sync-relevant fields -- used to
+    detect local drift against the last-synced snapshot. Always built from the
+    task's own fields so two snapshots taken this way are directly comparable,
+    regardless of how any other field on the task (status, order, tags, ...)
+    changed in between."""
     start, end = _task_start_end(task)
     all_day = start is None
     return {
@@ -48,7 +53,14 @@ def _payload_for_task(task, connection):
         "all_day": all_day,
         "starts_at": start.isoformat() if start else task.due_date.isoformat(),
         "ends_at": end.isoformat() if end else task.due_date.isoformat(),
-        "category_ids": _category_ids_for_assignee(connection, task.assignee_id),
+        "category_ids": sorted(_category_ids_for_assignee(connection, task.assignee_id)),
+    }
+
+
+def _payload_for_task(task, connection):
+    snapshot = _local_snapshot_from_task(task, connection)
+    return {
+        **snapshot,
         "calendar_account_id": connection.calendar_account_id,
         "calendar_id": connection.calendar_id,
         "kind": "standard",
@@ -137,21 +149,30 @@ def _reconcile_linked_tasks(connection, client, remote_events):
             continue
 
         remote_snapshot = _snapshot_from_event(remote_event)
-        remote_changed = remote_snapshot != link.metadata
-        local_changed = link.synced_at is None or task.updated_at > link.synced_at
+        local_snapshot = _local_snapshot_from_task(task, connection)
+        synced = link.metadata or {}
+        remote_changed = remote_snapshot != synced.get("remote")
+        # Compared against the local snapshot stored at last sync, not task.updated_at:
+        # updated_at is bumped by any save (status move, reorder, tag edit, ...), so a
+        # timestamp check would treat unrelated edits as "local changed" and clobber a
+        # genuine concurrent remote edit even though no synced field actually moved.
+        local_changed = link.synced_at is None or local_snapshot != synced.get("local")
 
         if local_changed:
             # Covers "only local changed" and "both changed since last sync." Skylight
             # exposes no modified-at timestamp on events, so true dual-clock
-            # last-write-wins isn't possible -- local wins ties, since task.updated_at
-            # is the only reliable clock available.
+            # last-write-wins isn't possible -- local wins ties, since the local
+            # snapshot is the only reliable signal available.
             event = client.update_calendar_event(link.external_id, _payload_for_task(task, connection))
-            link.metadata = _snapshot_from_event(event)
+            link.metadata = {"remote": _snapshot_from_event(event), "local": local_snapshot}
             link.synced_at = dj_timezone.now()
             link.save(update_fields=["metadata", "synced_at"])
         elif remote_changed:
             _apply_event_to_task(task, remote_event, connection)
-            link.metadata = remote_snapshot
+            link.metadata = {
+                "remote": remote_snapshot,
+                "local": _local_snapshot_from_task(task, connection),
+            }
             link.synced_at = dj_timezone.now()
             link.save(update_fields=["metadata", "synced_at"])
 
@@ -173,7 +194,10 @@ def _push_new_tasks(connection, client, already_linked_task_ids):
             provider=ExternalLink.Provider.SKYLIGHT,
             external_id=event["id"],
             synced_at=dj_timezone.now(),
-            metadata=_snapshot_from_event(event),
+            metadata={
+                "remote": _snapshot_from_event(event),
+                "local": _local_snapshot_from_task(task, connection),
+            },
         )
 
 

@@ -183,6 +183,25 @@ def test_sync_local_wins_when_both_sides_changed(team, owner, connection, fake_c
 
 
 @pytest.mark.django_db
+def test_sync_pulls_remote_change_when_local_touch_was_sync_irrelevant(team, owner, connection, fake_client):
+    task = _make_task(team, owner)
+    sync_connection(connection)
+    link = ExternalLink.objects.get(task=task, provider=ExternalLink.Provider.SKYLIGHT)
+
+    # Touch the task in a way that bumps updated_at but doesn't change anything
+    # that gets synced to Skylight (e.g. reordering on the board).
+    task.order = 5
+    task.save(update_fields=["order", "updated_at"])
+    fake_client.events[link.external_id]["attributes"]["summary"] = "Take out ALL the trash"
+
+    sync_connection(connection)
+
+    task.refresh_from_db()
+    assert task.title == "Take out ALL the trash"
+    assert fake_client.updated == []
+
+
+@pytest.mark.django_db
 def test_sync_removes_event_when_task_no_longer_eligible(team, owner, connection, fake_client):
     task = _make_task(team, owner)
     sync_connection(connection)

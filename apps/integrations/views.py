@@ -146,6 +146,9 @@ class SkylightMemberMappingView(LoginRequiredMixin, View):
     def post(self, request, team_pk):
         _owner_membership_or_404(request.user, team_pk)
         connection = get_object_or_404(SkylightConnection, team_id=team_pk)
+        team_member_ids = set(
+            TeamMembership.objects.filter(team_id=team_pk).values_list("user_id", flat=True)
+        )
 
         for key, value in request.POST.items():
             if not key.startswith("category_label:"):
@@ -153,13 +156,21 @@ class SkylightMemberMappingView(LoginRequiredMixin, View):
             category_id = key.split(":", 1)[1]
             user_field = f"user:{category_id}"
             user_id = request.POST.get(user_field, "").strip()
+            try:
+                user_id = int(user_id) if user_id else None
+            except ValueError:
+                user_id = None
+            # Only ever map to someone on this team -- a stray/tampered id in the
+            # POST body is silently treated as "unmapped" rather than trusted.
+            if user_id is not None and user_id not in team_member_ids:
+                user_id = None
 
             SkylightMemberMapping.objects.update_or_create(
                 connection=connection,
                 category_id=category_id,
                 defaults={
                     "category_label": value,
-                    "user_id": int(user_id) if user_id else None,
+                    "user_id": user_id,
                 },
             )
 
