@@ -13,6 +13,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("SECRET_KEY", default="django-insecure-change-me-in-production")
+# Fernet key for encrypting third-party integration credentials at rest (e.g. Skylight
+# email/password). Dev-only default below — generate a real one for production with
+# `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+INTEGRATIONS_ENCRYPTION_KEY = env(
+    "INTEGRATIONS_ENCRYPTION_KEY", default="1xL3Eu_Vcc01u078d6XgrtOuLyyKrw3_ulmpptG0TuY="
+)
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
@@ -144,6 +150,12 @@ CACHES = {
 # Celery
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+CELERY_BEAT_SCHEDULE = {
+    "sync-skylight-connections": {
+        "task": "apps.integrations.tasks.sync_all_skylight_connections",
+        "schedule": 600.0,  # 10 minutes
+    },
+}
 
 # Email
 EMAIL_BACKEND = env(

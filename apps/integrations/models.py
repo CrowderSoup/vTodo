@@ -1,4 +1,7 @@
+from django.conf import settings
 from django.db import models
+
+from apps.integrations.skylight import crypto
 
 
 class ExternalLink(models.Model):
@@ -11,6 +14,7 @@ class ExternalLink(models.Model):
         GITHUB = "github", "GitHub"
         TRELLO = "trello", "Trello"
         LINEAR = "linear", "Linear"
+        SKYLIGHT = "skylight", "Skylight"
 
     task = models.ForeignKey(
         "tasks.Task",
@@ -28,3 +32,91 @@ class ExternalLink(models.Model):
 
     def __str__(self):
         return f"{self.provider}:{self.external_id} -> {self.task}"
+
+
+class SkylightConnection(models.Model):
+    """A team's connection to a Skylight calendar frame. One per team.
+
+    Skylight has no OAuth — the owner's real email/password are stored encrypted
+    so the sync job can silently re-authenticate when the cached token is rejected
+    (Skylight's unofficial API documents no token refresh or expiry).
+    """
+
+    team = models.OneToOneField(
+        "teams.Team",
+        on_delete=models.CASCADE,
+        related_name="skylight_connection",
+    )
+    # Skylight has no endpoint to discover which frame(s) belong to an account, so
+    # the owner supplies this manually (found via their app/browser network traffic).
+    frame_id = models.CharField(max_length=100)
+    email = models.EmailField()
+    password_encrypted = models.TextField()
+    token_encrypted = models.TextField(blank=True, default="")
+    token_fetched_at = models.DateTimeField(null=True, blank=True)
+    # Set once the owner picks a source calendar (auto-discovered via
+    # GET /api/frames/{frame_id}/source_calendars after the first successful login).
+    calendar_account_id = models.CharField(max_length=50, blank=True, default="")
+    calendar_id = models.CharField(max_length=255, blank=True, default="")
+    connected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="skylight_connections_made",
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    last_sync_error = models.TextField(blank=True, default="")
+
+    def __str__(self):
+        return f"Skylight({self.frame_id}) for {self.team}"
+
+    @property
+    def is_ready(self) -> bool:
+        """A calendar has been picked, so sync can actually run."""
+        return bool(self.calendar_account_id)
+
+    def set_password(self, raw_password: str) -> None:
+        self.password_encrypted = crypto.encrypt(raw_password)
+
+    def get_password(self) -> str:
+        return crypto.decrypt(self.password_encrypted)
+
+    def set_token(self, raw_token: str) -> None:
+        self.token_encrypted = crypto.encrypt(raw_token)
+
+    def get_token(self) -> str:
+        if not self.token_encrypted:
+            return ""
+        return crypto.decrypt(self.token_encrypted)
+
+
+class SkylightMemberMapping(models.Model):
+    """Maps a Skylight family member (category) to a vtodo team member, for
+    assignee sync. Editable any time — not just at connect time — since both
+    rosters change independently. A missing row or user=None both mean "unmapped";
+    an unmapped category/assignee is left unassigned rather than guessed.
+    """
+
+    connection = models.ForeignKey(
+        SkylightConnection,
+        on_delete=models.CASCADE,
+        related_name="member_mappings",
+    )
+    category_id = models.CharField(max_length=50)
+    category_label = models.CharField(max_length=255, blank=True, default="")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="skylight_mappings",
+    )
+
+    class Meta:
+        unique_together = [("connection", "category_id")]
+
+    def __str__(self):
+        who = self.user or "Unmapped"
+        return f"{self.category_label or self.category_id} -> {who}"

@@ -469,6 +469,12 @@ hr {
   color: var(--success);
 }
 
+.pill--error {
+  background: rgba(187, 77, 62, 0.12);
+  border-color: rgba(187, 77, 62, 0.24);
+  color: var(--danger);
+}
+
 .badge--attention {
   background: var(--accent-warm-soft);
   border-color: rgba(195, 114, 44, 0.24);

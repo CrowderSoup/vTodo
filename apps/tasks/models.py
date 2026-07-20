@@ -96,6 +96,10 @@ class Task(models.Model):
     previous_status = models.CharField(max_length=50, blank=True, default="")
     order = models.PositiveIntegerField(default=0)
     due_date = models.DateField(null=True, blank=True)
+    # Optional time-of-day for due_date, used when syncing to external calendars (e.g.
+    # Skylight) so events get a real start time instead of always being all-day.
+    due_time = models.TimeField(null=True, blank=True)
+    duration_minutes = models.PositiveSmallIntegerField(null=True, blank=True)
     tags = models.JSONField(default=list, blank=True)
 
     is_archived = models.BooleanField(default=False)
@@ -142,6 +146,8 @@ class Task(models.Model):
             notes=self.notes,
             status="backlog",
             due_date=new_due,
+            due_time=self.due_time,
+            duration_minutes=self.duration_minutes,
             tags=list(self.tags),
             recurrence_days=self.recurrence_days,
             recurrence_from=self.recurrence_from,

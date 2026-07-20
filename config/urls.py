@@ -14,6 +14,7 @@ urlpatterns = [
     path("board/", include("apps.boards.urls", namespace="boards")),
     path("settings/", include("apps.users.urls", namespace="users")),
     path("teams/", include("apps.teams.urls", namespace="teams")),
+    path("integrations/", include("apps.integrations.urls", namespace="integrations")),
     # REST API
     path("api/v1/", include("apps.api.urls")),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),

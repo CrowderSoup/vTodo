@@ -1,5 +1,5 @@
 import pytest
-from datetime import date
+from datetime import date, time
 
 from apps.tasks.models import Task
 from apps.teams.models import Team, TeamMembership
@@ -56,3 +56,25 @@ def test_spawn_recurrence_keeps_team_task_on_the_team():
     spawned = task.spawn_recurrence(completion_date=date(2026, 1, 1))
 
     assert spawned.team_id == team.pk
+
+
+@pytest.mark.django_db
+def test_due_time_and_duration_default_to_none():
+    user = User.objects.create_user()
+    task = Task.objects.create(user=user, title="No specific time", due_date=date(2026, 1, 1))
+    assert task.due_time is None
+    assert task.duration_minutes is None
+
+
+@pytest.mark.django_db
+def test_spawn_recurrence_carries_over_due_time_and_duration():
+    user = User.objects.create_user()
+    task = Task.objects.create(
+        user=user, title="Standup", recurrence_days=1,
+        due_date=date(2026, 1, 1), due_time=time(9, 30), duration_minutes=15,
+    )
+
+    spawned = task.spawn_recurrence(completion_date=date(2026, 1, 1))
+
+    assert spawned.due_time == time(9, 30)
+    assert spawned.duration_minutes == 15
