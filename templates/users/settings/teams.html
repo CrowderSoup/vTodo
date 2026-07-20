@@ -77,6 +77,74 @@
     {% endif %}
     {% endif %}
 
+    {% if entry.is_owner %}
+    <div class="settings-list">
+      <div class="config-row">
+        <div class="config-main">
+          <div class="config-title"><span>Skylight calendar</span></div>
+          {% if entry.skylight_connection %}
+          <div class="config-description">
+            <span class="pill">Frame {{ entry.skylight_connection.frame_id }}</span>
+            {% if entry.skylight_connection.is_ready %}
+              <span class="pill">{{ entry.skylight_connection.calendar_id|default:"Calendar selected" }}</span>
+            {% else %}
+              <span class="pill">Calendar not selected</span>
+            {% endif %}
+            {% if entry.skylight_connection.last_sync_error %}
+              <span class="pill pill--error">Last sync failed: {{ entry.skylight_connection.last_sync_error|truncatechars:80 }}</span>
+            {% elif entry.skylight_connection.last_synced_at %}
+              <span class="pill">Last synced {{ entry.skylight_connection.last_synced_at|timesince }} ago</span>
+            {% endif %}
+          </div>
+          {% else %}
+          <div class="config-description"><span class="field-help">Not connected. Team tasks with a due date can sync to a Skylight calendar frame.</span></div>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if entry.skylight_connection %}
+      <div class="panel-footer-secondary">
+        {% if not entry.skylight_connection.is_ready %}
+        <a class="btn-secondary" href="{% url 'integrations:skylight-select-calendar' entry.team.pk %}">Pick calendar</a>
+        {% else %}
+        <a class="btn-secondary" href="{% url 'integrations:skylight-mapping' entry.team.pk %}">Manage family member mapping</a>
+        {% endif %}
+        <form method="post" action="{% url 'integrations:skylight-disconnect' entry.team.pk %}">
+          {% csrf_token %}
+          <button type="submit" class="btn-danger"
+                  onclick="return confirm('Disconnect Skylight from {{ entry.team.name|escapejs }}? Synced calendar events will be removed.');">Disconnect Skylight</button>
+        </form>
+      </div>
+      {% else %}
+      <form class="inline-form" method="post" action="{% url 'integrations:skylight-connect' entry.team.pk %}">
+        {% csrf_token %}
+        <div class="form-field">
+          <label class="field-label" for="skylight-email-{{ entry.team.pk }}">Skylight email</label>
+          <input id="skylight-email-{{ entry.team.pk }}" type="email" name="email" placeholder="you@example.com" required>
+        </div>
+        <div class="form-field">
+          <label class="field-label" for="skylight-password-{{ entry.team.pk }}">Skylight password</label>
+          <input id="skylight-password-{{ entry.team.pk }}" type="password" name="password" required>
+        </div>
+        <div class="form-field">
+          <label class="field-label" for="skylight-frame-{{ entry.team.pk }}">Frame ID</label>
+          <input id="skylight-frame-{{ entry.team.pk }}" type="text" name="frame_id" placeholder="found via your Skylight app's network traffic" required>
+        </div>
+        <div class="form-field">
+          <button type="submit" class="btn-primary">Connect Skylight</button>
+        </div>
+      </form>
+      <p class="field-help">
+        Skylight has no official developer login, so vtodo needs your real account email and password
+        (stored encrypted) to sync on your behalf. The frame ID isn't something Skylight exposes anywhere
+        in its app — you'll need to find it via your browser or app's network traffic
+        (e.g. a proxy tool, or your browser's devtools Network tab) and look for
+        <code>/api/frames/&#123;frame_id&#125;/...</code> in a request URL.
+      </p>
+      {% endif %}
+    </div>
+    {% endif %}
+
     <div class="panel-footer-secondary">
       {% if entry.is_owner %}
       <form method="post" action="{% url 'teams:delete' entry.team.pk %}">

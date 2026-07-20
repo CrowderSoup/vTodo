@@ -17,6 +17,7 @@ dependencies = [
     "drf-spectacular>=0.29.0",
     "mcp>=1.0",
     "markdown>=3.10.2",
+    "cryptography>=42.0",
 ]
 
 [dependency-groups]

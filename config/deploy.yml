@@ -33,6 +33,12 @@ servers:
       secret:
         - VTODO_API_TOKEN
         - VTODO_MCP_TOKEN
+  worker:
+    hosts:
+      - 64.23.247.60
+    # Worker + embedded beat in one process -- fine at this scale, avoids running
+    # two Kamal roles for what's currently a single periodic task (Skylight sync).
+    cmd: "uv run celery -A config worker -B -l info"
 
 registry:
   server: ghcr.io
@@ -66,6 +72,7 @@ env:
     - EMAIL_HOST_PASSWORD
     - GOOGLE_CLIENT_ID
     - GOOGLE_CLIENT_SECRET
+    - INTEGRATIONS_ENCRYPTION_KEY
 
 accessories:
   redis:

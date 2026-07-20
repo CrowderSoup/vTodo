@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Skylight family members — vtodo{% endblock %}
+
+{% block content %}
+<section class="page-shell page-shell--narrow">
+  <div class="settings-card settings-card--wide surface-panel">
+    <div>
+      <h2 class="card-title">Map family members for {{ team.name }}</h2>
+      <p class="card-subtitle">
+        Assign each Skylight family member to a vtodo team member so task assignees sync both ways.
+        Leave a row unmapped and matching tasks/events just stay unassigned — vtodo never guesses.
+      </p>
+    </div>
+
+    {% if rows %}
+    <form method="post" action="{% url 'integrations:skylight-mapping' team.pk %}">
+      {% csrf_token %}
+      <div class="settings-list">
+        {% for row in rows %}
+        <div class="config-row">
+          <div class="config-main">
+            <div class="config-title"><span>{{ row.label }}</span></div>
+          </div>
+          <input type="hidden" name="category_label:{{ row.category_id }}" value="{{ row.label }}">
+          <select name="user:{{ row.category_id }}">
+            <option value="">Unmapped</option>
+            {% for membership in members %}
+            <option value="{{ membership.user_id }}" {% if membership.user_id == row.mapped_user_id %}selected{% endif %}>
+              {{ membership.user.display_name|default:membership.user.username }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="form-field" style="margin-top: 1rem;">
+        <button type="submit" class="btn-primary">Save mapping</button>
+      </div>
+    </form>
+    {% else %}
+    <p class="field-help">No family members found on this Skylight frame yet.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

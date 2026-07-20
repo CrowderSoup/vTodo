@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Pick a Skylight calendar — vtodo{% endblock %}
+
+{% block content %}
+<section class="page-shell page-shell--narrow">
+  <div class="settings-card settings-card--wide surface-panel">
+    <div>
+      <h2 class="card-title">Pick a calendar for {{ team.name }}</h2>
+      <p class="card-subtitle">Skylight connects multiple calendar sources to a frame (Google, iCloud, etc.). Pick the one vtodo should sync tasks to.</p>
+    </div>
+
+    {% if calendars %}
+    <form method="post" action="{% url 'integrations:skylight-select-calendar' team.pk %}">
+      {% csrf_token %}
+      <div class="settings-list">
+        {% for cal in calendars %}
+        <label class="config-row">
+          <div class="config-main">
+            <div class="config-title">
+              <input type="radio" name="calendar_account_id" value="{{ cal.id }}" required>
+              <span>{{ cal.label }}</span>
+            </div>
+            <div class="config-description">
+              {% for key, value in cal.attrs.items %}
+                <span class="pill">{{ key }}: {{ value }}</span>
+              {% endfor %}
+            </div>
+          </div>
+          <input type="hidden" name="calendar_label" value="{{ cal.label }}">
+        </label>
+        {% endfor %}
+      </div>
+      <div class="form-field" style="margin-top: 1rem;">
+        <button type="submit" class="btn-primary">Use this calendar</button>
+      </div>
+    </form>
+    {% else %}
+    <p class="field-help">No source calendars were found on this frame. Connect a calendar (Google, iCloud, etc.) to Skylight first, then come back here.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
