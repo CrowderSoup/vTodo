@@ -68,6 +68,7 @@ env:
     EMAIL_HOST_USER: aaron@crowder.cloud
     EMAIL_USE_SSL: "True"
     DEFAULT_FROM_EMAIL: Aaron <aaron@crowder.cloud>
+    ADMIN_EMAILS: aaron.crowder@gmail.com
   secret:
     - SECRET_KEY
     - DATABASE_URL
