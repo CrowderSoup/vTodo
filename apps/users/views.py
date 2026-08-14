@@ -109,7 +109,6 @@ class SettingsApiView(LoginRequiredMixin, View):
 
 class SettingsTeamsView(LoginRequiredMixin, View):
     def get(self, request):
-        from apps.integrations.models import SkylightConnection
         from apps.teams.models import TeamMembership
 
         memberships = (
@@ -117,11 +116,6 @@ class SettingsTeamsView(LoginRequiredMixin, View):
             .select_related("team")
             .prefetch_related("team__memberships__user", "team__invites")
         )
-        team_ids = [m.team_id for m in memberships]
-        skylight_by_team = {
-            c.team_id: c
-            for c in SkylightConnection.objects.filter(team_id__in=team_ids)
-        }
         teams = []
         for membership in memberships:
             team = membership.team
@@ -131,7 +125,6 @@ class SettingsTeamsView(LoginRequiredMixin, View):
                 "is_owner": membership.role == TeamMembership.ROLE_OWNER,
                 "members": list(team.memberships.select_related("user")),
                 "pending_invites": [inv for inv in team.invites.all() if inv.is_valid],
-                "skylight_connection": skylight_by_team.get(team.pk),
             })
 
         context = {"teams": teams, "active_tab": "teams"}
