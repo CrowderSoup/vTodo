@@ -15,7 +15,7 @@ AccessToken = get_access_token_model()
 
 @pytest.fixture
 def oauth_client_for():
-    def _make(user, scope="tasks", expires_in=timedelta(hours=1)):
+    def _make(user, scope="tasks", expires_in=timedelta(hours=1), resource=None):
         application = Application.objects.create(
             user=user,
             name="test client",
@@ -28,6 +28,7 @@ def oauth_client_for():
             token="test-access-token-" + user.username,
             expires=timezone.now() + expires_in,
             scope=scope,
+            resource=resource or [],
         )
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.token}")
@@ -73,6 +74,26 @@ def test_whoami_rejects_insufficient_scope(oauth_client_for):
     response = client.get(reverse("mcp-whoami"))
 
     assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_whoami_accepts_token_restricted_to_the_mcp_resource(oauth_client_for):
+    """Regression test: a token minted for mcp_server's own resource
+    identifier (RFC 8707) -- exactly what Claude presents to whoami in
+    production -- must still resolve, even though whoami itself is on a
+    different host than that resource."""
+    user = User.objects.create_user(username="whoami-resource-user")
+    expected_token, _ = Token.objects.get_or_create(user=user)
+    client = oauth_client_for(user, resource=["https://mcp.vtodo.crowdersoup.com/mcp"])
+
+    response = client.get(reverse("mcp-whoami"))
+
+    assert response.status_code == 200
+    assert response.data == {
+        "user_id": user.pk,
+        "username": "whoami-resource-user",
+        "api_token": expected_token.key,
+    }
 
 
 @pytest.mark.django_db
