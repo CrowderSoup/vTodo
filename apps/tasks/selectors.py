@@ -48,11 +48,17 @@ def visible_statuses_qs(user, team=None):
     return TaskStatus.objects.filter(user=user, team__isnull=True)
 
 
-def all_visible_statuses_qs(user):
-    """Every status the user can use: their personal statuses plus every team's they belong to."""
-    return TaskStatus.objects.filter(
-        Q(user=user, team__isnull=True) | Q(team_id__in=user_team_ids(user))
-    ).select_related("team")
+def grouped_visible_statuses(user):
+    """Every status the user can use, grouped by scope (personal first, then each team
+    they belong to, in the same order as the Personal/Team tabs elsewhere) for display
+    -- e.g. Settings' status list. Each group is {"label", "team_id", "statuses"}."""
+    personal = list(TaskStatus.objects.filter(user=user, team__isnull=True).order_by("order"))
+    groups = [{"label": "Personal", "team_id": None, "statuses": personal}]
+    for team in user_teams_qs(user):
+        team_statuses = list(TaskStatus.objects.filter(team=team).order_by("order"))
+        if team_statuses:
+            groups.append({"label": team.name, "team_id": team.pk, "statuses": team_statuses})
+    return groups
 
 
 def resolve_status_for_task(task):

@@ -160,3 +160,62 @@ def test_status_create_rejects_non_member_team(logged_in_client):
     response = client.post(reverse("users:status-create"), {"name": "Review", "team": team.pk})
 
     assert response.status_code == 422
+
+
+@pytest.mark.django_db
+def test_status_color_update_sets_color(logged_in_client):
+    from apps.tasks.models import TaskStatus
+
+    client, user = logged_in_client
+    status = TaskStatus.objects.get(user=user, slug="todo")
+
+    response = client.post(reverse("users:status-color-update", args=[status.pk]), {"color": "#ff0000"})
+
+    assert response.status_code == 200
+    status.refresh_from_db()
+    assert status.color == "#ff0000"
+
+
+@pytest.mark.django_db
+def test_status_color_update_clears_color(logged_in_client):
+    from apps.tasks.models import TaskStatus
+
+    client, user = logged_in_client
+    status = TaskStatus.objects.get(user=user, slug="todo")
+    status.color = "#ff0000"
+    status.save(update_fields=["color"])
+
+    response = client.post(reverse("users:status-color-update", args=[status.pk]), {"color": ""})
+
+    assert response.status_code == 200
+    status.refresh_from_db()
+    assert status.color == ""
+
+
+@pytest.mark.django_db
+def test_status_color_update_rejects_invalid_hex(logged_in_client):
+    from apps.tasks.models import TaskStatus
+
+    client, user = logged_in_client
+    status = TaskStatus.objects.get(user=user, slug="todo")
+
+    response = client.post(reverse("users:status-color-update", args=[status.pk]), {"color": "not-a-color"})
+
+    assert response.status_code == 422
+    status.refresh_from_db()
+    assert status.color == ""
+
+
+@pytest.mark.django_db
+def test_status_color_update_rejects_another_users_status(logged_in_client):
+    from apps.tasks.models import TaskStatus
+
+    client, user = logged_in_client
+    other = User.objects.create_user()
+    other_status = TaskStatus.objects.get(user=other, slug="todo")
+
+    response = client.post(reverse("users:status-color-update", args=[other_status.pk]), {"color": "#ff0000"})
+
+    assert response.status_code == 404
+    other_status.refresh_from_db()
+    assert other_status.color == ""
