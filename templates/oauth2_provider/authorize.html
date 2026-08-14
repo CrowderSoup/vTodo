@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block body_class %}page-auth{% endblock %}
+{% block title %}Authorize — vtodo{% endblock %}
+
+{% block content %}
+<section class="auth-shell">
+  <div class="auth-card surface-panel">
+    {% if not error %}
+      <span class="eyebrow">Authorize access</span>
+      <h2 class="card-title">{{ application.name }} wants to connect to your vtodo account.</h2>
+      <p class="card-subtitle">It will be able to:</p>
+
+      <ul class="auth-feature-list" style="flex-direction: column; align-items: flex-start;">
+        {% for scope in scopes_descriptions %}
+        <li class="auth-feature">{{ scope }}</li>
+        {% endfor %}
+      </ul>
+
+      <form class="auth-form" method="post">
+        {% csrf_token %}
+        {% for field in form %}
+          {% if field.is_hidden %}{{ field }}{% endif %}
+        {% endfor %}
+
+        {{ form.errors }}
+        {{ form.non_field_errors }}
+
+        <button type="submit" name="allow" value="{% trans 'Authorize' %}" class="btn-primary">
+          {% trans "Authorize" %}
+        </button>
+        <button type="submit" class="btn-secondary">
+          {% trans "Cancel" %}
+        </button>
+      </form>
+    {% else %}
+      <span class="eyebrow">Authorization error</span>
+      <h2 class="card-title">{{ error.error }}</h2>
+      <p class="card-subtitle">{{ error.description }}</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

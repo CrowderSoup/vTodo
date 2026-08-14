@@ -30,9 +30,12 @@ servers:
       clear:
         VTODO_API_URL: https://vtodo.crowdersoup.com
         VTODO_MCP_TRANSPORT: sse
-      secret:
-        - VTODO_API_TOKEN
-        - VTODO_MCP_TOKEN
+        # Must match the streamable_http_path Claude actually hits ("/mcp") --
+        # becomes the OAuth resource identifier (RFC 8707/9728). No API/MCP
+        # secrets needed here anymore: each caller authorizes via OAuth
+        # (config/settings.py:OAUTH2_PROVIDER) and mcp_server resolves their
+        # own vtodo account per request (apps/api/views.py:WhoAmIView).
+        VTODO_MCP_PUBLIC_URL: https://mcp.vtodo.crowdersoup.com/mcp
   worker:
     hosts:
       - 64.23.247.60

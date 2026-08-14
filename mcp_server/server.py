@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import date, datetime
 from typing import Any
 
+import httpx
+from mcp.server.auth.middleware.auth_context import get_access_token
+from mcp.server.auth.provider import AccessToken
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 
 from .client import VtodoAPIError, VtodoClient
@@ -11,8 +16,84 @@ from .config import load_settings
 
 # Initialised once when the module is imported (i.e. when the process starts).
 _settings = load_settings()
-_client = VtodoClient(_settings.api_url, _settings.api_token)
-mcp = FastMCP("vtodo", host=_settings.host)
+
+# stdio mode acts as a single fixed vtodo account (VTODO_API_TOKEN); sse mode
+# resolves a different account per request from the caller's OAuth access
+# token via _VtodoTokenVerifier below, so there's no single client to build
+# at import time in that case.
+_stdio_client = (
+    VtodoClient(_settings.api_url, _settings.api_token) if _settings.transport == "stdio" else None
+)
+
+# Caller's OAuth access token -> their resolved vtodo DRF API token, so a
+# whoami round-trip to Django only happens once per access token per this TTL.
+_WHOAMI_CACHE_TTL_SECONDS = 300
+_whoami_cache: dict[str, tuple[str, float]] = {}
+# vtodo DRF API token -> VtodoClient, reused across calls/users so each gets
+# its own pooled requests.Session instead of a fresh one per tool call.
+_vtodo_clients: dict[str, VtodoClient] = {}
+
+
+class _VtodoAccessToken(AccessToken):
+    vtodo_api_token: str
+
+
+class _VtodoTokenVerifier:
+    """Resolves a Claude-issued OAuth access token to a vtodo account by
+    asking Django's whoami endpoint who it belongs to
+    (apps/api/views.py:WhoAmIView) — the vtodo API itself still only ever
+    sees each user's regular DRF token, exactly as it does for stdio/local
+    use."""
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        cached = _whoami_cache.get(token)
+        if cached is None or cached[1] <= time.monotonic():
+            async with httpx.AsyncClient() as http:
+                try:
+                    resp = await http.get(
+                        _settings.whoami_url,
+                        headers={"Authorization": f"Bearer {token}"},
+                        timeout=10,
+                    )
+                except httpx.HTTPError:
+                    return None
+            if resp.status_code != 200:
+                return None
+            api_token = resp.json().get("api_token")
+            if not api_token:
+                return None
+            cached = (api_token, time.monotonic() + _WHOAMI_CACHE_TTL_SECONDS)
+            _whoami_cache[token] = cached
+
+        return _VtodoAccessToken(token=token, client_id="vtodo", scopes=["tasks"], vtodo_api_token=cached[0])
+
+
+def _current_client() -> VtodoClient:
+    if _stdio_client is not None:
+        return _stdio_client
+    access_token = get_access_token()
+    assert isinstance(access_token, _VtodoAccessToken)
+    client = _vtodo_clients.get(access_token.vtodo_api_token)
+    if client is None:
+        client = VtodoClient(_settings.api_url, access_token.vtodo_api_token)
+        _vtodo_clients[access_token.vtodo_api_token] = client
+    return client
+
+
+mcp = FastMCP(
+    "vtodo",
+    host=_settings.host,
+    token_verifier=_VtodoTokenVerifier() if _settings.transport == "sse" else None,
+    auth=(
+        AuthSettings(
+            issuer_url=_settings.issuer_url,
+            resource_server_url=_settings.resource_server_url,
+            required_scopes=["tasks"],
+        )
+        if _settings.transport == "sse"
+        else None
+    ),
+)
 
 
 def _ok(data: Any) -> str:
@@ -36,7 +117,7 @@ def list_tasks(
     belong to. Pass team_id to see only that team's shared tasks.
     """
     try:
-        return _ok(_client.list_tasks(status=status, tags=tags, team_id=team_id))
+        return _ok(_current_client().list_tasks(status=status, tags=tags, team_id=team_id))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -45,7 +126,7 @@ def list_tasks(
 def get_task(id: int) -> str:
     """Get a single task by its numeric ID."""
     try:
-        return _ok(_client.get_task(id))
+        return _ok(_current_client().get_task(id))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -66,7 +147,7 @@ def create_task(
     list_statuses(team_id=...)). You must be a member of the team.
     """
     try:
-        return _ok(_client.create_task(
+        return _ok(_current_client().create_task(
             title, notes=notes, status=status, due_date=due_date, tags=tags, team_id=team_id
         ))
     except VtodoAPIError as e:
@@ -95,7 +176,7 @@ def update_task(
     if tags is not None:
         fields["tags"] = tags
     try:
-        return _ok(_client.update_task(id, **fields))
+        return _ok(_current_client().update_task(id, **fields))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -104,7 +185,7 @@ def update_task(
 def delete_task(id: int) -> str:
     """Delete a task by its numeric ID."""
     try:
-        _client.delete_task(id)
+        _current_client().delete_task(id)
         return f"Task {id} deleted."
     except VtodoAPIError as e:
         return _err(e)
@@ -114,7 +195,7 @@ def delete_task(id: int) -> str:
 def move_task(id: int, new_status: str) -> str:
     """Move a task to a different status column (pass the status slug)."""
     try:
-        return _ok(_client.move_task(id, new_status))
+        return _ok(_current_client().move_task(id, new_status))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -127,7 +208,7 @@ def assign_task(id: int, assignee_id: int | None = None) -> str:
     reassign it — the assignee must also be a member of that team.
     """
     try:
-        return _ok(_client.assign_task(id, assignee_id=assignee_id))
+        return _ok(_current_client().assign_task(id, assignee_id=assignee_id))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -136,7 +217,7 @@ def assign_task(id: int, assignee_id: int | None = None) -> str:
 def list_task_activity(task_id: int) -> str:
     """List the assignment audit trail for a team task, oldest first."""
     try:
-        return _ok(_client.list_task_activity(task_id))
+        return _ok(_current_client().list_task_activity(task_id))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -148,7 +229,7 @@ def list_task_activity(task_id: int) -> str:
 def list_comments(task_id: int) -> str:
     """List all comments on a task."""
     try:
-        return _ok(_client.list_comments(task_id))
+        return _ok(_current_client().list_comments(task_id))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -157,7 +238,7 @@ def list_comments(task_id: int) -> str:
 def add_comment(task_id: int, body: str) -> str:
     """Add a comment to a task without editing it."""
     try:
-        return _ok(_client.add_comment(task_id, body))
+        return _ok(_current_client().add_comment(task_id, body))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -166,7 +247,7 @@ def add_comment(task_id: int, body: str) -> str:
 def delete_comment(comment_id: int) -> str:
     """Delete a task comment by its ID."""
     try:
-        _client.delete_comment(comment_id)
+        _current_client().delete_comment(comment_id)
         return f"Comment {comment_id} deleted."
     except VtodoAPIError as e:
         return _err(e)
@@ -180,7 +261,7 @@ def list_statuses(team_id: int | None = None) -> str:
     """List task statuses. Without team_id, lists your personal statuses;
     pass team_id to list a team's shared statuses instead."""
     try:
-        return _ok(_client.list_statuses(team_id=team_id))
+        return _ok(_current_client().list_statuses(team_id=team_id))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -198,7 +279,7 @@ def create_status(
     your personal one. Any team member can do this.
     """
     try:
-        return _ok(_client.create_status(name, color=color, is_done=is_done, team_id=team_id))
+        return _ok(_current_client().create_status(name, color=color, is_done=is_done, team_id=team_id))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -219,7 +300,7 @@ def update_status(
     if is_done is not None:
         fields["is_done"] = is_done
     try:
-        return _ok(_client.update_status(slug, **fields))
+        return _ok(_current_client().update_status(slug, **fields))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -228,7 +309,7 @@ def update_status(
 def delete_status(slug: str) -> str:
     """Delete a status column by its slug."""
     try:
-        _client.delete_status(slug)
+        _current_client().delete_status(slug)
         return f"Status '{slug}' deleted."
     except VtodoAPIError as e:
         return _err(e)
@@ -241,7 +322,7 @@ def delete_status(slug: str) -> str:
 def list_teams() -> str:
     """List the teams you belong to."""
     try:
-        return _ok(_client.list_teams())
+        return _ok(_current_client().list_teams())
     except VtodoAPIError as e:
         return _err(e)
 
@@ -253,7 +334,7 @@ def list_teams() -> str:
 def resource_statuses() -> str:
     """All task statuses — useful context before creating or moving tasks."""
     try:
-        return _ok(_client.list_statuses())
+        return _ok(_current_client().list_statuses())
     except VtodoAPIError as e:
         return _err(e)
 
@@ -263,7 +344,7 @@ def resource_tasks_today() -> str:
     """Tasks whose due_date is today."""
     try:
         today = date.today().isoformat()
-        tasks = _client.list_tasks()
+        tasks = _current_client().list_tasks()
         due_today = [t for t in tasks if t.get("due_date") == today]
         return _ok(due_today)
     except VtodoAPIError as e:
@@ -275,7 +356,7 @@ def resource_tasks_overdue() -> str:
     """Tasks past their due_date that have not been completed."""
     try:
         today = date.today().isoformat()
-        tasks = _client.list_tasks()
+        tasks = _current_client().list_tasks()
         overdue = [
             t for t in tasks
             if t.get("due_date") and t["due_date"] < today and not t.get("completed_at")
@@ -296,10 +377,12 @@ def main() -> None:
     if _settings.transport == "sse":
         import uvicorn
 
-        mcp_token = _settings.mcp_token
-        # Streamable HTTP is the current MCP transport standard; Claude.ai web uses it.
-        # The route is registered at /mcp, which matches what DO forwards when
-        # preserve_path_prefix is true for the /mcp ingress rule.
+        # Streamable HTTP is the current MCP transport standard; Claude.ai web
+        # uses it. The route is registered at /mcp, which matches what DO
+        # forwards when preserve_path_prefix is true for the /mcp ingress
+        # rule. Bearer-token auth, the 401/WWW-Authenticate challenge, and the
+        # RFC 9728 protected-resource metadata route are all handled by the
+        # mcp SDK itself via the token_verifier/auth passed to FastMCP above.
         http_app = mcp.streamable_http_app()
 
         async def auth_app(scope, receive, send):
@@ -334,22 +417,6 @@ def main() -> None:
                 })
                 await send({"type": "http.response.body", "body": b"OK"})
                 return
-
-            if mcp_token:
-                headers = dict(scope.get("headers", []))
-                auth = headers.get(b"authorization", b"").decode()
-                query = scope.get("query_string", b"").decode()
-                token_param = next(
-                    (p[6:] for p in query.split("&") if p.startswith("token=")), ""
-                )
-                if auth != f"Bearer {mcp_token}" and token_param != mcp_token:
-                    await send_with_cors({
-                        "type": "http.response.start",
-                        "status": 401,
-                        "headers": [(b"content-type", b"text/plain")],
-                    })
-                    await send({"type": "http.response.body", "body": b"Unauthorized"})
-                    return
 
             await http_app(scope, receive, send_with_cors)
 
