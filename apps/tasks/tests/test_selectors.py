@@ -5,6 +5,7 @@ from apps.tasks.selectors import (
     AssignmentError,
     assign_task,
     get_task_or_404,
+    grouped_visible_statuses,
     resolve_status_for_task,
     visible_statuses_qs,
     visible_tasks_qs,
@@ -141,3 +142,41 @@ def test_assign_task_reassignment_accumulates_activity():
     assign_task(creator, task, second_assignee)
 
     assert task.activity.count() == 2
+
+
+@pytest.mark.django_db
+def test_grouped_visible_statuses_always_includes_personal_group_first():
+    user = User.objects.create_user()
+
+    groups = grouped_visible_statuses(user)
+
+    assert groups[0]["label"] == "Personal"
+    assert groups[0]["team_id"] is None
+    assert [s.slug for s in groups[0]["statuses"]] == ["backlog", "todo", "in_progress", "done"]
+
+
+@pytest.mark.django_db
+def test_grouped_visible_statuses_includes_teams_with_statuses():
+    user = User.objects.create_user()
+    team = Team.objects.create(name="Rocketry")
+    TeamMembership.objects.create(team=team, user=user)
+    TaskStatus.objects.create(team=team, name="Shipped", slug="shipped", order=0)
+
+    groups = grouped_visible_statuses(user)
+
+    assert [g["label"] for g in groups] == ["Personal", "Rocketry"]
+    assert groups[1]["team_id"] == team.pk
+    assert [s.slug for s in groups[1]["statuses"]] == ["shipped"]
+
+
+@pytest.mark.django_db
+def test_grouped_visible_statuses_omits_teams_with_no_statuses():
+    """A team the user belongs to but that has had all its statuses deleted doesn't
+    show up as an empty group."""
+    user = User.objects.create_user()
+    team = Team.objects.create(name="Empty Team")
+    TeamMembership.objects.create(team=team, user=user)
+
+    groups = grouped_visible_statuses(user)
+
+    assert [g["label"] for g in groups] == ["Personal"]

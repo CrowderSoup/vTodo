@@ -1,27 +1,46 @@
-{% for status in statuses %}
-<div class="config-row status-row"
-     data-status-id="{{ status.pk }}"
-     data-status-scope="{% if status.team %}team:{{ status.team.pk }}{% else %}personal{% endif %}">
-  <span class="status-drag-handle" draggable="true" data-status-id="{{ status.pk }}" title="Drag to reorder">⋮⋮</span>
-  <div class="config-main">
-    <div class="config-title">
-      <span>{{ status.name }}</span>
-      <code>{{ status.slug }}</code>
-      {% if status.team %}<span class="pill">{{ status.team.name }}</span>{% else %}<span class="pill">Personal</span>{% endif %}
-      {% if status.is_done %}<span class="badge badge--done">done</span>{% endif %}
-      {% if status.pk == default_status_id %}
-      <span class="pill">Default status</span>
-      {% endif %}
+{% for group in status_groups %}
+<div class="status-group">
+  <p class="status-group-label">{{ group.label }}</p>
+  {% for status in group.statuses %}
+  <div class="config-row status-row"
+       data-status-id="{{ status.pk }}"
+       data-status-scope="{% if group.team_id %}team:{{ group.team_id }}{% else %}personal{% endif %}">
+    <span class="status-drag-handle" draggable="true" data-status-id="{{ status.pk }}" title="Drag to reorder">⋮⋮</span>
+    <input type="color" name="color" class="status-color-input"
+           value="{{ status.color|default:'#94a3b8' }}"
+           hx-post="{% url 'users:status-color-update' status.pk %}"
+           hx-trigger="change"
+           hx-target="#status-list"
+           hx-swap="innerHTML"
+           title="Lane color">
+    <div class="config-main">
+      <div class="config-title">
+        <span>{{ status.name }}</span>
+        <code>{{ status.slug }}</code>
+        {% if status.is_done %}<span class="badge badge--done">done</span>{% endif %}
+        {% if status.pk == default_status_id %}
+        <span class="pill">Default status</span>
+        {% endif %}
+      </div>
     </div>
+    {% if status.color %}
+    <button type="button" class="btn-ghost btn-icon"
+            hx-post="{% url 'users:status-color-update' status.pk %}"
+            hx-vals='{"color": ""}'
+            hx-target="#status-list"
+            hx-swap="innerHTML"
+            title="Reset to default color">↺</button>
+    {% endif %}
+    <button class="btn-danger btn-icon"
+            hx-post="{% url 'users:status-delete' status.pk %}"
+            hx-target="#status-list"
+            hx-swap="innerHTML"
+            hx-confirm="Delete status &ldquo;{{ status.name|escapejs }}&rdquo;? Tasks with this status will be unaffected.">×</button>
   </div>
-  <button class="btn-danger btn-icon"
-          hx-post="{% url 'users:status-delete' status.pk %}"
-          hx-target="#status-list"
-          hx-swap="innerHTML"
-          hx-confirm="Delete status &ldquo;{{ status.name|escapejs }}&rdquo;? Tasks with this status will be unaffected.">×</button>
-</div>
-{% empty %}
-<div class="settings-empty-state">
-  <p class="field-help">No statuses yet. Add the workflow steps you want cards to move through.</p>
+  {% empty %}
+  <div class="settings-empty-state">
+    <p class="field-help">No statuses in {{ group.label }} yet.</p>
+  </div>
+  {% endfor %}
 </div>
 {% endfor %}

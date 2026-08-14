@@ -11,6 +11,7 @@ urlpatterns = [
     path("teams/", views.SettingsTeamsView.as_view(), name="settings-teams"),
     path("statuses/create/", views.TaskStatusCreateView.as_view(), name="status-create"),
     path("statuses/<int:pk>/delete/", views.TaskStatusDeleteView.as_view(), name="status-delete"),
+    path("statuses/<int:pk>/color/", views.TaskStatusColorUpdateView.as_view(), name="status-color-update"),
     path("columns/create/", views.ColumnCreateView.as_view(), name="column-create"),
     path("columns/status-options/", views.ColumnStatusOptionsView.as_view(), name="column-status-options"),
     path("columns/<int:pk>/delete/", views.ColumnDeleteView.as_view(), name="column-delete"),

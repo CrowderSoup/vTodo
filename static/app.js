@@ -641,10 +641,13 @@
     var targetIndex = rows.indexOf(targetRow);
 
     if (draggedRow) {
+      // Insert relative to targetRow's own parent (its .status-group), not #status-list
+      // directly -- rows are grouped by scope, and same-scope dragging (guarded above)
+      // means draggedRow and targetRow always share a parent.
       if (draggedIndex < targetIndex) {
-        list.insertBefore(draggedRow, targetRow.nextSibling);
+        targetRow.parentElement.insertBefore(draggedRow, targetRow.nextSibling);
       } else {
-        list.insertBefore(draggedRow, targetRow);
+        targetRow.parentElement.insertBefore(draggedRow, targetRow);
       }
     }
 

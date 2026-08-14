@@ -89,15 +89,15 @@ def _saved_filters_with_labels(board):
 
 class SettingsBoardView(LoginRequiredMixin, View):
     def get(self, request):
-        from apps.tasks.selectors import all_visible_statuses_qs, user_teams_qs
+        from apps.tasks.selectors import grouped_visible_statuses, user_teams_qs
 
         board = _resolve_settings_board(request.user, request.GET.get("team", "").strip())
-        statuses = all_visible_statuses_qs(request.user)
+        status_groups = grouped_visible_statuses(request.user)
         columns = list(board.columns.all())
         saved_filters = _saved_filters_with_labels(board)
 
         context = {
-            "statuses": statuses,
+            "status_groups": status_groups,
             "board": board,
             "columns": columns,
             "saved_filters": saved_filters,
@@ -159,7 +159,7 @@ class TaskStatusCreateView(LoginRequiredMixin, View):
         from django.utils.text import slugify
 
         from apps.tasks.models import TaskStatus
-        from apps.tasks.selectors import all_visible_statuses_qs
+        from apps.tasks.selectors import grouped_visible_statuses
 
         team = _resolve_owned_team(request.user, request.POST.get("team", "").strip())
         if team is False:
@@ -183,7 +183,7 @@ class TaskStatusCreateView(LoginRequiredMixin, View):
             )
 
         return render(request, "users/_status_list.html", {
-            "statuses": all_visible_statuses_qs(request.user),
+            "status_groups": grouped_visible_statuses(request.user),
             "default_status_id": request.user.default_status_id,
         })
 
@@ -193,7 +193,7 @@ class TaskStatusDeleteView(LoginRequiredMixin, View):
         from django.db.models import Q
 
         from apps.tasks.models import TaskStatus
-        from apps.tasks.selectors import all_visible_statuses_qs, user_team_ids
+        from apps.tasks.selectors import grouped_visible_statuses, user_team_ids
 
         status = get_object_or_404(
             TaskStatus.objects.filter(
@@ -205,7 +205,35 @@ class TaskStatusDeleteView(LoginRequiredMixin, View):
         status.delete()
         request.user.refresh_from_db(fields=["default_status"])
         return render(request, "users/_status_list.html", {
-            "statuses": all_visible_statuses_qs(request.user),
+            "status_groups": grouped_visible_statuses(request.user),
+            "default_status_id": request.user.default_status_id,
+        })
+
+
+class TaskStatusColorUpdateView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        import re
+        from django.db.models import Q
+
+        from apps.tasks.models import TaskStatus
+        from apps.tasks.selectors import grouped_visible_statuses, user_team_ids
+
+        status = get_object_or_404(
+            TaskStatus.objects.filter(
+                Q(user=request.user, team__isnull=True) | Q(team_id__in=user_team_ids(request.user))
+            ),
+            pk=pk,
+        )
+
+        color = request.POST.get("color", "").strip()
+        if color and not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+            return HttpResponse(status=422)
+
+        status.color = color
+        status.save(update_fields=["color"])
+
+        return render(request, "users/_status_list.html", {
+            "status_groups": grouped_visible_statuses(request.user),
             "default_status_id": request.user.default_status_id,
         })
 
