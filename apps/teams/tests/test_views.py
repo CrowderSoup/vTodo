@@ -43,13 +43,16 @@ def test_team_create_creates_shared_team_board(logged_in_client):
     team = Team.objects.get(name="Rocketry")
 
     board = Board.objects.get(team=team)
-    assert board.columns.count() == 4
+    # Lanes are implicit from statuses now -- no columns are auto-created.
+    assert board.columns.count() == 0
+    team_slugs = set(TaskStatus.objects.filter(team=team).values_list("slug", flat=True))
+    personal_slugs = set(TaskStatus.objects.filter(user=user, team__isnull=True).values_list("slug", flat=True))
+    assert team_slugs == personal_slugs == {"backlog", "todo", "in_progress", "done"}
     # Exactly one board for the team -- not one per (future) member.
     assert Board.objects.filter(team=team).count() == 1
     # No column leaked back onto the creator's own personal board.
     personal_board = Board.objects.get(user=user)
-    assert personal_board.columns.count() == 4
-    assert not personal_board.columns.filter(label="Rocketry").exists()
+    assert personal_board.columns.count() == 0
 
 
 @pytest.mark.django_db

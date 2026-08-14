@@ -8,13 +8,6 @@ def create_default_task_statuses(sender, instance, created, **kwargs):
     if not created:
         return
 
-    from apps.tasks.models import DEFAULT_STATUS_DEFS, TaskStatus
+    from apps.tasks.services import provision_statuses
 
-    for name, slug, order, is_done in DEFAULT_STATUS_DEFS:
-        TaskStatus.objects.create(
-            user=instance,
-            name=name,
-            slug=slug,
-            order=order,
-            is_done=is_done,
-        )
+    provision_statuses(user=instance)

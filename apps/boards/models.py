@@ -78,7 +78,7 @@ class SavedFilter(models.Model):
     board = models.ForeignKey(Board, on_delete=models.CASCADE, related_name="saved_filters")
     name = models.CharField(max_length=255)
     filter_config = models.JSONField(default=dict)
-    # schema: {"tags": [...], "exclude_tags": [...], "due": "...", "hidden_columns": [...]}
+    # schema: {"tags": [...], "exclude_tags": [...], "due": "...", "hidden_lanes": ["status:<pk>"|"column:<pk>", ...]}
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

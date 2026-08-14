@@ -1,5 +1,8 @@
 {% for status in statuses %}
-<div class="config-row">
+<div class="config-row status-row"
+     data-status-id="{{ status.pk }}"
+     data-status-scope="{% if status.team %}team:{{ status.team.pk }}{% else %}personal{% endif %}">
+  <span class="status-drag-handle" draggable="true" data-status-id="{{ status.pk }}" title="Drag to reorder">⋮⋮</span>
   <div class="config-main">
     <div class="config-title">
       <span>{{ status.name }}</span>

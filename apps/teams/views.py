@@ -24,35 +24,24 @@ def _invite_email_matches(user, invite):
     return user.email_identities.filter(email__iexact=invite.email, verified=True).exists()
 
 
-def _provision_team_statuses(team):
-    """Give a new team the same starter workflow personal boards get, so it isn't
-    unusable until someone visits Settings and hand-builds a status list."""
-    from apps.tasks.models import DEFAULT_STATUS_DEFS, TaskStatus
+def _provision_team_statuses(team, copy_from_user):
+    """Give a new team a starter workflow, copied from the creating user's personal
+    statuses so it isn't unusable until someone visits Settings and hand-builds a
+    status list -- and so the team doesn't start out diverged from how its owner
+    already works."""
+    from apps.tasks.services import provision_statuses
 
-    for name, slug, order, is_done in DEFAULT_STATUS_DEFS:
-        TaskStatus.objects.get_or_create(
-            team=team, slug=slug,
-            defaults={"name": name, "order": order, "is_done": is_done},
-        )
+    provision_statuses(team=team, copy_from_user=copy_from_user)
 
 
 def _provision_team_board(team):
-    """Create the team's shared board, with the same starter columns a new personal
-    board gets, so a fresh team isn't unusable until someone visits Settings and
-    hand-builds a column list. Called once, at team creation -- joining an existing
-    team doesn't provision anything, since the shared board already exists."""
-    from apps.boards.models import Board, Column
+    """Create the team's shared board. Called once, at team creation -- joining an
+    existing team doesn't provision anything, since the shared board already
+    exists. Lanes are derived from the team's statuses (see _provision_team_statuses),
+    no separate column setup needed."""
+    from apps.boards.models import Board
 
-    board = Board.objects.create(team=team, name=team.name)
-    default_columns = [
-        ("Backlog",     {"statuses": ["backlog"],     "tags": [], "due": None}, 0),
-        ("To Do",       {"statuses": ["todo"],         "tags": [], "due": None}, 1),
-        ("In Progress", {"statuses": ["in_progress"],  "tags": [], "due": None}, 2),
-        ("Done",        {"statuses": ["done"],          "tags": [], "due": None}, 3),
-    ]
-    for label, filter_config, order in default_columns:
-        Column.objects.create(board=board, label=label, filter_config=filter_config, order=order)
-    return board
+    return Board.objects.create(team=team, name=team.name)
 
 
 def _cleanup_after_membership_removal(actor, user, team):
@@ -129,7 +118,7 @@ class TeamCreateView(LoginRequiredMixin, View):
         with transaction.atomic():
             team = Team.objects.create(name=name)
             TeamMembership.objects.create(team=team, user=request.user, role=TeamMembership.ROLE_OWNER)
-            _provision_team_statuses(team)
+            _provision_team_statuses(team, copy_from_user=request.user)
             _provision_team_board(team)
 
         messages.success(request, f"Created team “{team.name}”.")

@@ -28,10 +28,10 @@
           hx-post="{% url 'users:column-delete' column.pk %}"
           hx-target="#column-list"
           hx-swap="innerHTML"
-          hx-confirm="Delete column &ldquo;{{ column.label|escapejs }}&rdquo;?">×</button>
+          hx-confirm="Delete custom lane &ldquo;{{ column.label|escapejs }}&rdquo;?">×</button>
 </div>
 {% empty %}
 <div class="settings-empty-state">
-  <p class="field-help">No columns yet &mdash; add one below to give this board structure.</p>
+  <p class="field-help">No custom lanes on this board &mdash; every status already has its own lane.</p>
 </div>
 {% endfor %}

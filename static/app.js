@@ -1,6 +1,9 @@
 (function () {
   var draggingColumnId = null;
+  var draggingLaneKind = null;
   var draggingTaskId = null;
+  var draggingStatusId = null;
+  var draggingStatusScope = null;
   var dropTargetCard = null;
   var dropPosition = null;
   var notesEditor = null;
@@ -318,9 +321,10 @@
     var handle = event.target.closest(".col-drag-handle[draggable]");
     if (handle) {
       draggingColumnId = handle.dataset.columnId;
+      var column = handle.closest(".board-column");
+      draggingLaneKind = column ? column.dataset.laneKind : null;
       event.dataTransfer.setData("text/plain", "col:" + draggingColumnId);
       event.dataTransfer.effectAllowed = "move";
-      var column = handle.closest(".board-column");
       setTimeout(function () {
         if (column) {
           column.classList.add("col-dragging");
@@ -348,6 +352,7 @@
         draggedColumn.classList.remove("col-dragging");
       }
       draggingColumnId = null;
+      draggingLaneKind = null;
       document.querySelectorAll(".board-column.col-drag-over").forEach(function (column) {
         column.classList.remove("col-drag-over");
       });
@@ -370,7 +375,7 @@
   document.addEventListener("dragover", function (event) {
     if (draggingColumnId) {
       var column = event.target.closest(".board-column");
-      if (!column || column.dataset.columnId === draggingColumnId) {
+      if (!column || column.dataset.columnId === draggingColumnId || column.dataset.laneKind !== draggingLaneKind) {
         return;
       }
       event.preventDefault();
@@ -435,7 +440,7 @@
   document.addEventListener("drop", function (event) {
     if (draggingColumnId) {
       var targetColumn = event.target.closest(".board-column");
-      if (!targetColumn || targetColumn.dataset.columnId === draggingColumnId) {
+      if (!targetColumn || targetColumn.dataset.columnId === draggingColumnId || targetColumn.dataset.laneKind !== draggingLaneKind) {
         return;
       }
       event.preventDefault();
@@ -458,11 +463,15 @@
         }
       }
 
-      var order = Array.from(board.querySelectorAll(".board-column")).map(function (column) {
-        return parseInt(column.dataset.columnId, 10);
+      // Status lanes and custom (column) lanes are independent order sequences --
+      // custom lanes always render after status lanes, so only same-kind lanes are
+      // ever reordered against each other (see the dragover/drop kind guards above).
+      var order = Array.from(board.querySelectorAll('.board-column[data-lane-kind="' + draggingLaneKind + '"]')).map(function (column) {
+        return parseInt(column.dataset.columnId.split(":")[1], 10);
       });
+      var reorderUrl = draggingLaneKind === "status" ? "/board/statuses/reorder/" : "/board/columns/reorder/";
 
-      fetch("/board/columns/reorder/", {
+      fetch(reorderUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -475,6 +484,7 @@
         draggedElement.classList.remove("col-dragging");
       }
       draggingColumnId = null;
+      draggingLaneKind = null;
       return;
     }
 
@@ -544,6 +554,118 @@
     if (event.target.id === "task-comment-form" && event.detail.successful && commentEditor) {
       commentEditor.value("");
     }
+  });
+
+  // Settings > Board Setup: drag-reorder the status list (independent of the live
+  // board's column/lane drag handling above -- different page, own state, posts to
+  // StatusReorderView). A drag can't cross scope (personal vs a specific team),
+  // matching the endpoint's same-scope requirement.
+  document.addEventListener("dragstart", function (event) {
+    var handle = event.target.closest(".status-drag-handle[draggable]");
+    if (!handle) {
+      return;
+    }
+    var row = handle.closest(".status-row");
+    draggingStatusId = handle.dataset.statusId;
+    draggingStatusScope = row ? row.dataset.statusScope : null;
+    event.dataTransfer.setData("text/plain", "status:" + draggingStatusId);
+    event.dataTransfer.effectAllowed = "move";
+    setTimeout(function () {
+      if (row) {
+        row.classList.add("status-dragging");
+      }
+    }, 0);
+  });
+
+  document.addEventListener("dragend", function (event) {
+    if (!draggingStatusId) {
+      return;
+    }
+    var draggedRow = document.querySelector('.status-row[data-status-id="' + draggingStatusId + '"]');
+    if (draggedRow) {
+      draggedRow.classList.remove("status-dragging");
+    }
+    draggingStatusId = null;
+    draggingStatusScope = null;
+    document.querySelectorAll(".status-row.status-drag-over").forEach(function (row) {
+      row.classList.remove("status-drag-over");
+    });
+  });
+
+  document.addEventListener("dragover", function (event) {
+    if (!draggingStatusId) {
+      return;
+    }
+    var row = event.target.closest(".status-row");
+    if (!row || row.dataset.statusId === draggingStatusId || row.dataset.statusScope !== draggingStatusScope) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    document.querySelectorAll(".status-row.status-drag-over").forEach(function (candidate) {
+      if (candidate !== row) {
+        candidate.classList.remove("status-drag-over");
+      }
+    });
+    row.classList.add("status-drag-over");
+  });
+
+  document.addEventListener("dragleave", function (event) {
+    if (!draggingStatusId) {
+      return;
+    }
+    var row = event.target.closest(".status-row");
+    if (row && !row.contains(event.relatedTarget)) {
+      row.classList.remove("status-drag-over");
+    }
+  });
+
+  document.addEventListener("drop", function (event) {
+    if (!draggingStatusId) {
+      return;
+    }
+    var targetRow = event.target.closest(".status-row");
+    if (!targetRow || targetRow.dataset.statusId === draggingStatusId || targetRow.dataset.statusScope !== draggingStatusScope) {
+      return;
+    }
+    event.preventDefault();
+    targetRow.classList.remove("status-drag-over");
+
+    var list = document.getElementById("status-list");
+    if (!list) {
+      return;
+    }
+    var rows = Array.from(list.querySelectorAll(".status-row"));
+    var draggedRow = list.querySelector('.status-row[data-status-id="' + draggingStatusId + '"]');
+    var draggedIndex = rows.indexOf(draggedRow);
+    var targetIndex = rows.indexOf(targetRow);
+
+    if (draggedRow) {
+      if (draggedIndex < targetIndex) {
+        list.insertBefore(draggedRow, targetRow.nextSibling);
+      } else {
+        list.insertBefore(draggedRow, targetRow);
+      }
+    }
+
+    var order = Array.from(list.querySelectorAll('.status-row[data-status-scope="' + draggingStatusScope + '"]')).map(function (row) {
+      return parseInt(row.dataset.statusId, 10);
+    });
+
+    fetch("/board/statuses/reorder/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCsrfToken(),
+      },
+      body: JSON.stringify({ order: order }),
+    });
+
+    if (draggedRow) {
+      draggedRow.classList.remove("status-dragging");
+    }
+    draggingStatusId = null;
+    draggingStatusScope = null;
   });
 
   document.addEventListener("htmx:confirm", function (event) {

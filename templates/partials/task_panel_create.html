@@ -1,8 +1,8 @@
 <div class="task-panel-header">
   <div class="task-panel-header-copy">
     <span class="eyebrow">New task</span>
-    <h2 class="task-panel-title">Create a card for {{ selected_column_name }}</h2>
-    <div class="task-panel-subtitle">This will land in {{ selected_column_name }} with the default {{ selected_status_name }} status.</div>
+    <h2 class="task-panel-title">Create a card for {{ selected_lane_name }}</h2>
+    <div class="task-panel-subtitle">This will land in {{ selected_lane_name }} with the default {{ selected_status_name }} status.</div>
   </div>
   <button class="task-panel-close btn-ghost" type="button" onclick="closeTaskPanel()" title="Close">×</button>
 </div>
@@ -18,7 +18,7 @@
         hx-target="#task-panel-content"
         hx-swap="innerHTML">
     {% csrf_token %}
-    <input type="hidden" name="column" value="{{ selected_column_id }}">
+    <input type="hidden" name="lane" value="{{ selected_lane_param }}">
     <input type="hidden" name="team" value="{{ selected_team_id }}">
 
     <div class="form-field">

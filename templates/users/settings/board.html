@@ -4,10 +4,10 @@
 
 {% block settings_content %}
 <div class="settings-grid">
-  <section class="settings-card surface-panel">
+  <section class="settings-card settings-card--wide surface-panel">
     <div>
-      <h2 class="card-title">Task Statuses</h2>
-      <p class="card-subtitle">Statuses drive the workflow options on each card and power your board lanes.</p>
+      <h2 class="card-title">Lanes</h2>
+      <p class="card-subtitle">Each status is a lane on your board, shown in this order. Drag to reorder.</p>
     </div>
 
     <div id="status-list" class="settings-list">
@@ -48,31 +48,27 @@
         <button type="submit" class="btn-primary">Add status</button>
       </div>
     </form>
-  </section>
-
-  <section class="settings-card settings-card--wide surface-panel">
-    <div>
-      <h2 class="card-title">Board Columns</h2>
-      <p class="card-subtitle">
-        Columns filter that board's task list into a clearer flow. Leave filters blank to create a catch-all lane.
-      </p>
-    </div>
-
-    {% if user_teams %}
-    <nav class="settings-subnav" aria-label="Boards">
-      <a class="settings-subnav-link {% if not board.team_id %}is-active{% endif %}" href="{% url 'users:settings-board' %}">Personal</a>
-      {% for team in user_teams %}
-      <a class="settings-subnav-link {% if board.team_id == team.pk %}is-active{% endif %}" href="{% url 'users:settings-board' %}?team={{ team.pk }}">{{ team.name }}</a>
-      {% endfor %}
-    </nav>
-    {% endif %}
-
-    <div id="column-list" class="settings-list">
-      {% include "users/_column_list.html" %}
-    </div>
 
     <details class="settings-disclosure">
-      <summary>+ Add a column</summary>
+      <summary>+ Add a custom lane</summary>
+      <p class="field-help">
+        For a filtered lane beyond a single status &mdash; e.g. "Overdue" or a tag. Most boards don't need one;
+        every status already gets its own lane above.
+      </p>
+
+      {% if user_teams %}
+      <nav class="settings-subnav" aria-label="Boards">
+        <a class="settings-subnav-link {% if not board.team_id %}is-active{% endif %}" href="{% url 'users:settings-board' %}">Personal</a>
+        {% for team in user_teams %}
+        <a class="settings-subnav-link {% if board.team_id == team.pk %}is-active{% endif %}" href="{% url 'users:settings-board' %}?team={{ team.pk }}">{{ team.name }}</a>
+        {% endfor %}
+      </nav>
+      {% endif %}
+
+      <div id="column-list" class="settings-list">
+        {% include "users/_column_list.html" %}
+      </div>
+
       <form class="column-create-form"
             hx-post="{% url 'users:column-create' %}"
             hx-target="#column-list"
@@ -82,8 +78,8 @@
         <input type="hidden" name="team" value="{{ board.team_id|default:'' }}">
 
         <div class="form-field">
-          <label class="field-label" for="column-label">Column label</label>
-          <input id="column-label" type="text" name="label" placeholder="Column label" required>
+          <label class="field-label" for="column-label">Lane label</label>
+          <input id="column-label" type="text" name="label" placeholder="Lane label" required>
         </div>
 
         {% if user_teams %}
@@ -129,7 +125,7 @@
           </div>
 
           <div class="form-field" style="justify-content: end; display: flex;">
-            <button type="submit" class="btn-primary">Add column</button>
+            <button type="submit" class="btn-primary">Add custom lane</button>
           </div>
         </div>
       </form>

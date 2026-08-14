@@ -30,7 +30,7 @@
       </select>
     </div>
 
-    {% if active_filter.tags or active_filter.exclude_tags or active_filter.hidden_columns %}
+    {% if active_filter.tags or active_filter.exclude_tags or active_filter.hidden_lanes %}
     <div class="filter-active">
       {% for tag in active_filter.tags %}
       <label class="filter-pill filter-pill--solid">
@@ -44,10 +44,10 @@
         not: {{ tag }} ×
       </label>
       {% endfor %}
-      {% for col in active_filter.hidden_columns %}
+      {% for lane in active_filter.hidden_lanes %}
       <label class="filter-pill">
-        <input type="checkbox" name="hidden_columns" value="{{ col.pk }}" checked style="display: none;">
-        Hidden: {{ col.label }} ×
+        <input type="checkbox" name="hidden_lanes" value="{{ lane.dom_id }}" checked style="display: none;">
+        Hidden: {{ lane.label }} ×
       </label>
       {% endfor %}
     </div>
@@ -59,7 +59,7 @@
     <span class="pill">{{ active_filter_count }} active filter{{ active_filter_count|pluralize }}</span>
     {% endif %}
 
-    {% if active_filter.tags or active_filter.exclude_tags or active_filter.due or active_filter.hidden_columns %}
+    {% if active_filter.tags or active_filter.exclude_tags or active_filter.due or active_filter.hidden_lanes %}
     <div class="save-filter-container">
       <button class="btn-ghost btn-small" type="button" data-disclosure-toggle>Save view</button>
       <div class="save-filter-popover">

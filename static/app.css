@@ -867,6 +867,33 @@ hr {
   position: relative;
 }
 
+.status-drag-handle {
+  width: 1.9rem;
+  height: 1.9rem;
+  min-height: 1.9rem;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--surface-strong);
+  color: var(--text-subtle);
+  cursor: grab;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.status-drag-handle:active {
+  cursor: grabbing;
+}
+
+.status-row.status-dragging {
+  opacity: 0.5;
+}
+
+.status-row.status-drag-over {
+  border-top-color: var(--accent);
+}
+
 .col-drag-handle,
 .col-actions-btn {
   width: 1.9rem;
