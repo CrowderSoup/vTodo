@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block body_class %}page-settings{% endblock %}
+{% block title %}{% block admin_title %}Admin{% endblock %} — vtodo{% endblock %}
+
+{% block content %}
+<section class="page-shell page-shell--narrow">
+  <header class="page-hero page-hero--settings surface-panel">
+    <div class="hero-copy">
+      <span class="eyebrow">Admin</span>
+      <h1 class="page-title">Control who gets into vtodo.</h1>
+      <p class="page-subtitle">
+        Manage admin-only settings for the whole install.
+      </p>
+    </div>
+  </header>
+
+  {% include "siteadmin/_nav.html" %}
+
+  {% block admin_content %}{% endblock %}
+</section>
+{% endblock %}

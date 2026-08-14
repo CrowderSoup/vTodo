@@ -23,6 +23,10 @@ DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
 
+# Emails granted admin access (see apps.users.selectors.is_admin) -- matched against
+# verified EmailIdentity emails, which are always stored lower-cased.
+ADMIN_EMAILS = [e.strip().lower() for e in env.list("ADMIN_EMAILS", default=[])]
+
 # Trust the X-Forwarded-Proto header from reverse proxies (e.g. DO App Platform)
 # so that request.build_absolute_uri() generates https:// URLs correctly.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
@@ -36,6 +40,7 @@ INSTALLED_APPS = [
     "apps.boards.apps.BoardsConfig",
     "apps.tasks.apps.TasksConfig",
     "apps.integrations.apps.IntegrationsConfig",
+    "apps.siteadmin.apps.SiteAdminConfig",
     # Django contrib
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -136,6 +141,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.siteadmin.context_processors.admin_status",
             ],
         },
     },

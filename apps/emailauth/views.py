@@ -49,6 +49,12 @@ class RequestOTPView(View):
         try:
             identity = EmailIdentity.objects.select_related("user").get(email=email)
         except EmailIdentity.DoesNotExist:
+            from apps.siteadmin.selectors import consume_signup_slot
+
+            if not consume_signup_slot(email):
+                messages.error(request, "vtodo isn't open for signups right now.")
+                return redirect(_login_redirect_url(next_url))
+
             from apps.users.models import User
             user = User.objects.create_user(username=uuid.uuid4().hex[:16])
             identity = EmailIdentity.objects.create(user=user, email=email)

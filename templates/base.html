@@ -40,6 +40,9 @@
       <div class="nav-links">
         <a class="nav-link {% if request.resolver_match.namespace == 'boards' %}is-active{% endif %}" href="{% url 'boards:board' %}">Board</a>
         <a class="nav-link {% if request.resolver_match.namespace == 'users' %}is-active{% endif %}" href="{% url 'users:settings' %}">Settings</a>
+        {% if is_site_admin %}
+        <a class="nav-link {% if request.resolver_match.namespace == 'siteadmin' %}is-active{% endif %}" href="{% url 'siteadmin:dashboard' %}">Admin</a>
+        {% endif %}
       </div>
 
       <span class="nav-spacer"></span>

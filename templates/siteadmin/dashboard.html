@@ -1,0 +1,66 @@
+{% extends "siteadmin/_base.html" %}
+
+{% block admin_title %}Signups{% endblock %}
+
+{% block admin_content %}
+<div class="settings-grid">
+  <section class="settings-card settings-card--wide surface-panel">
+    <div>
+      <h2 class="card-title">Signup mode</h2>
+      <p class="card-subtitle">Controls whether new people can create a vtodo account.</p>
+    </div>
+
+    <form class="inline-form" method="post" action="{% url 'siteadmin:signup-mode-update' %}">
+      {% csrf_token %}
+      <div class="form-field">
+        <label class="field-label" for="signup_mode">Mode</label>
+        <select id="signup_mode" name="signup_mode">
+          {% for value, label in mode_choices %}
+          <option value="{{ value }}" {% if site_settings.signup_mode == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-field">
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+    <p class="field-help">
+      Private: no one can join. Invite-only: only emails you've invited below can sign up.
+      Open: anyone can create an account.
+    </p>
+  </section>
+
+  <section class="settings-card settings-card--wide surface-panel">
+    <div>
+      <h2 class="card-title">Invite someone</h2>
+      <p class="card-subtitle">Only matters while signup mode is invite-only. They can sign in at the login page with this email once invited.</p>
+    </div>
+
+    <form class="inline-form" method="post" action="{% url 'siteadmin:invite-create' %}">
+      {% csrf_token %}
+      <div class="form-field">
+        <label class="field-label" for="invite-email">Invite by email</label>
+        <input id="invite-email" type="email" name="email" placeholder="person@example.com" required>
+      </div>
+      <div class="form-field">
+        <button type="submit" class="btn-primary">Send invite</button>
+      </div>
+    </form>
+
+    {% if pending_invites %}
+    <div class="settings-list">
+      {% for invite in pending_invites %}
+      <div class="config-row">
+        <div class="config-main">
+          <div class="config-title"><span>{{ invite.email }}</span></div>
+          <div class="config-description"><span class="pill">Expires {{ invite.expires_at|date:"M j, Y" }}</span></div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="field-help">No pending invites.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

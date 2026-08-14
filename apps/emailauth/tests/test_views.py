@@ -3,6 +3,7 @@ from django.core import mail
 from django.urls import reverse
 
 from apps.emailauth.models import EmailIdentity, EmailOTP
+from apps.siteadmin.models import SiteInvite, SiteSettings
 from apps.users.models import User
 
 
@@ -60,6 +61,57 @@ def test_request_otp_rate_limited(client):
     response = client.post(reverse("emailauth:request"), {"email": email})
     assert response.status_code == 302
     assert len(mail.outbox) == 0
+
+
+# ---------------------------------------------------------------------------
+# Signup gate (SiteSettings.signup_mode)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_request_otp_blocked_when_private(client):
+    SiteSettings.objects.create(pk=1, signup_mode=SiteSettings.MODE_PRIVATE)
+    response = client.post(reverse("emailauth:request"), {"email": "new@example.com"})
+    assert response.status_code == 302
+    assert len(mail.outbox) == 0
+    assert not EmailIdentity.objects.filter(email="new@example.com").exists()
+
+
+@pytest.mark.django_db
+def test_request_otp_blocked_invite_only_without_invite(client):
+    SiteSettings.objects.create(pk=1, signup_mode=SiteSettings.MODE_INVITE_ONLY)
+    response = client.post(reverse("emailauth:request"), {"email": "uninvited@example.com"})
+    assert response.status_code == 302
+    assert len(mail.outbox) == 0
+    assert not EmailIdentity.objects.filter(email="uninvited@example.com").exists()
+
+
+@pytest.mark.django_db
+def test_request_otp_allowed_invite_only_with_valid_invite(client):
+    SiteSettings.objects.create(pk=1, signup_mode=SiteSettings.MODE_INVITE_ONLY)
+    invite = SiteInvite.generate("invited@example.com", invited_by=None)
+
+    response = client.post(reverse("emailauth:request"), {"email": "invited@example.com"})
+
+    assert response.status_code == 302
+    assert len(mail.outbox) == 1
+    assert EmailIdentity.objects.filter(email="invited@example.com").exists()
+    invite.refresh_from_db()
+    assert invite.accepted_at is not None
+
+
+@pytest.mark.django_db
+def test_request_otp_existing_identity_allowed_when_private(client):
+    """The gate only applies to brand-new accounts -- an existing identity can
+    always request a fresh login code."""
+    user = User.objects.create_user()
+    EmailIdentity.objects.create(user=user, email="already-here@example.com")
+    SiteSettings.objects.create(pk=1, signup_mode=SiteSettings.MODE_PRIVATE)
+
+    response = client.post(reverse("emailauth:request"), {"email": "already-here@example.com"})
+
+    assert response.status_code == 302
+    assert len(mail.outbox) == 1
 
 
 # ---------------------------------------------------------------------------
