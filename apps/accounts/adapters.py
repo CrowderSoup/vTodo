@@ -25,11 +25,16 @@ class SocialAccountAdapter(DefaultSocialAccountAdapter):
             raise ImmediateHttpResponse(redirect(reverse("accounts:login")))
 
         from apps.emailauth.models import EmailIdentity
+        from apps.siteadmin.selectors import consume_signup_slot
         from apps.users.models import User
 
         try:
             identity = EmailIdentity.objects.select_related("user").get(email=verified_email)
         except EmailIdentity.DoesNotExist:
+            if not consume_signup_slot(verified_email):
+                messages.error(request, "vtodo isn't open for signups right now.")
+                raise ImmediateHttpResponse(redirect(reverse("accounts:login")))
+
             user = User.objects.create_user(username=uuid.uuid4().hex[:16])
             identity = EmailIdentity.objects.create(user=user, email=verified_email, verified=True)
         else:

@@ -6,6 +6,7 @@ from django.test import RequestFactory
 
 from apps.accounts.adapters import SocialAccountAdapter
 from apps.emailauth.models import EmailIdentity
+from apps.siteadmin.models import SiteInvite, SiteSettings
 from apps.users.models import User
 
 
@@ -101,6 +102,48 @@ def test_does_not_overwrite_existing_display_name_and_avatar(request_factory):
     user.refresh_from_db()
     assert user.display_name == "Existing Name"
     assert user.avatar_url == "https://example.com/existing.jpg"
+
+
+@pytest.mark.django_db
+def test_new_email_blocked_when_private(request_factory):
+    from allauth.core.exceptions import ImmediateHttpResponse
+
+    SiteSettings.objects.create(pk=1, signup_mode=SiteSettings.MODE_PRIVATE)
+    request = request_factory()
+    sociallogin = _sociallogin(email="private@example.com", verified=True)
+
+    with pytest.raises(ImmediateHttpResponse):
+        SocialAccountAdapter().pre_social_login(request, sociallogin)
+
+    assert not EmailIdentity.objects.filter(email="private@example.com").exists()
+
+
+@pytest.mark.django_db
+def test_new_email_blocked_invite_only_without_invite(request_factory):
+    from allauth.core.exceptions import ImmediateHttpResponse
+
+    SiteSettings.objects.create(pk=1, signup_mode=SiteSettings.MODE_INVITE_ONLY)
+    request = request_factory()
+    sociallogin = _sociallogin(email="uninvited@example.com", verified=True)
+
+    with pytest.raises(ImmediateHttpResponse):
+        SocialAccountAdapter().pre_social_login(request, sociallogin)
+
+    assert not EmailIdentity.objects.filter(email="uninvited@example.com").exists()
+
+
+@pytest.mark.django_db
+def test_new_email_allowed_invite_only_with_valid_invite(request_factory):
+    SiteSettings.objects.create(pk=1, signup_mode=SiteSettings.MODE_INVITE_ONLY)
+    invite = SiteInvite.generate("invited@example.com", invited_by=None)
+    request = request_factory()
+    sociallogin = _sociallogin(email="invited@example.com", verified=True)
+
+    SocialAccountAdapter().pre_social_login(request, sociallogin)
+
+    assert EmailIdentity.objects.filter(email="invited@example.com").exists()
+    invite.refresh_from_db()
+    assert invite.accepted_at is not None
 
 
 @pytest.mark.django_db
