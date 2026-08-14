@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "rest_framework.authtoken",
     "drf_spectacular",
     "apps.api.apps.ApiConfig",
+    "oauth2_provider",
     "allauth",
     "allauth.account",
     "allauth.socialaccount",
@@ -73,6 +74,35 @@ SPECTACULAR_SETTINGS = {
     "TITLE": "vtodo API",
     "DESCRIPTION": "REST API for the vtodo personal task manager.",
     "VERSION": "1.0.0",
+}
+
+# OAuth 2.1 authorization server (django-oauth-toolkit) — lets remote MCP
+# clients (Claude Desktop/Code) authorize against a vtodo account instead of
+# using a shared static token. See mcp_server/server.py and
+# apps/api/views.py:WhoAmIView for the resource-server side of this.
+OAUTH2_PROVIDER = {
+    "PKCE_REQUIRED": True,
+    "SCOPES": {
+        "tasks": "Read and write your vtodo tasks, statuses, comments, and teams",
+    },
+    "DEFAULT_SCOPES": ["tasks"],
+    "ACCESS_TOKEN_EXPIRE_SECONDS": 3600,
+    "REFRESH_TOKEN_EXPIRE_SECONDS": 60 * 60 * 24 * 30,
+    "ROTATE_REFRESH_TOKEN": True,
+    "REFRESH_TOKEN_REUSE_PROTECTION": True,
+    # MCP clients (e.g. Claude) self-register via RFC 7591 before any user is
+    # logged in, so registration can't require an authenticated session —
+    # this is the toolkit's "open registration" permission class.
+    "DCR_ENABLED": True,
+    "DCR_REGISTRATION_PERMISSION_CLASSES": ("oauth2_provider.dcr.AllowAllDCRPermission",),
+    # MCP only ever uses authorization_code + PKCE (S256) — lock out the
+    # other grant types and weaker PKCE method rather than leave them
+    # reachable with no caller needing them.
+    "COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT": True,
+    "COMPLIANT_BCP_RFC9700_PASSWORD_GRANT": True,
+    "COMPLIANT_BCP_RFC9700_PKCE_METHOD": True,
+    "COMPLIANT_BCP_RFC9700_ACCESS_TOKEN_TRANSPORT": True,
+    "COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS": True,
 }
 
 MIDDLEWARE = [

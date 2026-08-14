@@ -1,8 +1,11 @@
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
+from oauth2_provider.contrib.rest_framework import OAuth2Authentication, TokenHasScope
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.tasks.models import Task, TaskComment, TaskStatus
 from apps.tasks.selectors import (
@@ -130,3 +133,26 @@ class TeamViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         return user_teams_qs(self.request.user)
+
+
+class WhoAmIView(APIView):
+    """Resolves an OAuth access token (from a remote MCP client) to the
+    caller's vtodo DRF API token, so mcp_server can call the rest of this
+    API exactly as it does for stdio/local use. Deliberately the only place
+    an OAuth-authenticated request ever gets a raw DRF token back."""
+
+    authentication_classes = [OAuth2Authentication]
+    permission_classes = [IsAuthenticated, TokenHasScope]
+    required_scopes = ["tasks"]
+
+    def get(self, request):
+        from rest_framework.authtoken.models import Token
+
+        token, _ = Token.objects.get_or_create(user=request.user)
+        return Response(
+            {
+                "user_id": request.user.pk,
+                "username": request.user.username,
+                "api_token": token.key,
+            }
+        )
