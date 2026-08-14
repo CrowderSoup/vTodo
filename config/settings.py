@@ -103,6 +103,11 @@ OAUTH2_PROVIDER = {
     "COMPLIANT_BCP_RFC9700_PKCE_METHOD": True,
     "COMPLIANT_BCP_RFC9700_ACCESS_TOKEN_TRANSPORT": True,
     "COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS": True,
+    # RFC 8707: without this, tokens minted for mcp_server's resource
+    # (VTODO_MCP_PUBLIC_URL) get rejected by WhoAmIView's own audience check
+    # since whoami lives on a different host than the resource the token was
+    # restricted to -- see apps/api/views.py:validate_whoami_resource_token.
+    "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR": "apps.api.views.validate_whoami_resource_token",
 }
 
 MIDDLEWARE = [

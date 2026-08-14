@@ -1,6 +1,8 @@
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from drf_spectacular.utils import extend_schema
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication, TokenHasScope
+from oauth2_provider.oauth2_validators import validate_resource_as_url_prefix
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -133,6 +135,25 @@ class TeamViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         return user_teams_qs(self.request.user)
+
+
+def validate_whoami_resource_token(request_uri: str, audiences: list[str]) -> bool:
+    """RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR (config/settings.py:OAUTH2_PROVIDER)
+    for RFC 8707 resource-restricted access tokens.
+
+    mcp_server's caller tokens are minted for its own resource identifier
+    (VTODO_MCP_PUBLIC_URL, e.g. https://mcp.vtodo.crowdersoup.com/mcp), then
+    handed to WhoAmIView -- on a different host entirely -- to resolve who
+    they belong to. WhoAmIView isn't itself the resource those tokens were
+    restricted to, so the default prefix-match audience check
+    (validate_resource_as_url_prefix) rejects every one of them with
+    "The access token is not valid for this resource." Exempt this one
+    endpoint; everything else still gets the default check.
+    """
+    path = request_uri.split("?", 1)[0].rstrip("/")
+    if path.endswith(reverse("mcp-whoami").rstrip("/")):
+        return True
+    return validate_resource_as_url_prefix(request_uri, audiences)
 
 
 class WhoAmIView(APIView):
