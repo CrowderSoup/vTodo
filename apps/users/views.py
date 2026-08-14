@@ -69,12 +69,21 @@ def _resolve_settings_board(user, team_id_str):
 
 
 def _saved_filters_with_labels(board):
+    from apps.boards.views import _parse_lane_key
+    from apps.tasks.selectors import visible_statuses_qs
+
+    statuses_by_pk = {s.pk: s.name for s in visible_statuses_qs(board.user, team=board.team)}
     columns_by_pk = {column.pk: column.label for column in board.columns.all()}
     saved_filters = list(board.saved_filters.all())
     for sf in saved_filters:
-        sf.hidden_column_labels = [
-            columns_by_pk.get(pk, "") for pk in sf.filter_config.get("hidden_columns", [])
-        ]
+        labels = []
+        for key in sf.filter_config.get("hidden_lanes", []):
+            kind, pk = _parse_lane_key(key)
+            if kind == "status":
+                labels.append(statuses_by_pk.get(pk, ""))
+            elif kind == "column":
+                labels.append(columns_by_pk.get(pk, ""))
+        sf.hidden_column_labels = labels
     return saved_filters
 
 

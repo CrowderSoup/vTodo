@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 
@@ -27,6 +28,21 @@ from .models import Board, Column, SavedFilter
 from .selectors import resolve_board, user_can_access_board
 
 TASK_CHECKBOX_PATTERN = re.compile(r"<(?P<tag>li|p)>\[(?P<state>[xX ])\]\s*(?P<body>.*?)</(?P=tag)>", re.DOTALL)
+
+
+def _lane_key(kind, pk):
+    """A board lane is either a TaskStatus (the default, implicit lane) or a Column
+    (an opt-in custom/filtered lane). Both are addressed uniformly -- for reorder,
+    hide, archive, and create-in-lane -- via a "kind:pk" key, since status and column
+    primary keys come from different tables and can collide."""
+    return f"{kind}:{pk}"
+
+
+def _parse_lane_key(key):
+    kind, _, pk = (key or "").partition(":")
+    if kind not in ("status", "column") or not pk.isdigit():
+        return None, None
+    return kind, int(pk)
 
 
 def _board_for_team(user, team):
@@ -116,36 +132,34 @@ def _resolve_status_slug(status, statuses):
     return valid_slugs[0] if valid_slugs else "todo"
 
 
-def _column_for_status(columns, status_slug):
-    """Finds the lane that would display a task carrying this status, for labeling purposes."""
-    for column in columns:
-        if status_slug in column.filter_config.get("statuses", []):
-            return column
-    for column in columns:
-        if not column.filter_config.get("statuses", []):
-            return column
-    return columns[0] if columns else None
-
-
-def _resolve_task_create_selection(user, board, statuses, requested_column_id=""):
-    """Returns (column_or_None, status_slug) for a new task via the create panel."""
-    columns = list(board.columns.all())
-
-    if str(requested_column_id).isdigit():
-        requested_pk = int(requested_column_id)
-        for column in columns:
-            if column.pk == requested_pk:
-                return column, column.default_status(user, team=board.team)
+def _resolve_task_create_selection(user, board, statuses, lane_param=""):
+    """Returns (lane_key, lane_name, status_slug) for a new task via the create panel."""
+    kind, pk = _parse_lane_key(lane_param)
+    if kind == "status":
+        status = next((s for s in statuses if s.pk == pk), None)
+        if status:
+            return _lane_key("status", status.pk), status.name, status.slug
+    elif kind == "column":
+        column = board.columns.filter(pk=pk).first()
+        if column:
+            return (
+                _lane_key("column", column.pk),
+                column.label,
+                column.default_status(user, team=board.team),
+            )
 
     if board.team_id is None and user.default_status_id:
         status_slug = _resolve_status_slug(user.default_status.slug, statuses)
-        return _column_for_status(columns, status_slug), status_slug
+        status = next((s for s in statuses if s.slug == status_slug), None)
+        if status:
+            return _lane_key("status", status.pk), status.name, status.slug
+        return "", "your board", status_slug
 
-    if columns:
-        column = columns[0]
-        return column, column.default_status(user, team=board.team)
+    if statuses:
+        first = statuses[0]
+        return _lane_key("status", first.pk), first.name, first.slug
 
-    return None, _resolve_status_slug("", statuses)
+    return "", "your board", _resolve_status_slug("", statuses)
 
 
 def _task_render_context(user, task):
@@ -171,10 +185,12 @@ def _task_panel_context(user, task):
     return context
 
 
-def _task_panel_create_context(user, board, column_id="", form_values=None, form_error=""):
+def _task_panel_create_context(user, board, lane_param="", form_values=None, form_error=""):
     team = board.team
     statuses, done_slug, active_slug = _status_context_for(user, team)
-    selected_column, selected_status = _resolve_task_create_selection(user, board, statuses, column_id)
+    selected_lane_key, selected_lane_name, selected_status = _resolve_task_create_selection(
+        user, board, statuses, lane_param
+    )
     selected_status_name = next((item.name for item in statuses if item.slug == selected_status), selected_status)
     form_values = form_values or {}
 
@@ -183,9 +199,8 @@ def _task_panel_create_context(user, board, column_id="", form_values=None, form
         "done_slug": done_slug,
         "active_slug": active_slug,
         "today": timezone.localdate(),
-        "selected_column": selected_column,
-        "selected_column_id": selected_column.pk if selected_column else "",
-        "selected_column_name": selected_column.label if selected_column else "your board",
+        "selected_lane_param": selected_lane_key,
+        "selected_lane_name": selected_lane_name,
         "selected_status": selected_status,
         "selected_status_name": selected_status_name,
         "selected_team": team,
@@ -213,15 +228,28 @@ def _set_board_filter(request, board, board_filter):
     request.session.modified = True
 
 
+def _column_subtitle(filter_config):
+    due = filter_config.get("due")
+    tags = filter_config.get("tags")
+    if due == "overdue":
+        return "Overdue work collected in one place"
+    if due == "today":
+        return "Cards that need to land today"
+    if due == "this_week":
+        return "Short-horizon work for the week ahead"
+    if tags:
+        return f"Focused on {', '.join(tags)}"
+    return ""
+
+
 def _build_board_context(user, board, session=None):
-    columns = list(board.columns.all())
     today = timezone.localdate()
 
     board_filter = _board_filter_for(board, session)
     filter_tags = board_filter.get("tags", [])
     exclude_tags = board_filter.get("exclude_tags", [])
     filter_due = board_filter.get("due", "").strip()
-    hidden_column_pks = set(board_filter.get("hidden_columns", []))
+    hidden_lane_keys = set(board_filter.get("hidden_lanes", []))
 
     all_tasks = list(board_tasks_qs(board).filter(is_archived=False).order_by("order", "created_at"))
     tasks = list(all_tasks)
@@ -241,20 +269,53 @@ def _build_board_context(user, board, session=None):
 
     statuses, done_slug, active_slug = _status_context_for(user, board.team)
 
-    hidden_columns = []
-    claimed = set()
-    columns_with_tasks = []
-    for column in columns:
-        if column.pk in hidden_column_pks:
-            hidden_columns.append(column)
-            continue
-        col_tasks = []
-        for task in tasks:
-            if task.pk not in claimed and _task_matches_column(task, column.filter_config, user):
-                task.done_slug, task.active_slug = done_slug, active_slug
-                col_tasks.append(task)
-                claimed.add(task.pk)
-        columns_with_tasks.append((column, col_tasks, column.default_status(user, team=board.team)))
+    # Lanes: one per status (the default, always-present lane -- a task belongs to
+    # its status lane by plain equality, never ambiguous) followed by one per custom
+    # Column (an opt-in filtered lane, e.g. "Overdue"). A task can appear in both its
+    # status lane and a matching custom lane -- custom lanes are supplementary views
+    # layered on top, not exclusive claims, so there's no "first match wins" logic here.
+    lanes = []
+    hidden_lanes = []
+
+    for status in statuses:
+        key = _lane_key("status", status.pk)
+        lane_tasks = [t for t in tasks if t.status == status.slug]
+        for t in lane_tasks:
+            t.done_slug, t.active_slug = done_slug, active_slug
+        lane = {
+            "kind": "status",
+            "pk": status.pk,
+            "dom_id": key,
+            "label": status.name,
+            "color": status.color,
+            "subtitle": "",
+            "tasks": lane_tasks,
+            "default_status": status.slug,
+            "hide_url": reverse("boards:lane-hide", args=[key]),
+            "archive_url": reverse("boards:lane-archive", args=[key]),
+            "create_lane_param": key,
+        }
+        (hidden_lanes if key in hidden_lane_keys else lanes).append(lane)
+
+    for column in board.columns.all():
+        key = _lane_key("column", column.pk)
+        lane_tasks = [t for t in tasks if _task_matches_column(t, column.filter_config, user)]
+        for t in lane_tasks:
+            t.done_slug, t.active_slug = done_slug, active_slug
+        lane = {
+            "kind": "column",
+            "pk": column.pk,
+            "dom_id": key,
+            "label": column.label,
+            "color": column.color,
+            "subtitle": _column_subtitle(column.filter_config),
+            "tasks": lane_tasks,
+            "default_status": column.default_status(user, team=board.team),
+            "hide_url": reverse("boards:lane-hide", args=[key]),
+            "archive_url": reverse("boards:lane-archive", args=[key]),
+            "create_lane_param": key,
+        }
+        (hidden_lanes if key in hidden_lane_keys else lanes).append(lane)
 
     saved_filters = list(board.saved_filters.all())
     active_saved_filter_name = None
@@ -262,7 +323,7 @@ def _build_board_context(user, board, session=None):
         "tags": filter_tags,
         "exclude_tags": exclude_tags,
         "due": filter_due,
-        "hidden_columns": list(hidden_column_pks),
+        "hidden_lanes": sorted(hidden_lane_keys),
     }
     for sf in saved_filters:
         sf_config = sf.filter_config
@@ -270,14 +331,14 @@ def _build_board_context(user, board, session=None):
             sorted(sf_config.get("tags", [])) == sorted(current_config["tags"])
             and sorted(sf_config.get("exclude_tags", [])) == sorted(current_config["exclude_tags"])
             and sf_config.get("due", "") == current_config["due"]
-            and sorted(sf_config.get("hidden_columns", [])) == sorted(current_config["hidden_columns"])
+            and sorted(sf_config.get("hidden_lanes", [])) == sorted(current_config["hidden_lanes"])
         ):
             active_saved_filter_name = sf.name
             break
 
     return {
         "board": board,
-        "columns_with_tasks": columns_with_tasks,
+        "lanes": lanes,
         "statuses": statuses,
         "done_slug": done_slug,
         "active_slug": active_slug,
@@ -285,7 +346,7 @@ def _build_board_context(user, board, session=None):
             "tags": filter_tags,
             "exclude_tags": exclude_tags,
             "due": filter_due,
-            "hidden_columns": hidden_columns,
+            "hidden_lanes": hidden_lanes,
         },
         "saved_filters": saved_filters,
         "active_saved_filter_name": active_saved_filter_name,
@@ -295,7 +356,7 @@ def _build_board_context(user, board, session=None):
         "done_task_count": sum(1 for task in all_tasks if task.completed_at),
         "due_today_count": sum(1 for task in tasks if task.due_date == today and not task.completed_at),
         "overdue_count": sum(1 for task in tasks if task.due_date and task.due_date < today and not task.completed_at),
-        "active_filter_count": len(filter_tags) + len(exclude_tags) + len(hidden_column_pks) + (1 if filter_due else 0),
+        "active_filter_count": len(filter_tags) + len(exclude_tags) + len(hidden_lane_keys) + (1 if filter_due else 0),
     }
 
 
@@ -313,12 +374,12 @@ class BoardFilterView(LoginRequiredMixin, View):
         tags = request.POST.getlist("tags")
         exclude_tags = request.POST.getlist("exclude_tags")
         due = request.POST.get("due", "").strip()
-        hidden_columns = [int(pk) for pk in request.POST.getlist("hidden_columns") if pk.isdigit()]
+        hidden_lanes = request.POST.getlist("hidden_lanes")
         _set_board_filter(request, board, {
             "tags": tags,
             "exclude_tags": exclude_tags,
             "due": due,
-            "hidden_columns": hidden_columns,
+            "hidden_lanes": hidden_lanes,
         })
         context = _build_board_context(request.user, board, request.session)
         return render(request, "boards/_filter_response.html", context)
@@ -334,14 +395,14 @@ class BoardFilterAddTagView(LoginRequiredMixin, View):
         current_tags = board_filter.get("tags", [])
         exclude_tags = [t for t in board_filter.get("exclude_tags", []) if t != tag]
         due = board_filter.get("due", "")
-        hidden_columns = board_filter.get("hidden_columns", [])
+        hidden_lanes = board_filter.get("hidden_lanes", [])
         if tag and tag not in current_tags:
             current_tags = current_tags + [tag]
         _set_board_filter(request, board, {
             "tags": current_tags,
             "exclude_tags": exclude_tags,
             "due": due,
-            "hidden_columns": hidden_columns,
+            "hidden_lanes": hidden_lanes,
         })
         context = _build_board_context(request.user, board, request.session)
         return render(request, "boards/_filter_response.html", context)
@@ -357,37 +418,78 @@ class BoardFilterExcludeTagView(LoginRequiredMixin, View):
         current_tags = [t for t in board_filter.get("tags", []) if t != tag]
         exclude_tags = board_filter.get("exclude_tags", [])
         due = board_filter.get("due", "")
-        hidden_columns = board_filter.get("hidden_columns", [])
+        hidden_lanes = board_filter.get("hidden_lanes", [])
         if tag and tag not in exclude_tags:
             exclude_tags = exclude_tags + [tag]
         _set_board_filter(request, board, {
             "tags": current_tags,
             "exclude_tags": exclude_tags,
             "due": due,
-            "hidden_columns": hidden_columns,
+            "hidden_lanes": hidden_lanes,
         })
         context = _build_board_context(request.user, board, request.session)
         return render(request, "boards/_filter_response.html", context)
 
 
-class ColumnHideView(LoginRequiredMixin, View):
-    """Add a column to the session hidden-columns filter."""
-
-    def post(self, request, pk):
+def _resolve_lane_and_board(user, lane_key):
+    """Returns (board, label, matches_fn) for a lane key, 404ing if the lane doesn't
+    exist or the user can't access its scope. matches_fn(task) says whether a task
+    belongs in this lane, for hide/archive actions."""
+    kind, pk = _parse_lane_key(lane_key)
+    if kind == "status":
+        status = get_object_or_404(TaskStatus, pk=pk)
+        if status.team_id:
+            if not user_teams_qs(user).filter(pk=status.team_id).exists():
+                raise Http404()
+            board = Board.objects.get(team_id=status.team_id)
+        else:
+            if status.user_id != user.id:
+                raise Http404()
+            board = Board.objects.get(user=user)
+        return board, status.name, (lambda t: t.status == status.slug)
+    if kind == "column":
         column = get_object_or_404(Column.objects.select_related("board"), pk=pk)
-        if not user_can_access_board(request.user, column.board):
+        if not user_can_access_board(user, column.board):
             raise Http404()
-        board = column.board
+        return (
+            column.board,
+            column.label,
+            (lambda t: _task_matches_column(t, column.filter_config, user)),
+        )
+    raise Http404()
+
+
+class LaneHideView(LoginRequiredMixin, View):
+    """Add a lane (status or custom column) to the session hidden-lanes filter."""
+
+    def post(self, request, lane_key):
+        board, _label, _matches = _resolve_lane_and_board(request.user, lane_key)
         board_filter = _board_filter_for(board, request.session)
-        hidden = board_filter.get("hidden_columns", [])
-        if column.pk not in hidden:
-            hidden = hidden + [column.pk]
-        _set_board_filter(request, board, {**board_filter, "hidden_columns": hidden})
+        hidden = board_filter.get("hidden_lanes", [])
+        if lane_key not in hidden:
+            hidden = hidden + [lane_key]
+        _set_board_filter(request, board, {**board_filter, "hidden_lanes": hidden})
         context = _build_board_context(request.user, board, request.session)
         return render(request, "boards/_filter_response.html", context)
 
 
+class LaneArchiveView(LoginRequiredMixin, View):
+    """Archive every task currently visible in a lane (status or custom column)."""
+
+    def post(self, request, lane_key):
+        board, label, matches = _resolve_lane_and_board(request.user, lane_key)
+        all_tasks = list(board_tasks_qs(board).filter(is_archived=False))
+        to_archive = [t.pk for t in all_tasks if matches(t)]
+        Task.objects.filter(pk__in=to_archive).update(is_archived=True)
+        context = _build_board_context(request.user, board, request.session)
+        return render(request, "boards/_columns.html", context)
+
+
 class ColumnReorderView(LoginRequiredMixin, View):
+    """Reorders custom (Column) lanes among themselves. Status lanes use
+    StatusReorderView -- the two are independent order sequences; custom lanes
+    always render after all status lanes (see _build_board_context)."""
+
     def post(self, request):
         try:
             data = json.loads(request.body)
@@ -407,6 +509,38 @@ class ColumnReorderView(LoginRequiredMixin, View):
             if pk in columns:
                 columns[pk].order = i
                 columns[pk].save(update_fields=["order"])
+
+        return HttpResponse(status=204)
+
+
+class StatusReorderView(LoginRequiredMixin, View):
+    """Reorders status lanes among themselves. See ColumnReorderView for the
+    equivalent on custom lanes."""
+
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+            order = data.get("order", [])
+        except (json.JSONDecodeError, AttributeError):
+            return HttpResponse(status=400)
+
+        statuses = {s.pk: s for s in TaskStatus.objects.filter(pk__in=order)}
+        if statuses:
+            first = next(iter(statuses.values()))
+            same_scope = all(
+                s.user_id == first.user_id and s.team_id == first.team_id for s in statuses.values()
+            )
+            if first.team_id:
+                owns_scope = user_teams_qs(request.user).filter(pk=first.team_id).exists()
+            else:
+                owns_scope = first.user_id == request.user.id
+            if not same_scope or not owns_scope:
+                return HttpResponse(status=403)
+
+        for i, pk in enumerate(order):
+            if pk in statuses:
+                statuses[pk].order = i
+                statuses[pk].save(update_fields=["order"])
 
         return HttpResponse(status=204)
 
@@ -518,31 +652,6 @@ class TaskDeleteView(LoginRequiredMixin, View):
         return HttpResponse("")
 
 
-class ColumnArchiveView(LoginRequiredMixin, View):
-    def post(self, request, pk):
-        column = get_object_or_404(Column.objects.select_related("board"), pk=pk)
-        if not user_can_access_board(request.user, column.board):
-            raise Http404()
-        board = column.board
-
-        # Mirror the claimed-task logic from _build_board_context to find exactly
-        # which tasks are visible in this column.
-        all_tasks = list(board_tasks_qs(board).filter(is_archived=False).order_by("order", "created_at"))
-        claimed = set()
-        to_archive = []
-        for col in board.columns.all():
-            for task in all_tasks:
-                if task.pk not in claimed and _task_matches_column(task, col.filter_config, request.user):
-                    if col.pk == column.pk:
-                        to_archive.append(task.pk)
-                    claimed.add(task.pk)
-
-        Task.objects.filter(pk__in=to_archive).update(is_archived=True)
-
-        context = _build_board_context(request.user, board, request.session)
-        return render(request, "boards/_columns.html", context)
-
-
 class TaskDetailView(LoginRequiredMixin, View):
     """Return the read-only task card partial. Used by the edit form's Cancel button."""
 
@@ -576,7 +685,7 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
         if team is False:
             team = None
         board = _board_for_team(request.user, team)
-        context = _task_panel_create_context(request.user, board, request.GET.get("column", "").strip())
+        context = _task_panel_create_context(request.user, board, request.GET.get("lane", "").strip())
         return render(request, "partials/task_panel_create.html", context)
 
     def post(self, request):
@@ -596,7 +705,7 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
         context = _task_panel_create_context(
             request.user,
             board,
-            request.POST.get("column", "").strip(),
+            request.POST.get("lane", "").strip(),
             form_values=form_values,
         )
 

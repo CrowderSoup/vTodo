@@ -1,50 +1,49 @@
-{% for column, tasks, default_status in columns_with_tasks %}
+{% for lane in lanes %}
 <section class="board-column"
-         data-column-id="{{ column.pk }}"
-         {% if column.color %}
-         style="--column-accent: {{ column.color }};"
-         {% elif default_status == "backlog" %}
+         data-column-id="{{ lane.dom_id }}"
+         data-lane-kind="{{ lane.kind }}"
+         {% if lane.color %}
+         style="--column-accent: {{ lane.color }};"
+         {% elif lane.default_status == "backlog" %}
          style="--column-accent: #4f78ff;"
-         {% elif default_status == "in_progress" %}
+         {% elif lane.default_status == "in_progress" %}
          style="--column-accent: var(--accent-warm);"
-         {% elif default_status == done_slug %}
+         {% elif lane.default_status == done_slug %}
          style="--column-accent: var(--success);"
          {% endif %}>
   <div class="column-header">
     <div class="column-header-main">
-      <span class="col-drag-handle" draggable="true" data-column-id="{{ column.pk }}" title="Drag to reorder">⋮⋮</span>
+      <span class="col-drag-handle" draggable="true" data-column-id="{{ lane.dom_id }}" title="Drag to reorder">⋮⋮</span>
       <div>
         <p class="column-kicker">Lane {{ forloop.counter }}</p>
-        <h2 class="column-title">{{ column.label }}</h2>
-        <p class="column-subtitle">
-          {% with due=column.filter_config.due tags=column.filter_config.tags %}
-          {% if due == "overdue" %}Overdue work collected in one place{% elif due == "today" %}Cards that need to land today{% elif due == "this_week" %}Short-horizon work for the week ahead{% elif tags %}Focused on {{ tags|join:", " }}{% endif %}
-          {% endwith %}
-        </p>
+        <h2 class="column-title">{{ lane.label }}</h2>
+        {% if lane.subtitle %}
+        <p class="column-subtitle">{{ lane.subtitle }}</p>
+        {% endif %}
       </div>
     </div>
 
     <div class="column-header-tools">
-      <span class="column-badge">{{ tasks|length }}</span>
+      <span class="column-badge">{{ lane.tasks|length }}</span>
       <div class="column-actions">
         <button class="col-actions-btn" type="button" title="Column actions" data-disclosure-toggle>⋯</button>
         <div class="col-actions-menu">
-          <button hx-get="{% url 'boards:task-panel-create' %}?column={{ column.pk }}&team={{ board.team_id|default:'' }}"
+          <button hx-get="{% url 'boards:task-panel-create' %}?lane={{ lane.create_lane_param }}&team={{ board.team_id|default:'' }}"
                   hx-target="#task-panel-content"
                   hx-swap="innerHTML"
                   hx-on:click="this.closest('.col-actions-menu').classList.remove('open')"
                   hx-on::after-request="openTaskPanel()">
             Add task
           </button>
-          <button hx-post="{% url 'boards:column-hide' column.pk %}"
+          <button hx-post="{{ lane.hide_url }}"
                   hx-target="#board-content"
                   hx-swap="innerHTML">
             Hide lane
           </button>
-          <button hx-post="{% url 'boards:column-archive' column.pk %}"
+          <button hx-post="{{ lane.archive_url }}"
                   hx-target="#board-content"
                   hx-swap="innerHTML"
-                  hx-confirm="Archive all {{ tasks|length }} card{% if tasks|length != 1 %}s{% endif %} in &ldquo;{{ column.label }}&rdquo;?">
+                  hx-confirm="Archive all {{ lane.tasks|length }} card{% if lane.tasks|length != 1 %}s{% endif %} in &ldquo;{{ lane.label }}&rdquo;?">
             Archive all cards
           </button>
         </div>
@@ -52,8 +51,8 @@
     </div>
   </div>
 
-  <div class="task-list" id="col-tasks-{{ column.pk }}" data-default-status="{{ default_status }}">
-    {% for task in tasks %}
+  <div class="task-list" id="col-tasks-{{ lane.dom_id }}" data-default-status="{{ lane.default_status }}">
+    {% for task in lane.tasks %}
     {% include "partials/task_card.html" %}
     {% empty %}
     <div class="task-empty">Nothing here yet. Add a card or drag one in.</div>

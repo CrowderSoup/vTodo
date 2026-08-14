@@ -1,9 +1,10 @@
+import json
 import pytest
 from datetime import timedelta
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.boards.models import Board
+from apps.boards.models import Board, Column
 from apps.boards.views import _render_markdown
 from apps.tasks.models import Task, TaskStatus
 from apps.teams.models import Team, TeamMembership
@@ -118,7 +119,7 @@ def test_board_active_filter_count_with_tag_filter(logged_in_client):
     client, user = logged_in_client
     board = Board.objects.get(user=user)
     session = client.session
-    session["board_filter"] = {str(board.pk): {"tags": ["urgent", "bug"], "due": "", "hidden_columns": []}}
+    session["board_filter"] = {str(board.pk): {"tags": ["urgent", "bug"], "due": "", "hidden_lanes": []}}
     session.save()
     response = client.get(reverse("boards:board"))
     assert response.context["active_filter_count"] == 2
@@ -130,7 +131,7 @@ def test_board_active_filter_count_with_due_filter(logged_in_client):
     client, user = logged_in_client
     board = Board.objects.get(user=user)
     session = client.session
-    session["board_filter"] = {str(board.pk): {"tags": [], "due": "today", "hidden_columns": []}}
+    session["board_filter"] = {str(board.pk): {"tags": [], "due": "today", "hidden_lanes": []}}
     session.save()
     response = client.get(reverse("boards:board"))
     assert response.context["active_filter_count"] == 1
@@ -138,12 +139,12 @@ def test_board_active_filter_count_with_due_filter(logged_in_client):
 
 @pytest.mark.django_db
 def test_board_active_filter_count_combined(logged_in_client):
-    """active_filter_count sums tags + due + hidden_columns."""
+    """active_filter_count sums tags + due + hidden_lanes."""
     client, user = logged_in_client
     board = Board.objects.get(user=user)
-    column_pk = board.columns.first().pk
+    status_pk = TaskStatus.objects.filter(user=user, team__isnull=True).first().pk
     session = client.session
-    session["board_filter"] = {str(board.pk): {"tags": ["x"], "due": "overdue", "hidden_columns": [column_pk]}}
+    session["board_filter"] = {str(board.pk): {"tags": ["x"], "due": "overdue", "hidden_lanes": [f"status:{status_pk}"]}}
     session.save()
     response = client.get(reverse("boards:board"))
     assert response.context["active_filter_count"] == 3
@@ -155,7 +156,7 @@ def test_board_active_filter_count_with_exclude_tag_filter(logged_in_client):
     client, user = logged_in_client
     board = Board.objects.get(user=user)
     session = client.session
-    session["board_filter"] = {str(board.pk): {"tags": [], "exclude_tags": ["urgent", "bug"], "due": "", "hidden_columns": []}}
+    session["board_filter"] = {str(board.pk): {"tags": [], "exclude_tags": ["urgent", "bug"], "due": "", "hidden_lanes": []}}
     session.save()
     response = client.get(reverse("boards:board"))
     assert response.context["active_filter_count"] == 2
@@ -169,7 +170,7 @@ def test_board_exclude_tag_filter_hides_matching_tasks(logged_in_client):
     Task.objects.create(user=user, title="Has tag", status="todo", tags=["urgent"])
     Task.objects.create(user=user, title="No tag", status="todo", tags=["misc"])
     session = client.session
-    session["board_filter"] = {str(board.pk): {"tags": [], "exclude_tags": ["urgent"], "due": "", "hidden_columns": []}}
+    session["board_filter"] = {str(board.pk): {"tags": [], "exclude_tags": ["urgent"], "due": "", "hidden_lanes": []}}
     session.save()
     response = client.get(reverse("boards:board"))
     assert response.context["visible_task_count"] == 1
@@ -206,7 +207,7 @@ def test_board_filter_add_exclude_tag_removes_from_include(logged_in_client):
     client, user = logged_in_client
     board = Board.objects.get(user=user)
     session = client.session
-    session["board_filter"] = {str(board.pk): {"tags": ["urgent"], "exclude_tags": [], "due": "", "hidden_columns": []}}
+    session["board_filter"] = {str(board.pk): {"tags": ["urgent"], "exclude_tags": [], "due": "", "hidden_lanes": []}}
     session.save()
     response = client.post(reverse("boards:board-filter-exclude-tag"), {"tag": "urgent", "board_id": board.pk})
     assert response.status_code == 200
@@ -221,7 +222,7 @@ def test_board_filter_add_tag_removes_from_exclude(logged_in_client):
     client, user = logged_in_client
     board = Board.objects.get(user=user)
     session = client.session
-    session["board_filter"] = {str(board.pk): {"tags": [], "exclude_tags": ["urgent"], "due": "", "hidden_columns": []}}
+    session["board_filter"] = {str(board.pk): {"tags": [], "exclude_tags": ["urgent"], "due": "", "hidden_lanes": []}}
     session.save()
     response = client.post(reverse("boards:board-filter-add-tag"), {"tag": "urgent", "board_id": board.pk})
     assert response.status_code == 200
@@ -260,13 +261,12 @@ def test_task_create_missing_title_returns_422(logged_in_client):
 @pytest.mark.django_db
 def test_board_uses_lane_menu_for_add_task(logged_in_client):
     client, user = logged_in_client
-    board = Board.objects.get(user=user)
-    first_column = board.columns.first()
+    first_status = TaskStatus.objects.filter(user=user, team__isnull=True).order_by("order").first()
     response = client.get(reverse("boards:board"))
     content = response.content.decode()
     assert response.status_code == 200
     assert 'class="add-task-form"' not in content
-    assert f'{reverse("boards:task-panel-create")}?column={first_column.pk}' in content
+    assert f'{reverse("boards:task-panel-create")}?lane=status:{first_status.pk}' in content
 
 
 @pytest.mark.django_db
@@ -293,12 +293,12 @@ def test_board_includes_shared_confirm_modal(logged_in_client):
 @pytest.mark.django_db
 def test_task_panel_create_renders_without_comments_form(logged_in_client):
     client, user = logged_in_client
-    first_column = Board.objects.get(user=user).columns.first()
+    first_status = TaskStatus.objects.filter(user=user, team__isnull=True).order_by("order").first()
     response = client.get(reverse("boards:task-panel-create"))
     content = response.content.decode()
     assert response.status_code == 200
-    assert response.context["selected_column_id"] == first_column.pk
-    assert response.context["selected_status"] == first_column.default_status(user)
+    assert response.context["selected_lane_param"] == f"status:{first_status.pk}"
+    assert response.context["selected_status"] == first_status.slug
     assert 'id="task-comment-form"' not in content
     assert "Create task" in content
 
@@ -309,11 +309,10 @@ def test_task_panel_create_uses_default_status_when_user_has_one(logged_in_clien
     default_status = user.task_statuses.get(slug="in_progress")
     user.default_status = default_status
     user.save(update_fields=["default_status"])
-    expected_column = Board.objects.get(user=user).columns.get(label="In Progress")
 
     response = client.get(reverse("boards:task-panel-create"))
     assert response.status_code == 200
-    assert response.context["selected_column_id"] == expected_column.pk
+    assert response.context["selected_lane_param"] == f"status:{default_status.pk}"
     assert response.context["selected_status"] == "in_progress"
 
 
@@ -322,11 +321,11 @@ def test_task_panel_create_explicit_column_overrides_default_status(logged_in_cl
     client, user = logged_in_client
     user.default_status = user.task_statuses.get(slug="done")
     user.save(update_fields=["default_status"])
-    explicit_column = Board.objects.get(user=user).columns.get(label="To Do")
+    explicit_status = user.task_statuses.get(slug="todo")
 
-    response = client.get(f'{reverse("boards:task-panel-create")}?column={explicit_column.pk}')
+    response = client.get(f'{reverse("boards:task-panel-create")}?lane=status:{explicit_status.pk}')
     assert response.status_code == 200
-    assert response.context["selected_column_id"] == explicit_column.pk
+    assert response.context["selected_lane_param"] == f"status:{explicit_status.pk}"
     assert response.context["selected_status"] == "todo"
 
 
@@ -695,7 +694,7 @@ def test_team_board_shows_teammates_tasks(logged_in_client):
     team_task = Task.objects.create(user=other, team=team, title="Team task", status="todo")
 
     response = client.get(reverse("boards:board-team", args=[team.pk]))
-    all_tasks = [t for _, tasks, _ in response.context["columns_with_tasks"] for t in tasks]
+    all_tasks = [t for lane in response.context["lanes"] for t in lane["tasks"]]
 
     assert team_task in all_tasks
 
@@ -715,7 +714,7 @@ def test_team_board_excludes_other_teams_tasks(logged_in_client):
     other_team_task = Task.objects.create(user=outsider, team=other_team, title="Other team task", status="todo")
 
     response = client.get(reverse("boards:board-team", args=[team.pk]))
-    all_tasks = [t for _, tasks, _ in response.context["columns_with_tasks"] for t in tasks]
+    all_tasks = [t for lane in response.context["lanes"] for t in lane["tasks"]]
     assert other_team_task not in all_tasks
 
 
@@ -798,7 +797,7 @@ def test_task_panel_create_preselects_team_from_board(logged_in_client):
     column = team_board.columns.first()
 
     response = client.get(
-        reverse("boards:task-panel-create"), {"column": column.pk, "team": team.pk}
+        reverse("boards:task-panel-create"), {"lane": f"column:{column.pk}", "team": team.pk}
     )
     assert response.context["selected_team_id"] == team.pk
 
@@ -819,5 +818,96 @@ def test_team_board_mark_complete_uses_the_teams_own_done_slug(logged_in_client)
     response = client.get(reverse("boards:board-team", args=[team.pk]))
 
     assert response.status_code == 200
-    all_tasks = [t for _, tasks, _ in response.context["columns_with_tasks"] for t in tasks]
+    all_tasks = [t for lane in response.context["lanes"] for t in lane["tasks"]]
     assert all_tasks[0].done_slug == "shipped"
+
+
+# ---------------------------------------------------------------------------
+# Merged lane rendering: statuses are the default lanes, custom columns are
+# opt-in supplementary lanes layered on top (never exclusive claims).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_lanes_are_built_from_statuses_with_no_columns(logged_in_client):
+    """A fresh personal board has zero Column rows, yet still renders one lane per
+    status (the whole point of the merge)."""
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    assert board.columns.count() == 0
+
+    response = client.get(reverse("boards:board"))
+    lanes = response.context["lanes"]
+
+    assert [lane["kind"] for lane in lanes] == ["status"] * 4
+    assert [lane["label"] for lane in lanes] == ["Backlog", "To Do", "In Progress", "Done"]
+
+
+@pytest.mark.django_db
+def test_task_appears_in_both_status_lane_and_matching_custom_lane(logged_in_client):
+    """A custom lane is a supplementary view, not an exclusive claim -- a task shows
+    in its status lane AND any custom lane whose filter also matches it."""
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    Column.objects.create(board=board, label="Urgent", filter_config={"tags": ["urgent"]}, order=0)
+    task = Task.objects.create(user=user, title="Fix it", status="todo", tags=["urgent"])
+
+    response = client.get(reverse("boards:board"))
+    lanes = {lane["label"]: lane["tasks"] for lane in response.context["lanes"]}
+
+    assert task in lanes["To Do"]
+    assert task in lanes["Urgent"]
+    # Custom lanes always render after every status lane.
+    labels = [lane["label"] for lane in response.context["lanes"]]
+    assert labels.index("Urgent") > labels.index("Done")
+
+
+@pytest.mark.django_db
+def test_status_reorder_updates_order(logged_in_client):
+    client, user = logged_in_client
+    statuses = list(TaskStatus.objects.filter(user=user, team__isnull=True).order_by("order"))
+    reversed_order = [s.pk for s in reversed(statuses)]
+
+    response = client.post(
+        reverse("boards:status-reorder"),
+        data=json.dumps({"order": reversed_order}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 204
+    new_order = list(TaskStatus.objects.filter(user=user, team__isnull=True).order_by("order"))
+    assert [s.pk for s in new_order] == reversed_order
+
+
+@pytest.mark.django_db
+def test_status_reorder_rejects_another_users_statuses(logged_in_client):
+    """A user can't reorder statuses they don't own."""
+    client, user = logged_in_client
+    other = User.objects.create_user()
+    other_status_pk = TaskStatus.objects.filter(user=other, team__isnull=True).first().pk
+
+    response = client.post(
+        reverse("boards:status-reorder"),
+        data=json.dumps({"order": [other_status_pk]}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_lane_hide_and_archive_by_status(logged_in_client):
+    client, user = logged_in_client
+    status = TaskStatus.objects.get(user=user, team__isnull=True, slug="todo")
+    task = Task.objects.create(user=user, title="Hide me", status="todo")
+
+    hide_response = client.post(reverse("boards:lane-hide", args=[f"status:{status.pk}"]))
+    assert hide_response.status_code == 200
+    board = Board.objects.get(user=user)
+    session_filter = client.session["board_filter"][str(board.pk)]
+    assert f"status:{status.pk}" in session_filter["hidden_lanes"]
+
+    archive_response = client.post(reverse("boards:lane-archive", args=[f"status:{status.pk}"]))
+    assert archive_response.status_code == 200
+    task.refresh_from_db()
+    assert task.is_archived is True

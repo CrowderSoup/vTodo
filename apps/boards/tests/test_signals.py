@@ -1,6 +1,7 @@
 import pytest
 
-from apps.boards.models import Board, Column
+from apps.boards.models import Board
+from apps.tasks.models import TaskStatus
 from apps.users.models import User
 
 
@@ -11,28 +12,26 @@ def test_board_created_on_new_user():
 
 
 @pytest.mark.django_db
-def test_four_default_columns_created():
+def test_no_columns_auto_created():
+    """Columns are now opt-in custom lanes -- statuses alone define the board's
+    default lanes, so a fresh board has none."""
     user = User.objects.create_user()
     board = Board.objects.get(user=user)
-    assert board.columns.count() == 4
+    assert board.columns.count() == 0
 
 
 @pytest.mark.django_db
-def test_default_column_filter_configs():
+def test_four_default_statuses_created():
     user = User.objects.create_user()
-    slugs = set()
-    for col in Board.objects.get(user=user).columns.all():
-        statuses = col.filter_config.get("statuses", [])
-        slugs.update(statuses)
+    slugs = set(TaskStatus.objects.filter(user=user).values_list("slug", flat=True))
     assert slugs == {"backlog", "todo", "in_progress", "done"}
 
 
 @pytest.mark.django_db
-def test_default_column_order():
+def test_default_status_order():
     user = User.objects.create_user()
-    columns = list(Board.objects.get(user=user).columns.order_by("order"))
-    slugs = [col.filter_config.get("statuses", [None])[0] for col in columns]
-    assert slugs == ["backlog", "todo", "in_progress", "done"]
+    statuses = list(TaskStatus.objects.filter(user=user).order_by("order"))
+    assert [s.slug for s in statuses] == ["backlog", "todo", "in_progress", "done"]
 
 
 @pytest.mark.django_db
