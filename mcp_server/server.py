@@ -162,16 +162,28 @@ def update_task(
     status: str | None = None,
     due_date: str | None = None,
     tags: list[str] | None = None,
+    clear_notes: bool = False,
+    clear_due_date: bool = False,
 ) -> str:
-    """Update one or more fields on an existing task."""
+    """Update one or more fields on an existing task.
+
+    Omitted fields are left unchanged. notes and due_date can't be blanked
+    out just by omitting them (that means "leave as is"), so pass
+    clear_notes=True to empty the notes, or clear_due_date=True to remove
+    the due date.
+    """
     fields: dict[str, Any] = {}
     if title is not None:
         fields["title"] = title
-    if notes is not None:
+    if clear_notes:
+        fields["notes"] = ""
+    elif notes is not None:
         fields["notes"] = notes
     if status is not None:
         fields["status"] = status
-    if due_date is not None:
+    if clear_due_date:
+        fields["due_date"] = None
+    elif due_date is not None:
         fields["due_date"] = due_date
     if tags is not None:
         fields["tags"] = tags
