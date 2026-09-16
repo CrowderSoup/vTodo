@@ -2,6 +2,7 @@ import json
 import re
 import markdown as md
 from datetime import date, timedelta
+from urllib.parse import parse_qs, urlparse
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import Http404, HttpResponse
@@ -68,6 +69,71 @@ def _board_from_post(request):
     return board
 
 
+def _calendar_params_from_request(request):
+    """Infer (is_calendar, year, month) from the HX-Current-URL header, which htmx
+    sends on every request it fires -- including ones chained from the task panel --
+    so a mutation endpoint can tell whether the page that issued it is the calendar
+    or the board without threading an explicit 'origin' param through every card and
+    button. year/month come from that URL's own ?year=&month= (the calendar page's
+    bookmarkable state), defaulting to today's month if absent or unparsable."""
+    current_url = request.headers.get("HX-Current-URL", "")
+    parsed = urlparse(current_url)
+    if "/calendar/" not in parsed.path:
+        return False, None, None
+    qs = parse_qs(parsed.query)
+    today = timezone.localdate()
+    try:
+        year = int(qs.get("year", [today.year])[0])
+        month = int(qs.get("month", [today.month])[0])
+    except (ValueError, IndexError):
+        year, month = today.year, today.month
+    return True, year, month
+
+
+def _render_task_list_update(request, user, board, session):
+    """Re-render whichever content currently fills #task-list-content -- board
+    columns, or (if the request came from the calendar page) the calendar body --
+    since board.html and calendar.html share that container id."""
+    is_calendar, year, month = _calendar_params_from_request(request)
+    if is_calendar:
+        from .views_calendar import _build_calendar_context
+
+        context = _build_calendar_context(user, board, year, month, session)
+        return render(request, "calendar/_calendar_body.html", context)
+    context = _build_board_context(user, board, session)
+    return render(request, "boards/_columns.html", context)
+
+
+def _render_filter_response(request, user, board, session):
+    """Same page-detection as _render_task_list_update, for the filter-bar response
+    partials (which additionally re-render the filter bar itself, e.g. to update the
+    active-filter pills and the saved-view select)."""
+    is_calendar, year, month = _calendar_params_from_request(request)
+    if is_calendar:
+        from .views_calendar import _build_calendar_context
+
+        context = _build_calendar_context(user, board, year, month, session)
+        return render(request, "calendar/_filter_response.html", context)
+    context = _build_board_context(user, board, session)
+    return render(request, "boards/_filter_response.html", context)
+
+
+def _render_task_panel_with_list_update(request, user, task, board, session):
+    """The task panel response used after an action that changes something the
+    board/calendar list view itself needs to reflect (e.g. a status change via the
+    panel's own dropdown) -- merges the panel content with a full board-columns or
+    calendar-body OOB update, page-detected the same way as _render_task_list_update."""
+    context = _task_panel_context(user, task)
+    is_calendar, year, month = _calendar_params_from_request(request)
+    if is_calendar:
+        from .views_calendar import _build_calendar_context
+
+        context.update(_build_calendar_context(user, board, year, month, session))
+        return render(request, "partials/task_panel_calendar_response.html", context)
+    context.update(_build_board_context(user, board, session))
+    return render(request, "partials/task_panel_board_response.html", context)
+
+
 def _task_matches_assignee(task, assignee_filter, user):
     if not assignee_filter or assignee_filter == "any":
         return True
@@ -102,6 +168,26 @@ def _task_matches_column(task, filter_config, user):
         if not task.due_date or task.due_date < today or task.due_date > end:
             return False
     return True
+
+
+def _matching_saved_filter_name(saved_filters, tags, exclude_tags, due, assignee, hidden_lanes=None):
+    """The name of the SavedFilter (if any) whose filter_config exactly matches the
+    given filter values -- used to highlight the active saved view in the filter
+    bar's select. hidden_lanes is board-only (calendar has no lanes, so callers
+    there simply omit it and every saved filter's hidden_lanes -- always [] on a
+    board-created view too, unless lanes were hidden -- is compared against [])."""
+    hidden_lanes = sorted(hidden_lanes or [])
+    for sf in saved_filters:
+        sf_config = sf.filter_config
+        if (
+            sorted(sf_config.get("tags", [])) == sorted(tags)
+            and sorted(sf_config.get("exclude_tags", [])) == sorted(exclude_tags)
+            and sf_config.get("due", "") == due
+            and sf_config.get("assignee", "") == assignee
+            and sorted(sf_config.get("hidden_lanes", [])) == hidden_lanes
+        ):
+            return sf.name
+    return None
 
 
 def _status_context_for(user, team=None):
@@ -249,6 +335,7 @@ def _build_board_context(user, board, session=None):
     filter_tags = board_filter.get("tags", [])
     exclude_tags = board_filter.get("exclude_tags", [])
     filter_due = board_filter.get("due", "").strip()
+    filter_assignee = board_filter.get("assignee", "").strip()
     hidden_lane_keys = set(board_filter.get("hidden_lanes", []))
 
     all_tasks = list(board_tasks_qs(board).filter(is_archived=False).order_by("order", "created_at"))
@@ -266,6 +353,8 @@ def _build_board_context(user, board, session=None):
         elif filter_due == "this_week":
             end = today + timedelta(days=7)
             tasks = [t for t in tasks if t.due_date and today <= t.due_date <= end]
+    if filter_assignee:
+        tasks = [t for t in tasks if _task_matches_assignee(t, filter_assignee, user)]
 
     statuses, done_slug, active_slug = _status_context_for(user, board.team)
 
@@ -318,23 +407,9 @@ def _build_board_context(user, board, session=None):
         (hidden_lanes if key in hidden_lane_keys else lanes).append(lane)
 
     saved_filters = list(board.saved_filters.all())
-    active_saved_filter_name = None
-    current_config = {
-        "tags": filter_tags,
-        "exclude_tags": exclude_tags,
-        "due": filter_due,
-        "hidden_lanes": sorted(hidden_lane_keys),
-    }
-    for sf in saved_filters:
-        sf_config = sf.filter_config
-        if (
-            sorted(sf_config.get("tags", [])) == sorted(current_config["tags"])
-            and sorted(sf_config.get("exclude_tags", [])) == sorted(current_config["exclude_tags"])
-            and sf_config.get("due", "") == current_config["due"]
-            and sorted(sf_config.get("hidden_lanes", [])) == sorted(current_config["hidden_lanes"])
-        ):
-            active_saved_filter_name = sf.name
-            break
+    active_saved_filter_name = _matching_saved_filter_name(
+        saved_filters, filter_tags, exclude_tags, filter_due, filter_assignee, hidden_lane_keys
+    )
 
     return {
         "board": board,
@@ -346,6 +421,7 @@ def _build_board_context(user, board, session=None):
             "tags": filter_tags,
             "exclude_tags": exclude_tags,
             "due": filter_due,
+            "assignee": filter_assignee,
             "hidden_lanes": hidden_lanes,
         },
         "saved_filters": saved_filters,
@@ -356,7 +432,11 @@ def _build_board_context(user, board, session=None):
         "done_task_count": sum(1 for task in all_tasks if task.completed_at),
         "due_today_count": sum(1 for task in tasks if task.due_date == today and not task.completed_at),
         "overdue_count": sum(1 for task in tasks if task.due_date and task.due_date < today and not task.completed_at),
-        "active_filter_count": len(filter_tags) + len(exclude_tags) + len(hidden_lane_keys) + (1 if filter_due else 0),
+        "active_filter_count": (
+            len(filter_tags) + len(exclude_tags) + len(hidden_lane_keys)
+            + (1 if filter_due else 0) + (1 if filter_assignee else 0)
+        ),
+        "team_members": list(board.team.memberships.select_related("user")) if board.team_id else [],
     }
 
 
@@ -374,15 +454,16 @@ class BoardFilterView(LoginRequiredMixin, View):
         tags = request.POST.getlist("tags")
         exclude_tags = request.POST.getlist("exclude_tags")
         due = request.POST.get("due", "").strip()
+        assignee = request.POST.get("assignee", "").strip()
         hidden_lanes = request.POST.getlist("hidden_lanes")
         _set_board_filter(request, board, {
             "tags": tags,
             "exclude_tags": exclude_tags,
             "due": due,
+            "assignee": assignee,
             "hidden_lanes": hidden_lanes,
         })
-        context = _build_board_context(request.user, board, request.session)
-        return render(request, "boards/_filter_response.html", context)
+        return _render_filter_response(request, request.user, board, request.session)
 
 
 class BoardFilterAddTagView(LoginRequiredMixin, View):
@@ -395,6 +476,7 @@ class BoardFilterAddTagView(LoginRequiredMixin, View):
         current_tags = board_filter.get("tags", [])
         exclude_tags = [t for t in board_filter.get("exclude_tags", []) if t != tag]
         due = board_filter.get("due", "")
+        assignee = board_filter.get("assignee", "")
         hidden_lanes = board_filter.get("hidden_lanes", [])
         if tag and tag not in current_tags:
             current_tags = current_tags + [tag]
@@ -402,10 +484,10 @@ class BoardFilterAddTagView(LoginRequiredMixin, View):
             "tags": current_tags,
             "exclude_tags": exclude_tags,
             "due": due,
+            "assignee": assignee,
             "hidden_lanes": hidden_lanes,
         })
-        context = _build_board_context(request.user, board, request.session)
-        return render(request, "boards/_filter_response.html", context)
+        return _render_filter_response(request, request.user, board, request.session)
 
 
 class BoardFilterExcludeTagView(LoginRequiredMixin, View):
@@ -418,6 +500,7 @@ class BoardFilterExcludeTagView(LoginRequiredMixin, View):
         current_tags = [t for t in board_filter.get("tags", []) if t != tag]
         exclude_tags = board_filter.get("exclude_tags", [])
         due = board_filter.get("due", "")
+        assignee = board_filter.get("assignee", "")
         hidden_lanes = board_filter.get("hidden_lanes", [])
         if tag and tag not in exclude_tags:
             exclude_tags = exclude_tags + [tag]
@@ -425,10 +508,10 @@ class BoardFilterExcludeTagView(LoginRequiredMixin, View):
             "tags": current_tags,
             "exclude_tags": exclude_tags,
             "due": due,
+            "assignee": assignee,
             "hidden_lanes": hidden_lanes,
         })
-        context = _build_board_context(request.user, board, request.session)
-        return render(request, "boards/_filter_response.html", context)
+        return _render_filter_response(request, request.user, board, request.session)
 
 
 def _resolve_lane_and_board(user, lane_key):
@@ -619,12 +702,9 @@ class TaskMoveView(LoginRequiredMixin, View):
 
         board = _board_for_task(task)
         if request.headers.get("HX-Target") == "task-panel-content":
-            context = _task_panel_context(request.user, task)
-            context.update(_build_board_context(request.user, board, request.session))
-            return render(request, "partials/task_panel_board_response.html", context)
+            return _render_task_panel_with_list_update(request, request.user, task, board, request.session)
 
-        context = _build_board_context(request.user, board, request.session)
-        return render(request, "boards/_columns.html", context)
+        return _render_task_list_update(request, request.user, board, request.session)
 
 
 class TaskAssignView(LoginRequiredMixin, View):
@@ -685,7 +765,12 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
         if team is False:
             team = None
         board = _board_for_team(request.user, team)
-        context = _task_panel_create_context(request.user, board, request.GET.get("lane", "").strip())
+        context = _task_panel_create_context(
+            request.user,
+            board,
+            request.GET.get("lane", "").strip(),
+            form_values={"due_date": request.GET.get("due_date", "").strip()},
+        )
         return render(request, "partials/task_panel_create.html", context)
 
     def post(self, request):
@@ -731,9 +816,7 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
             recurrence_from=recurrence_from,
         )
 
-        panel_context = _task_panel_context(request.user, task)
-        panel_context.update(_build_board_context(request.user, board, request.session))
-        return render(request, "partials/task_panel_board_response.html", panel_context)
+        return _render_task_panel_with_list_update(request, request.user, task, board, request.session)
 
 
 class TaskPanelEditView(LoginRequiredMixin, View):
@@ -772,6 +855,8 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
         task.save(update_fields=["title", "notes", "due_date", "tags", "recurrence_days", "recurrence_from", "updated_at"])
 
         context = _task_panel_context(request.user, task)
+        is_calendar, _, _ = _calendar_params_from_request(request)
+        context["is_calendar"] = is_calendar
         return render(request, "partials/task_panel_update_response.html", context)
 
 
@@ -830,8 +915,7 @@ class SavedFilterLoadView(LoginRequiredMixin, View):
             raise Http404()
         board = saved_filter.board
         _set_board_filter(request, board, saved_filter.filter_config)
-        context = _build_board_context(request.user, board, request.session)
-        return render(request, "boards/_filter_response.html", context)
+        return _render_filter_response(request, request.user, board, request.session)
 
 
 class SavedFilterSaveView(LoginRequiredMixin, View):
@@ -839,16 +923,14 @@ class SavedFilterSaveView(LoginRequiredMixin, View):
         board = _board_from_post(request)
         name = request.POST.get("name", "").strip()
         if not name:
-            context = _build_board_context(request.user, board, request.session)
-            return render(request, "boards/_filter_response.html", context)
+            return _render_filter_response(request, request.user, board, request.session)
         filter_config = _board_filter_for(board, request.session)
         SavedFilter.objects.update_or_create(
             board=board,
             name=name,
             defaults={"filter_config": filter_config},
         )
-        context = _build_board_context(request.user, board, request.session)
-        return render(request, "boards/_filter_response.html", context)
+        return _render_filter_response(request, request.user, board, request.session)
 
 
 class SavedFilterDeleteView(LoginRequiredMixin, View):
@@ -858,5 +940,4 @@ class SavedFilterDeleteView(LoginRequiredMixin, View):
             raise Http404()
         board = saved_filter.board
         saved_filter.delete()
-        context = _build_board_context(request.user, board, request.session)
-        return render(request, "boards/_filter_response.html", context)
+        return _render_filter_response(request, request.user, board, request.session)

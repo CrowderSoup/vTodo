@@ -2,7 +2,7 @@
   <div class="filter-group">
     <label class="field-label" for="saved-filter-select">Saved views</label>
     <select id="saved-filter-select"
-            onchange="if(this.value) htmx.ajax('POST', this.value, {target:'#board-content', swap:'innerHTML'})">
+            onchange="if(this.value) htmx.ajax('POST', this.value, {target:'#task-list-content', swap:'innerHTML'})">
       <option value="">Choose a saved view</option>
       {% for sf in saved_filters %}
       <option value="{% url 'boards:filter-load' sf.pk %}"
@@ -16,10 +16,11 @@
   <form id="board-filter-form"
         class="filter-form"
         hx-post="{% url 'boards:board-filter' %}"
-        hx-target="#board-content"
+        hx-target="#task-list-content"
         hx-swap="innerHTML"
         hx-trigger="change">
     <input type="hidden" name="board_id" value="{{ board.pk }}">
+    {% if not hide_due_filter %}
     <div class="filter-group">
       <label class="field-label" for="board-filter-due">Due date</label>
       <select id="board-filter-due" name="due">
@@ -29,6 +30,21 @@
         <option value="this_week" {% if active_filter.due == "this_week" %}selected{% endif %}>Due this week</option>
       </select>
     </div>
+    {% endif %}
+
+    {% if team_members %}
+    <div class="filter-group">
+      <label class="field-label" for="board-filter-assignee">Assignee</label>
+      <select id="board-filter-assignee" name="assignee">
+        <option value="" {% if not active_filter.assignee %}selected{% endif %}>Anyone</option>
+        <option value="me" {% if active_filter.assignee == "me" %}selected{% endif %}>Me</option>
+        <option value="unassigned" {% if active_filter.assignee == "unassigned" %}selected{% endif %}>Unassigned</option>
+        {% for membership in team_members %}
+        <option value="{{ membership.user.pk }}" {% if active_filter.assignee == membership.user.pk|stringformat:"s" %}selected{% endif %}>{{ membership.user.display_name|default:membership.user.username }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
 
     {% if active_filter.tags or active_filter.exclude_tags or active_filter.hidden_lanes %}
     <div class="filter-active">
@@ -59,12 +75,12 @@
     <span class="pill">{{ active_filter_count }} active filter{{ active_filter_count|pluralize }}</span>
     {% endif %}
 
-    {% if active_filter.tags or active_filter.exclude_tags or active_filter.due or active_filter.hidden_lanes %}
+    {% if active_filter.tags or active_filter.exclude_tags or active_filter.due or active_filter.assignee or active_filter.hidden_lanes %}
     <div class="save-filter-container">
       <button class="btn-ghost btn-small" type="button" data-disclosure-toggle>Save view</button>
       <div class="save-filter-popover">
         <form hx-post="{% url 'boards:filter-save' %}"
-              hx-target="#board-content"
+              hx-target="#task-list-content"
               hx-swap="innerHTML"
               hx-include="#board-filter-form">
           {% csrf_token %}
@@ -75,7 +91,7 @@
     </div>
 
     <form hx-post="{% url 'boards:board-filter' %}"
-          hx-target="#board-content"
+          hx-target="#task-list-content"
           hx-swap="innerHTML">
       <input type="hidden" name="board_id" value="{{ board.pk }}">
       <button type="submit" class="btn-ghost btn-small">Clear filters</button>

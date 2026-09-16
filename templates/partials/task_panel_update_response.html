@@ -1,2 +1,6 @@
 {% include "partials/task_panel_content.html" %}
+{% if is_calendar %}
+{% include "partials/task_card_calendar.html" with oob_swap=True %}
+{% else %}
 {% with oob_swap=True %}{% include "partials/task_card.html" %}{% endwith %}
+{% endif %}

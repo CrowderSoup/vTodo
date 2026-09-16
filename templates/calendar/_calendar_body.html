@@ -1,0 +1,13 @@
+<div class="calendar-grid-wrap">
+  {% include "calendar/_month_grid.html" %}
+</div>
+<aside class="calendar-nodate-pane">
+  <h3 class="calendar-nodate-title">No due date</h3>
+  <div class="calendar-nodate-list calendar-drop-zone" data-date="">
+    {% for task in undated_tasks %}
+    {% include "partials/task_card.html" %}
+    {% empty %}
+    <div class="task-empty">Nothing undated. Drag a card here to clear its due date.</div>
+    {% endfor %}
+  </div>
+</aside>

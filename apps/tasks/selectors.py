@@ -106,6 +106,17 @@ def move_task(user, task, new_status_slug):
     return task
 
 
+def reschedule_task(user, task, new_due_date):
+    """Move a task to a new due_date, or clear it. Clears due_time too when the
+    date is cleared, since a time-of-day is meaningless without a date -- otherwise
+    a later re-add of a due_date would silently resurrect a stale due_time."""
+    task.due_date = new_due_date
+    if new_due_date is None:
+        task.due_time = None
+    task.save(update_fields=["due_date", "due_time", "updated_at"])
+    return task
+
+
 def assign_task(actor, task, new_assignee):
     from apps.teams.models import TeamMembership
 

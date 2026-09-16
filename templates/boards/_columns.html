@@ -36,12 +36,12 @@
             Add task
           </button>
           <button hx-post="{{ lane.hide_url }}"
-                  hx-target="#board-content"
+                  hx-target="#task-list-content"
                   hx-swap="innerHTML">
             Hide lane
           </button>
           <button hx-post="{{ lane.archive_url }}"
-                  hx-target="#board-content"
+                  hx-target="#task-list-content"
                   hx-swap="innerHTML"
                   hx-confirm="Archive all {{ lane.tasks|length }} card{% if lane.tasks|length != 1 %}s{% endif %} in &ldquo;{{ lane.label }}&rdquo;?">
             Archive all cards

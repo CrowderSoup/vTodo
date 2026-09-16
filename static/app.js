@@ -193,7 +193,7 @@
   }
 
   function closeOpenDisclosures(exception) {
-    document.querySelectorAll(".col-actions-menu.open, .save-filter-popover.open").forEach(function (menu) {
+    document.querySelectorAll(".col-actions-menu.open, .save-filter-popover.open, .calendar-day-popover.open").forEach(function (menu) {
       if (menu !== exception) {
         menu.classList.remove("open");
       }
@@ -446,7 +446,7 @@
       event.preventDefault();
       targetColumn.classList.remove("col-drag-over");
 
-      var board = document.getElementById("board-content");
+      var board = document.getElementById("task-list-content");
       if (!board) {
         return;
       }
@@ -520,7 +520,7 @@
       });
     } else {
       window.htmx.ajax("POST", "/board/tasks/" + taskId + "/move/", {
-        target: "#board-content",
+        target: "#task-list-content",
         swap: "innerHTML",
         values: { new_status: list.dataset.defaultStatus },
       });
@@ -669,6 +669,58 @@
     }
     draggingStatusId = null;
     draggingStatusScope = null;
+  });
+
+  // Calendar: drag a task card onto a day cell or the no-date pane to reschedule
+  // it. Uses a distinct .calendar-drop-zone class (never .task-list) so this never
+  // double-fires alongside the board's own .task-list drag handling above.
+  document.addEventListener("dragover", function (event) {
+    var zone = event.target.closest(".calendar-drop-zone");
+    if (!zone) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    document.querySelectorAll(".calendar-drop-zone.drag-over").forEach(function (candidate) {
+      if (candidate !== zone) {
+        candidate.classList.remove("drag-over");
+      }
+    });
+    zone.classList.add("drag-over");
+  });
+
+  document.addEventListener("dragleave", function (event) {
+    var zone = event.target.closest(".calendar-drop-zone");
+    if (zone && !zone.contains(event.relatedTarget)) {
+      zone.classList.remove("drag-over");
+    }
+  });
+
+  document.addEventListener("dragend", function () {
+    document.querySelectorAll(".calendar-drop-zone.drag-over").forEach(function (zone) {
+      zone.classList.remove("drag-over");
+    });
+  });
+
+  document.addEventListener("drop", function (event) {
+    var zone = event.target.closest(".calendar-drop-zone");
+    if (!zone) {
+      return;
+    }
+    event.preventDefault();
+    zone.classList.remove("drag-over");
+
+    var taskId = event.dataTransfer.getData("text/plain");
+    var card = document.getElementById("task-" + taskId);
+    if (card && card.closest(".calendar-drop-zone") === zone) {
+      return;
+    }
+
+    window.htmx.ajax("POST", "/calendar/tasks/" + taskId + "/reschedule/", {
+      target: "#task-list-content",
+      swap: "innerHTML",
+      values: { due_date: zone.dataset.date || "" },
+    });
   });
 
   document.addEventListener("htmx:confirm", function (event) {
