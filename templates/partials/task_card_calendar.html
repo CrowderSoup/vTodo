@@ -1,0 +1,13 @@
+<article class="task-card task-card--compact{% if task.completed_at %} task-card--complete{% endif %}{% if task.due_date and not task.completed_at and task.due_date < today %} task-card--overdue{% endif %}"
+         id="task-{{ task.pk }}"
+         draggable="true"
+         data-task-id="{{ task.pk }}"
+         data-status="{{ task.status }}"{% if oob_swap %} hx-swap-oob="true"{% endif %}>
+  <span class="cal-task-dot" style="background: {% for status in statuses %}{% if status.slug == task.status %}{{ status.color|default:"var(--accent)" }}{% endif %}{% endfor %};"></span>
+  {% if task.due_time %}<span class="cal-task-time">{{ task.due_time|time:"H:i" }}</span>{% endif %}
+  <button class="task-title-btn"
+          hx-get="{% url 'boards:task-panel' task.pk %}"
+          hx-target="#task-panel-content"
+          hx-swap="innerHTML"
+          hx-on::after-request="openTaskPanel()">{{ task.title|truncatechars:28 }}</button>
+</article>

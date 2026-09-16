@@ -13,6 +13,7 @@ urlpatterns = [
     path("accounts/", include("allauth.urls")),
     path("auth/email/", include("apps.emailauth.urls", namespace="emailauth")),
     path("board/", include("apps.boards.urls", namespace="boards")),
+    path("calendar/", include("apps.boards.urls_calendar", namespace="calendar")),
     path("settings/", include("apps.users.urls", namespace="users")),
     path("teams/", include("apps.teams.urls", namespace="teams")),
     path("admin-panel/", include("apps.siteadmin.urls", namespace="siteadmin")),

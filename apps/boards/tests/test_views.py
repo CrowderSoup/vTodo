@@ -355,7 +355,7 @@ def test_task_panel_create_creates_task_and_refreshes_board(logged_in_client):
     assert task.notes == "Fresh context"
     assert task.tags == ["ops", "urgent"]
     assert 'hx-swap-oob="innerHTML"' in content
-    assert 'id="board-content"' in content
+    assert 'id="task-list-content"' in content
     assert 'id="task-comment-form"' in content
 
 
@@ -466,7 +466,7 @@ def test_task_move_from_panel_refreshes_panel_and_board(logged_in_client):
 
     assert response.status_code == 200
     assert task.status == "in_progress"
-    assert 'id="board-content"' in content
+    assert 'id="task-list-content"' in content
     assert 'hx-swap-oob="innerHTML"' in content
     assert f'id="task-panel-status-{task.pk}"' in content
     assert 'id="task-comment-form"' in content

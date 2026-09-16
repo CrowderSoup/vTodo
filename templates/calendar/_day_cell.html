@@ -1,0 +1,23 @@
+<div class="calendar-day-cell{% if not cell.in_month %} calendar-day-cell--outside{% endif %}{% if cell.is_today %} calendar-day-cell--today{% endif %}">
+  <div class="calendar-day-header">
+    <span class="calendar-day-number">{{ cell.date.day }}</span>
+    <button class="calendar-day-add" type="button" title="Add task"
+            hx-get="{% url 'boards:task-panel-create' %}?due_date={{ cell.date|date:'Y-m-d' }}&team={{ board.team_id|default:'' }}"
+            hx-target="#task-panel-content"
+            hx-swap="innerHTML"
+            hx-on::after-request="openTaskPanel()">+</button>
+  </div>
+  <div class="calendar-day-tasks calendar-drop-zone" data-date="{{ cell.date|date:'Y-m-d' }}">
+    {% for task in cell.tasks %}
+    {% include "partials/task_card_calendar.html" %}
+    {% endfor %}
+    {% if cell.overflow_count %}
+    <button class="calendar-day-more" type="button" data-disclosure-toggle>+{{ cell.overflow_count }} more</button>
+    <div class="calendar-day-popover">
+      {% for task in cell.overflow_tasks %}
+      {% include "partials/task_card_calendar.html" %}
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>

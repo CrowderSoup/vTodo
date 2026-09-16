@@ -1,0 +1,18 @@
+<div class="calendar-month-grid">
+  <div class="calendar-weekday-row">
+    <span class="calendar-weekday">Mon</span>
+    <span class="calendar-weekday">Tue</span>
+    <span class="calendar-weekday">Wed</span>
+    <span class="calendar-weekday">Thu</span>
+    <span class="calendar-weekday">Fri</span>
+    <span class="calendar-weekday">Sat</span>
+    <span class="calendar-weekday">Sun</span>
+  </div>
+  {% for week in weeks %}
+  <div class="calendar-week-row">
+    {% for cell in week %}
+    {% include "calendar/_day_cell.html" %}
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>

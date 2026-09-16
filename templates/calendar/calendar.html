@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block body_class %}page-calendar{% endblock %}
+{% block title %}Calendar — vtodo{% endblock %}
+
+{% block content %}
+<section class="page-shell">
+  {% if user_teams %}
+  <nav class="settings-subnav" aria-label="Calendars">
+    <a class="settings-subnav-link {% if not board.team_id %}is-active{% endif %}" href="{% url 'calendar:calendar' %}">Personal</a>
+    {% for team in user_teams %}
+    <a class="settings-subnav-link {% if board.team_id == team.pk %}is-active{% endif %}" href="{% url 'calendar:calendar-team' team.pk %}">{{ team.name }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
+  <section class="surface-panel board-controls">
+    <div id="board-filter">{% include "boards/_filter_bar.html" %}</div>
+  </section>
+
+  <div class="calendar-nav">
+    <a class="btn-ghost btn-small" href="?year={{ prev_year }}&month={{ prev_month }}" aria-label="Previous month">‹ Prev</a>
+    <h2 class="calendar-month-label">{{ month_label }}</h2>
+    <a class="btn-ghost btn-small" href="?year={{ today_year }}&month={{ today_month }}">Today</a>
+    <a class="btn-ghost btn-small" href="?year={{ next_year }}&month={{ next_month }}" aria-label="Next month">Next ›</a>
+  </div>
+
+  <div id="task-list-content" class="calendar-layout">
+    {% include "calendar/_calendar_body.html" %}
+  </div>
+
+  <button class="board-fab"
+          type="button"
+          title="Add task"
+          aria-label="Add task"
+          hx-get="{% url 'boards:task-panel-create' %}?team={{ board.team_id|default:'' }}"
+          hx-target="#task-panel-content"
+          hx-swap="innerHTML"
+          hx-on::after-request="openTaskPanel()">
+    <span class="board-fab-mark">+</span>
+    <span class="board-fab-label">New task</span>
+  </button>
+</section>
+{% endblock %}
