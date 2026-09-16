@@ -193,8 +193,12 @@
   }
 
   function closeOpenDisclosures(exception) {
-    document.querySelectorAll(".col-actions-menu.open, .save-filter-popover.open, .calendar-day-popover.open").forEach(function (menu) {
-      if (menu !== exception) {
+    // "Save view" nests inside the filter bar's own popover, so closing every
+    // open disclosure except the exact exception would collapse the filter
+    // popover out from under it the moment Save view opens. Skip an open menu
+    // that's an ancestor of the exception, not just the exception itself.
+    document.querySelectorAll(".col-actions-menu.open, .save-filter-popover.open, .calendar-day-popover.open, .filter-bar-popover.open").forEach(function (menu) {
+      if (menu !== exception && !(exception && menu.contains(exception))) {
         menu.classList.remove("open");
       }
     });
@@ -302,7 +306,7 @@
       return;
     }
 
-    if (!event.target.closest(".column-actions") && !event.target.closest(".save-filter-container")) {
+    if (!event.target.closest(".column-actions") && !event.target.closest(".save-filter-container") && !event.target.closest(".filter-bar-trigger-container")) {
       closeOpenDisclosures(null);
     }
   });

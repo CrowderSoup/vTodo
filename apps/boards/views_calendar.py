@@ -48,7 +48,7 @@ def _build_calendar_context(user, board, year, month, session=None):
     # board's "due" session filter is deliberately never read here -- month
     # navigation is the calendar's equivalent of that filter.
 
-    cal = calendar_module.Calendar(firstweekday=0)
+    cal = calendar_module.Calendar(firstweekday=6)  # Sunday-start weeks
     weeks = cal.monthdatescalendar(year, month)
     grid_start, grid_end = weeks[0][0], weeks[-1][-1]
 

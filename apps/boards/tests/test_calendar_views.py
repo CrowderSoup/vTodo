@@ -64,13 +64,23 @@ def test_calendar_view_garbage_month_falls_back_to_today(logged_in_client):
 
 @pytest.mark.django_db
 def test_calendar_row_count_matches_stdlib_month_grid(logged_in_client):
-    """weeks length matches calendar.Calendar(firstweekday=0).monthdatescalendar --
-    covers both 5-row and 6-row months without hardcoding which real months those are."""
+    """weeks length matches calendar.Calendar(firstweekday=6).monthdatescalendar
+    (Sunday-start) -- covers both 4/5-row and 6-row months without hardcoding
+    which real months those are."""
     client, _ = logged_in_client
     for year, month in ((2026, 2), (2026, 8)):
-        expected = calendar_module.Calendar(firstweekday=0).monthdatescalendar(year, month)
+        expected = calendar_module.Calendar(firstweekday=6).monthdatescalendar(year, month)
         response = client.get(reverse("calendar:calendar"), {"year": year, "month": month})
         assert len(response.context["weeks"]) == len(expected)
+
+
+@pytest.mark.django_db
+def test_calendar_weeks_start_on_sunday(logged_in_client):
+    client, _ = logged_in_client
+    response = client.get(reverse("calendar:calendar"), {"year": 2026, "month": 4})
+    for week in response.context["weeks"]:
+        assert week[0]["date"].weekday() == 6  # Sunday
+        assert week[-1]["date"].weekday() == 5  # Saturday
 
 
 @pytest.mark.django_db
@@ -78,12 +88,12 @@ def test_task_on_adjacent_month_day_appears_in_its_visible_cell(logged_in_client
     """A task due on a leading/trailing day from an adjacent month, but still shown
     in the visible grid, appears in that cell (not silently dropped)."""
     client, user = logged_in_client
-    weeks = calendar_module.Calendar(firstweekday=0).monthdatescalendar(2026, 2)
+    weeks = calendar_module.Calendar(firstweekday=6).monthdatescalendar(2026, 4)
     leading_day = weeks[0][0]
-    assert leading_day.month != 2  # sanity: actually a leading day from January
+    assert leading_day.month != 4  # sanity: actually a leading day from March
 
     Task.objects.create(user=user, title="Leading day task", status="todo", due_date=leading_day)
-    response = client.get(reverse("calendar:calendar"), {"year": 2026, "month": 2})
+    response = client.get(reverse("calendar:calendar"), {"year": 2026, "month": 4})
 
     first_cell = response.context["weeks"][0][0]
     assert first_cell["date"] == leading_day

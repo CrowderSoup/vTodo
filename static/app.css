@@ -636,8 +636,71 @@ hr {
 .board-filter-bar {
   display: flex;
   flex-wrap: wrap;
-  align-items: end;
-  gap: 0.75rem;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.filter-bar-trigger-container {
+  position: relative;
+}
+
+.filter-bar-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.filter-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.3rem;
+  height: 1.3rem;
+  padding: 0 0.32rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.filter-bar-popover {
+  display: none;
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  left: 0;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-width: 18rem;
+  padding: 0.7rem;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(22px);
+  z-index: 30;
+}
+
+.filter-bar-popover.open {
+  display: flex;
+}
+
+.filter-bar-popover .filter-form {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.filter-bar-popover .filter-group {
+  min-width: 100%;
+}
+
+.filter-bar-popover .board-filter-actions {
+  margin-left: 0;
+  justify-content: space-between;
+}
+
+#filter-pills-form {
+  display: contents;
 }
 
 .filter-group {
