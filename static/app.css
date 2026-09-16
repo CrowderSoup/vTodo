@@ -627,17 +627,9 @@ hr {
   box-shadow: var(--shadow-sm);
 }
 
-.board-controls {
-  padding: 0.8rem 0.9rem;
-  position: relative;
-  z-index: 1;
-}
-
-.board-filter-bar {
+.nav-filter-slot {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 0.55rem;
 }
 
 .filter-bar-trigger-container {
@@ -668,17 +660,20 @@ hr {
   display: none;
   position: absolute;
   top: calc(100% + 0.6rem);
-  left: 0;
+  right: 0;
   flex-direction: column;
   gap: 0.65rem;
   min-width: 18rem;
+  max-width: min(90vw, 22rem);
+  max-height: calc(100vh - 5rem);
+  overflow-y: auto;
   padding: 0.7rem;
   border-radius: 12px;
   background: var(--panel);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
   backdrop-filter: blur(22px);
-  z-index: 30;
+  z-index: 45;
 }
 
 .filter-bar-popover.open {
@@ -697,10 +692,6 @@ hr {
 .filter-bar-popover .board-filter-actions {
   margin-left: 0;
   justify-content: space-between;
-}
-
-#filter-pills-form {
-  display: contents;
 }
 
 .filter-group {
@@ -2092,7 +2083,6 @@ textarea:has(+ .EasyMDEContainer) {
     font-size: 0.96rem;
   }
 
-  .board-filter-bar,
   .filter-form,
   .settings-grid,
   .token-shell,

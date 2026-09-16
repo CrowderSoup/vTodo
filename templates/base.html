@@ -48,6 +48,8 @@
 
       <span class="nav-spacer"></span>
 
+      <div id="board-filter" class="nav-filter-slot">{% if board %}{% include "boards/_filter_bar.html" %}{% endif %}</div>
+
       <div class="nav-meta">
         <div class="user-chip">
           {% if user.avatar_url %}
