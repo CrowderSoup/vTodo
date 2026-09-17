@@ -147,10 +147,19 @@ def create_task(
     notes: str | None = None,
     status: str | None = None,
     due_date: str | None = None,
+    due_time: str | None = None,
+    duration_minutes: int | None = None,
     tags: list[str] | None = None,
     team_id: int | None = None,
+    recurrence_days: int | None = None,
+    recurrence_from: str | None = None,
 ) -> str:
-    """Create a new task. due_date format: YYYY-MM-DD.
+    """Create a new task. due_date format: YYYY-MM-DD, due_time format: HH:MM.
+
+    duration_minutes is only meaningful alongside due_time. To make the task
+    recurring, set recurrence_days (how many days after it's next due) and
+    optionally recurrence_from ("completion" (default) or "due_date" — which
+    date the next recurrence counts forward from).
 
     Pass team_id to create a shared task on that team instead of a personal
     one — status must then be one of that team's status slugs (see
@@ -158,7 +167,16 @@ def create_task(
     """
     try:
         return _ok(_current_client().create_task(
-            title, notes=notes, status=status, due_date=due_date, tags=tags, team_id=team_id
+            title,
+            notes=notes,
+            status=status,
+            due_date=due_date,
+            due_time=due_time,
+            duration_minutes=duration_minutes,
+            tags=tags,
+            team_id=team_id,
+            recurrence_days=recurrence_days,
+            recurrence_from=recurrence_from,
         ))
     except VtodoAPIError as e:
         return _err(e)
@@ -171,18 +189,29 @@ def update_task(
     notes: str | None = None,
     status: str | None = None,
     due_date: str | None = None,
+    due_time: str | None = None,
+    duration_minutes: int | None = None,
     tags: list[str] | None = None,
     archived: bool | None = None,
+    recurrence_days: int | None = None,
+    recurrence_from: str | None = None,
     clear_notes: bool = False,
     clear_due_date: bool = False,
+    clear_due_time: bool = False,
+    clear_duration: bool = False,
+    clear_recurrence: bool = False,
 ) -> str:
     """Update one or more fields on an existing task.
 
-    Omitted fields are left unchanged. notes and due_date can't be blanked
-    out just by omitting them (that means "leave as is"), so pass
-    clear_notes=True to empty the notes, or clear_due_date=True to remove
-    the due date. Pass archived=True/False to archive or unarchive the task
-    without deleting it.
+    Omitted fields are left unchanged. notes, due_date, due_time,
+    duration_minutes, and recurrence_days can't be blanked out just by
+    omitting them (that means "leave as is"), so pass clear_notes=True,
+    clear_due_date=True, clear_due_time=True, clear_duration=True, or
+    clear_recurrence=True to empty them. Clearing due_date also clears
+    due_time (a time-of-day is meaningless without a date), unless you pass
+    a new due_time in the same call. Pass archived=True/False to archive or
+    unarchive the task without deleting it. due_time format: HH:MM.
+    recurrence_from is "completion" (default) or "due_date".
     """
     fields: dict[str, Any] = {}
     if title is not None:
@@ -195,12 +224,27 @@ def update_task(
         fields["status"] = status
     if clear_due_date:
         fields["due_date"] = None
+        fields["due_time"] = None
     elif due_date is not None:
         fields["due_date"] = due_date
+    if clear_due_time:
+        fields["due_time"] = None
+    elif due_time is not None:
+        fields["due_time"] = due_time
+    if clear_duration:
+        fields["duration_minutes"] = None
+    elif duration_minutes is not None:
+        fields["duration_minutes"] = duration_minutes
     if tags is not None:
         fields["tags"] = tags
     if archived is not None:
         fields["is_archived"] = archived
+    if clear_recurrence:
+        fields["recurrence_days"] = None
+    elif recurrence_days is not None:
+        fields["recurrence_days"] = recurrence_days
+    if recurrence_from is not None:
+        fields["recurrence_from"] = recurrence_from
     try:
         return _ok(_current_client().update_task(id, **fields))
     except VtodoAPIError as e:
