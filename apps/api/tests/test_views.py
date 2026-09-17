@@ -40,6 +40,97 @@ def test_task_list_filters_by_team(api_client_for):
 
 
 @pytest.mark.django_db
+def test_task_list_excludes_tags(api_client_for):
+    user = User.objects.create_user()
+    keep = Task.objects.create(user=user, title="Keep", status="todo", tags=["work"])
+    Task.objects.create(user=user, title="Drop", status="todo", tags=["home"])
+    client = api_client_for(user)
+
+    response = client.get(reverse("task-list"), {"exclude_tags": "home"})
+
+    titles = {t["title"] for t in response.data}
+    assert titles == {"Keep"}
+    assert keep.title in titles
+
+
+@pytest.mark.django_db
+def test_task_patch_can_set_is_archived(api_client_for):
+    user = User.objects.create_user()
+    task = Task.objects.create(user=user, title="Stale", status="done")
+    client = api_client_for(user)
+
+    response = client.patch(reverse("task-detail", kwargs={"pk": task.pk}), {"is_archived": True})
+
+    assert response.status_code == 200
+    task.refresh_from_db()
+    assert task.is_archived is True
+
+
+@pytest.mark.django_db
+def test_task_reorder_updates_order(api_client_for):
+    user = User.objects.create_user()
+    a = Task.objects.create(user=user, title="A", status="todo", order=0)
+    b = Task.objects.create(user=user, title="B", status="todo", order=1)
+    client = api_client_for(user)
+
+    response = client.post(reverse("task-reorder"), {"order": [b.pk, a.pk]}, format="json")
+
+    assert response.status_code == 204
+    a.refresh_from_db()
+    b.refresh_from_db()
+    assert b.order == 0
+    assert a.order == 1
+
+
+@pytest.mark.django_db
+def test_task_reorder_ignores_tasks_not_visible_to_user(api_client_for):
+    user = User.objects.create_user()
+    other = User.objects.create_user()
+    mine = Task.objects.create(user=user, title="Mine", status="todo", order=0)
+    theirs = Task.objects.create(user=other, title="Theirs", status="todo", order=0)
+    client = api_client_for(user)
+
+    response = client.post(reverse("task-reorder"), {"order": [mine.pk, theirs.pk]}, format="json")
+
+    assert response.status_code == 204
+    theirs.refresh_from_db()
+    assert theirs.order == 0
+
+
+@pytest.mark.django_db
+def test_status_reorder_updates_order(api_client_for):
+    from apps.tasks.models import TaskStatus
+
+    user = User.objects.create_user()
+    s1 = TaskStatus.objects.create(user=user, name="Blocked", slug="blocked", order=10)
+    s2 = TaskStatus.objects.create(user=user, name="Review", slug="review", order=11)
+    client = api_client_for(user)
+
+    response = client.post(reverse("taskstatus-reorder"), {"order": [s2.pk, s1.pk]}, format="json")
+
+    assert response.status_code == 204
+    s1.refresh_from_db()
+    s2.refresh_from_db()
+    assert s2.order == 0
+    assert s1.order == 1
+
+
+@pytest.mark.django_db
+def test_status_reorder_rejects_another_users_statuses(api_client_for):
+    from apps.tasks.models import TaskStatus
+
+    user = User.objects.create_user()
+    outsider = User.objects.create_user()
+    mine = TaskStatus.objects.create(user=user, name="Blocked", slug="blocked", order=10)
+    theirs = TaskStatus.objects.create(user=outsider, name="Blocked", slug="blocked", order=10)
+    client = api_client_for(user)
+
+    response = client.post(reverse("taskstatus-reorder"), {"order": [mine.pk, theirs.pk]}, format="json")
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
 def test_assign_action_success(api_client_for):
     user = User.objects.create_user()
     team = Team.objects.create(name="Rocketry")

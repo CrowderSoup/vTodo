@@ -38,6 +38,7 @@ class VtodoClient:
         self,
         status: str | None = None,
         tags: list[str] | None = None,
+        exclude_tags: list[str] | None = None,
         team_id: int | None = None,
     ) -> list[dict]:
         params: dict[str, Any] = {}
@@ -45,11 +46,17 @@ class VtodoClient:
             params["status"] = status
         if tags:
             params["tags"] = tags
+        if exclude_tags:
+            params["exclude_tags"] = exclude_tags
         if team_id is not None:
             params["team"] = team_id
         r = self._session.get(f"{self._base}/tasks/", params=params)
         self._raise(r)
         return r.json()
+
+    def reorder_tasks(self, order: list[int]) -> None:
+        r = self._session.post(f"{self._base}/tasks/reorder/", json={"order": order})
+        self._raise(r)
 
     def get_task(self, task_id: int) -> dict:
         r = self._session.get(f"{self._base}/tasks/{task_id}/")
@@ -143,6 +150,10 @@ class VtodoClient:
 
     def delete_status(self, slug: str) -> None:
         r = self._session.delete(f"{self._base}/statuses/{slug}/")
+        self._raise(r)
+
+    def reorder_statuses(self, order: list[int]) -> None:
+        r = self._session.post(f"{self._base}/statuses/reorder/", json={"order": order})
         self._raise(r)
 
     # ── Comments ───────────────────────────────────────────────────────────

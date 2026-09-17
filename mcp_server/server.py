@@ -109,15 +109,25 @@ def _err(e: VtodoAPIError) -> str:
 
 @mcp.tool()
 def list_tasks(
-    status: str | None = None, tags: list[str] | None = None, team_id: int | None = None
+    status: str | None = None,
+    tags: list[str] | None = None,
+    exclude_tags: list[str] | None = None,
+    team_id: int | None = None,
 ) -> str:
     """List tasks, optionally filtered by status slug, tags, and/or team.
+
+    tags requires a task to have every listed tag; exclude_tags drops any task
+    that has any of the listed tags (e.g. "show me everything except `home`").
 
     Without team_id, returns your personal tasks plus tasks from every team you
     belong to. Pass team_id to see only that team's shared tasks.
     """
     try:
-        return _ok(_current_client().list_tasks(status=status, tags=tags, team_id=team_id))
+        return _ok(
+            _current_client().list_tasks(
+                status=status, tags=tags, exclude_tags=exclude_tags, team_id=team_id
+            )
+        )
     except VtodoAPIError as e:
         return _err(e)
 
@@ -162,6 +172,7 @@ def update_task(
     status: str | None = None,
     due_date: str | None = None,
     tags: list[str] | None = None,
+    archived: bool | None = None,
     clear_notes: bool = False,
     clear_due_date: bool = False,
 ) -> str:
@@ -170,7 +181,8 @@ def update_task(
     Omitted fields are left unchanged. notes and due_date can't be blanked
     out just by omitting them (that means "leave as is"), so pass
     clear_notes=True to empty the notes, or clear_due_date=True to remove
-    the due date.
+    the due date. Pass archived=True/False to archive or unarchive the task
+    without deleting it.
     """
     fields: dict[str, Any] = {}
     if title is not None:
@@ -187,6 +199,8 @@ def update_task(
         fields["due_date"] = due_date
     if tags is not None:
         fields["tags"] = tags
+    if archived is not None:
+        fields["is_archived"] = archived
     try:
         return _ok(_current_client().update_task(id, **fields))
     except VtodoAPIError as e:
@@ -208,6 +222,21 @@ def move_task(id: int, new_status: str) -> str:
     """Move a task to a different status column (pass the status slug)."""
     try:
         return _ok(_current_client().move_task(id, new_status))
+    except VtodoAPIError as e:
+        return _err(e)
+
+
+@mcp.tool()
+def reorder_tasks(ids: list[int]) -> str:
+    """Set the display order of a set of tasks.
+
+    Pass task IDs in the order you want them to appear; the first ID becomes
+    order 0, the next order 1, and so on. Tasks you don't own or that aren't
+    in the list are left untouched.
+    """
+    try:
+        _current_client().reorder_tasks(ids)
+        return f"Reordered {len(ids)} task(s)."
     except VtodoAPIError as e:
         return _err(e)
 
@@ -323,6 +352,22 @@ def delete_status(slug: str) -> str:
     try:
         _current_client().delete_status(slug)
         return f"Status '{slug}' deleted."
+    except VtodoAPIError as e:
+        return _err(e)
+
+
+@mcp.tool()
+def reorder_statuses(ids: list[int]) -> str:
+    """Set the display order of a set of status columns.
+
+    Pass status IDs in the order you want them to appear. All statuses in the
+    list must belong to the same scope (your personal statuses, or a single
+    team's) — mixing scopes, or reordering statuses you don't own, is
+    rejected.
+    """
+    try:
+        _current_client().reorder_statuses(ids)
+        return f"Reordered {len(ids)} status(es)."
     except VtodoAPIError as e:
         return _err(e)
 

@@ -48,6 +48,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "order",
             "due_date",
             "tags",
+            "is_archived",
             "team",
             "assignee",
             "created_at",
