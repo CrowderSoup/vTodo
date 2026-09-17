@@ -1684,6 +1684,14 @@ hr {
   overflow-y: auto;
 }
 
+.tag-input-suggestions[hidden] {
+  /* Author styles win over the UA stylesheet's [hidden]{display:none} even at
+     equal specificity, so the `display: flex` above needs an explicit opt-out
+     here -- otherwise setting the hidden property/attribute stops actually
+     hiding anything, leaving an empty (but still visible) box. */
+  display: none;
+}
+
 .tag-input-suggestion {
   width: 100%;
   min-height: auto;
