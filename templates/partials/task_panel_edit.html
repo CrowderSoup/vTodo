@@ -32,8 +32,8 @@
       </div>
 
       <div class="form-field">
-        <label class="field-label" for="task-panel-tags">Tags</label>
-        <input id="task-panel-tags" type="text" name="tags" value="{{ task.tags|join:', ' }}" placeholder="work, urgent, design">
+        <label class="field-label" for="task-panel-tags-field">Tags</label>
+        {% include "partials/_tag_input.html" with field_id="task-panel-tags" value=task.tags|join:", " known_tags=known_tags %}
       </div>
     </div>
 

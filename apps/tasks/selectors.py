@@ -42,6 +42,15 @@ def get_task_or_404(user, pk):
     return get_object_or_404(visible_tasks_qs(user), pk=pk)
 
 
+def known_tags_for_board(board):
+    """Distinct tag vocabulary already used on a board's tasks, sorted -- the
+    autocomplete source for the tag chip input on the create/edit task panels."""
+    tags = set()
+    for task_tags in board_tasks_qs(board).values_list("tags", flat=True):
+        tags.update(task_tags or [])
+    return sorted(tags)
+
+
 def visible_statuses_qs(user, team=None):
     if team is not None:
         return TaskStatus.objects.filter(team=team)

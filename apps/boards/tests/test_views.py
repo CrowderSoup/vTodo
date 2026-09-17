@@ -326,6 +326,18 @@ def test_task_panel_create_renders_without_comments_form(logged_in_client):
 
 
 @pytest.mark.django_db
+def test_task_panel_create_includes_known_tags_from_board(logged_in_client):
+    client, user = logged_in_client
+    Task.objects.create(user=user, title="Existing", status="todo", tags=["work", "urgent"])
+
+    response = client.get(reverse("boards:task-panel-create"))
+
+    assert response.status_code == 200
+    assert response.context["known_tags"] == ["urgent", "work"]
+    assert 'data-tag-input' in response.content.decode()
+
+
+@pytest.mark.django_db
 def test_task_panel_create_uses_default_status_when_user_has_one(logged_in_client):
     client, user = logged_in_client
     default_status = user.task_statuses.get(slug="in_progress")
@@ -460,6 +472,34 @@ def test_task_panel_includes_today_in_context(logged_in_client):
     response = client.get(reverse("boards:task-panel", kwargs={"pk": task.pk}))
     assert response.status_code == 200
     assert "today" in response.context
+
+
+@pytest.mark.django_db
+def test_task_panel_edit_includes_known_tags_and_existing_chips(logged_in_client):
+    client, user = logged_in_client
+    task = Task.objects.create(user=user, title="Panel task", status="todo", tags=["design"])
+    Task.objects.create(user=user, title="Other", status="todo", tags=["design", "urgent"])
+
+    response = client.get(reverse("boards:task-panel-edit", kwargs={"pk": task.pk}))
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert response.context["known_tags"] == ["design", "urgent"]
+    assert 'data-tag-input' in content
+    assert 'value="design"' in content
+
+
+@pytest.mark.django_db
+def test_task_edit_form_includes_known_tags(logged_in_client):
+    client, user = logged_in_client
+    task = Task.objects.create(user=user, title="Card task", status="todo", tags=["home"])
+
+    response = client.get(reverse("boards:task-edit", kwargs={"pk": task.pk}))
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert response.context["known_tags"] == ["home"]
+    assert f'data-field-id="task-tags-{task.pk}"' in content
 
 
 @pytest.mark.django_db

@@ -1,0 +1,14 @@
+{% with known_tags_id=field_id|add:"-known-tags" %}
+<div class="tag-input" data-tag-input data-field-id="{{ field_id }}">
+  <div class="tag-input-chips" data-tag-chips></div>
+  <input type="text"
+         id="{{ field_id }}-field"
+         class="tag-input-field"
+         data-tag-field
+         placeholder="Add a tag…"
+         autocomplete="off">
+  <ul class="tag-input-suggestions" data-tag-suggestions hidden></ul>
+</div>
+<input type="hidden" name="tags" id="{{ field_id }}" data-tag-value value="{{ value }}">
+{{ known_tags|json_script:known_tags_id }}
+{% endwith %}
