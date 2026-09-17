@@ -157,6 +157,204 @@
     }
   }
 
+  function getTagInputElements(container) {
+    return {
+      container: container,
+      chips: container.querySelector("[data-tag-chips]"),
+      field: container.querySelector("[data-tag-field]"),
+      suggestions: container.querySelector("[data-tag-suggestions]"),
+      hiddenInput: document.getElementById(container.dataset.fieldId),
+      knownTagsScript: document.getElementById(container.dataset.fieldId + "-known-tags"),
+    };
+  }
+
+  function tagInputCurrentTags(els) {
+    return Array.from(els.chips.querySelectorAll("[data-tag]")).map(function (chip) {
+      return chip.dataset.tag;
+    });
+  }
+
+  function tagInputSyncHidden(els) {
+    els.hiddenInput.value = tagInputCurrentTags(els).join(", ");
+  }
+
+  function tagInputAddChip(els, rawValue) {
+    var value = rawValue.trim();
+    if (!value) {
+      return;
+    }
+    var existing = tagInputCurrentTags(els).map(function (t) { return t.toLowerCase(); });
+    if (existing.indexOf(value.toLowerCase()) !== -1) {
+      return;
+    }
+
+    var chip = document.createElement("span");
+    chip.className = "tag-chip";
+    chip.dataset.tag = value;
+
+    var label = document.createElement("span");
+    label.className = "tag-chip-label";
+    label.textContent = value;
+
+    var remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "tag-chip-remove";
+    remove.setAttribute("data-tag-remove", "");
+    remove.setAttribute("aria-label", "Remove tag " + value);
+    remove.textContent = "×";
+
+    chip.appendChild(label);
+    chip.appendChild(remove);
+    els.chips.appendChild(chip);
+    tagInputSyncHidden(els);
+  }
+
+  function tagInputRemoveLastChip(els) {
+    var chips = els.chips.querySelectorAll("[data-tag]");
+    if (!chips.length) {
+      return;
+    }
+    chips[chips.length - 1].remove();
+    tagInputSyncHidden(els);
+  }
+
+  function tagInputKnownTags(els) {
+    if (!els.knownTagsScript) {
+      return [];
+    }
+    try {
+      return JSON.parse(els.knownTagsScript.textContent) || [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function tagInputHideSuggestions(els) {
+    els.suggestions.hidden = true;
+    els.suggestions.innerHTML = "";
+  }
+
+  function tagInputShowSuggestions(els) {
+    var query = els.field.value.trim().toLowerCase();
+    var current = tagInputCurrentTags(els).map(function (t) { return t.toLowerCase(); });
+    var matches = tagInputKnownTags(els).filter(function (tag) {
+      var lower = tag.toLowerCase();
+      return current.indexOf(lower) === -1 && (!query || lower.indexOf(query) !== -1);
+    }).slice(0, 8);
+
+    if (!matches.length) {
+      tagInputHideSuggestions(els);
+      return;
+    }
+
+    els.suggestions.innerHTML = "";
+    matches.forEach(function (tag) {
+      var item = document.createElement("li");
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "tag-input-suggestion";
+      button.textContent = tag;
+      // mousedown (not click) so preventDefault stops the field from
+      // blurring first -- otherwise the suggestion list would already be
+      // hidden by the blur handler before the click fires.
+      button.addEventListener("mousedown", function (event) {
+        event.preventDefault();
+        tagInputAddChip(els, tag);
+        els.field.value = "";
+        tagInputHideSuggestions(els);
+        els.field.focus();
+      });
+      item.appendChild(button);
+      els.suggestions.appendChild(item);
+    });
+    els.suggestions.hidden = false;
+  }
+
+  function initTagInput(container) {
+    if (container.dataset.tagInputInitialized) {
+      return;
+    }
+    container.dataset.tagInputInitialized = "true";
+
+    var els = getTagInputElements(container);
+    if (!els.hiddenInput || !els.field || !els.chips) {
+      return;
+    }
+
+    els.hiddenInput.value.split(",").map(function (t) { return t.trim(); }).filter(Boolean).forEach(function (tag) {
+      tagInputAddChip(els, tag);
+    });
+
+    els.field.addEventListener("input", function () {
+      tagInputShowSuggestions(els);
+    });
+
+    els.field.addEventListener("focus", function () {
+      tagInputShowSuggestions(els);
+    });
+
+    els.field.addEventListener("blur", function () {
+      tagInputHideSuggestions(els);
+    });
+
+    els.field.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" || event.key === ",") {
+        event.preventDefault();
+        tagInputAddChip(els, els.field.value);
+        els.field.value = "";
+        tagInputHideSuggestions(els);
+        return;
+      }
+      if (event.key === "Backspace" && !els.field.value) {
+        tagInputRemoveLastChip(els);
+        return;
+      }
+      if (event.key === "Escape") {
+        tagInputHideSuggestions(els);
+      }
+    });
+
+    els.chips.addEventListener("click", function (event) {
+      var removeButton = event.target.closest("[data-tag-remove]");
+      if (!removeButton) {
+        return;
+      }
+      removeButton.closest("[data-tag]").remove();
+      tagInputSyncHidden(els);
+    });
+  }
+
+  function initTagInputs(root) {
+    (root || document).querySelectorAll("[data-tag-input]").forEach(function (container) {
+      initTagInput(container);
+    });
+  }
+
+  function flushTagInputFields(event) {
+    document.querySelectorAll("[data-tag-input]").forEach(function (container) {
+      var els = getTagInputElements(container);
+      if (!els.hiddenInput || !els.field) {
+        return;
+      }
+      // Whatever's still typed but not yet committed to a chip counts too --
+      // the old plain comma-separated input never lost a trailing, un-punctuated
+      // tag either, so Enter/comma shouldn't be required just to not lose it.
+      if (els.field.value.trim()) {
+        tagInputAddChip(els, els.field.value);
+        els.field.value = "";
+      }
+
+      var requestElement = event && (event.detail.elt || event.target);
+      if (!requestElement || !requestElement.closest) {
+        return;
+      }
+      var form = requestElement.matches("form") ? requestElement : requestElement.closest("form");
+      if (form && form.contains(els.hiddenInput)) {
+        event.detail.parameters[els.hiddenInput.name] = els.hiddenInput.value;
+      }
+    });
+  }
+
   function syncEditorValue(event, editor, textareaId, fieldName) {
     if (!editor) {
       return;
@@ -543,15 +741,28 @@
 
     syncEditorValue(event, notesEditor, "task-notes-editor", "notes");
     syncEditorValue(event, commentEditor, "task-comment-editor", "body");
+    flushTagInputFields(event);
   });
 
   document.addEventListener("htmx:afterSettle", function (event) {
+    initTagInputs(event.target);
+
     if (event.target.id === "task-panel-content") {
       var panel = document.getElementById("task-panel");
       if (panel && panel.classList.contains("open")) {
         initTaskEditors();
       }
     }
+  });
+
+  document.addEventListener("click", function (event) {
+    if (event.target.closest(".tag-input")) {
+      return;
+    }
+    document.querySelectorAll(".tag-input-suggestions:not([hidden])").forEach(function (list) {
+      list.hidden = true;
+      list.innerHTML = "";
+    });
   });
 
   document.addEventListener("htmx:afterRequest", function (event) {

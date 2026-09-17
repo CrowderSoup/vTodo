@@ -10,6 +10,7 @@ from apps.tasks.selectors import (
     assign_task,
     get_task_or_404,
     grouped_visible_statuses,
+    known_tags_for_board,
     move_task,
     resolve_status_for_task,
     visible_statuses_qs,
@@ -206,3 +207,44 @@ def test_move_task_spawns_recurrence_from_users_local_completion_date():
 
     spawned = Task.objects.get(title="Nightly check", status="backlog")
     assert spawned.due_date == date(2026, 1, 2)
+
+
+@pytest.mark.django_db
+def test_known_tags_for_board_returns_sorted_distinct_tags():
+    from apps.boards.models import Board
+
+    user = User.objects.create_user()
+    board = Board.objects.get(user=user)
+    Task.objects.create(user=user, title="A", tags=["work", "urgent"])
+    Task.objects.create(user=user, title="B", tags=["urgent", "design"])
+    Task.objects.create(user=user, title="C", tags=[])
+
+    assert known_tags_for_board(board) == ["design", "urgent", "work"]
+
+
+@pytest.mark.django_db
+def test_known_tags_for_board_scoped_to_board_owner():
+    from apps.boards.models import Board
+
+    user = User.objects.create_user()
+    other = User.objects.create_user()
+    board = Board.objects.get(user=user)
+    Task.objects.create(user=user, title="Mine", tags=["mine"])
+    Task.objects.create(user=other, title="Theirs", tags=["theirs"])
+
+    assert known_tags_for_board(board) == ["mine"]
+
+
+@pytest.mark.django_db
+def test_known_tags_for_board_scoped_to_team():
+    from apps.boards.models import Board
+
+    team = Team.objects.create(name="Rocketry")
+    creator = User.objects.create_user()
+    TeamMembership.objects.create(team=team, user=creator)
+    Board.objects.create(team=team)
+    board = Board.objects.get(team=team)
+    Task.objects.create(user=creator, team=team, title="Team task", tags=["launch"])
+    Task.objects.create(user=creator, title="Personal task", tags=["solo"])
+
+    assert known_tags_for_board(board) == ["launch"]

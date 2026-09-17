@@ -41,8 +41,8 @@
       </div>
 
       <div class="form-field">
-        <label class="field-label" for="task-panel-create-tags">Tags</label>
-        <input id="task-panel-create-tags" type="text" name="tags" value="{{ tags_value }}" placeholder="work, urgent, design">
+        <label class="field-label" for="task-panel-create-tags-field">Tags</label>
+        {% include "partials/_tag_input.html" with field_id="task-panel-create-tags" value=tags_value known_tags=known_tags %}
       </div>
     </div>
 

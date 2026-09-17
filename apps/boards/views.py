@@ -18,6 +18,7 @@ from apps.tasks.selectors import (
     assign_task,
     board_tasks_qs,
     get_task_or_404,
+    known_tags_for_board,
     move_task,
     user_teams_qs,
     visible_statuses_qs,
@@ -295,6 +296,7 @@ def _task_panel_create_context(user, board, lane_param="", form_values=None, for
         "notes_value": form_values.get("notes", ""),
         "due_date_value": form_values.get("due_date", ""),
         "tags_value": form_values.get("tags", ""),
+        "known_tags": known_tags_for_board(board),
         "recurrence_days_value": form_values.get("recurrence_days", ""),
         "recurrence_from_value": form_values.get("recurrence_from", Task.RECURRENCE_FROM_COMPLETION),
         "form_error": form_error,
@@ -745,7 +747,12 @@ class TaskEditView(LoginRequiredMixin, View):
 
     def get(self, request, pk):
         task = get_task_or_404(request.user, pk)
-        return render(request, "partials/task_edit_form.html", {"task": task})
+        context = {
+            "task": task,
+            "known_tags": known_tags_for_board(_board_for_task(task)),
+            "tags_field_id": f"task-tags-{task.pk}",
+        }
+        return render(request, "partials/task_edit_form.html", context)
 
 
 class TaskPanelView(LoginRequiredMixin, View):
@@ -825,6 +832,7 @@ class TaskPanelEditView(LoginRequiredMixin, View):
     def get(self, request, pk):
         task = get_task_or_404(request.user, pk)
         context = _task_render_context(request.user, task)
+        context["known_tags"] = known_tags_for_board(context["board"])
         return render(request, "partials/task_panel_edit.html", context)
 
 
