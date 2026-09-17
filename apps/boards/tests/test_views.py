@@ -1,6 +1,6 @@
 import json
 import pytest
-from datetime import timedelta
+from datetime import date, timedelta
 from django.urls import reverse
 from django.utils import timezone
 
@@ -111,6 +111,28 @@ def test_board_overdue_count(logged_in_client):
     Task.objects.create(user=user, title="Overdue but done", status="done", due_date=yesterday, completed_at=timezone.now())
     response = client.get(reverse("boards:board"))
     assert response.context["overdue_count"] == 1
+
+
+@pytest.mark.django_db
+def test_task_matches_column_overdue_uses_users_local_today():
+    """A task due "today" in the user's local timezone must not be flagged
+    overdue just because UTC has already rolled over to the next calendar day
+    (e.g. evening in a UTC-negative zone)."""
+    from datetime import datetime, timezone as dt_timezone
+    from unittest.mock import patch
+    from zoneinfo import ZoneInfo
+
+    from apps.boards.views import _task_matches_column
+
+    user = User.objects.create_user(timezone="America/Chicago")
+    # 9pm on Jan 1 in America/Chicago (UTC-6) is already Jan 2 in UTC.
+    now_utc = datetime(2026, 1, 2, 3, 0, tzinfo=dt_timezone.utc)
+    task = Task.objects.create(user=user, title="Due tonight", status="todo", due_date=date(2026, 1, 1))
+
+    with timezone.override(ZoneInfo("America/Chicago")):
+        with patch("apps.boards.views.timezone.now", return_value=now_utc):
+            assert _task_matches_column(task, {"due": "overdue"}, user) is False
+            assert _task_matches_column(task, {"due": "today"}, user) is True
 
 
 @pytest.mark.django_db

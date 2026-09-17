@@ -23,6 +23,12 @@ def _hero_stats(user):
     }
 
 
+def _available_timezones():
+    from zoneinfo import available_timezones
+
+    return sorted(available_timezones())
+
+
 class SettingsGeneralView(LoginRequiredMixin, View):
     def get(self, request):
         from apps.tasks.models import TaskStatus
@@ -32,12 +38,15 @@ class SettingsGeneralView(LoginRequiredMixin, View):
         context = {
             "statuses": statuses,
             "default_status_id": request.user.default_status_id,
+            "timezones": _available_timezones(),
             "active_tab": "general",
         }
         context.update(_hero_stats(request.user))
         return render(request, "users/settings/general.html", context)
 
     def post(self, request):
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
         from apps.tasks.models import TaskStatus
 
         user = request.user
@@ -50,7 +59,16 @@ class SettingsGeneralView(LoginRequiredMixin, View):
             default_status = TaskStatus.objects.filter(user=user, pk=int(default_status_id)).first()
         user.default_status = default_status
 
-        user.save(update_fields=["display_name", "avatar_url", "default_status"])
+        tzname = request.POST.get("timezone", "").strip()
+        if tzname:
+            try:
+                ZoneInfo(tzname)
+            except (ZoneInfoNotFoundError, ValueError):
+                messages.error(request, "That's not a recognized timezone.")
+                return redirect(reverse("users:settings"))
+            user.timezone = tzname
+
+        user.save(update_fields=["display_name", "avatar_url", "default_status", "timezone"])
         messages.success(request, "Settings saved.")
         return redirect(reverse("users:settings"))
 

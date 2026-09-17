@@ -2,7 +2,7 @@ import uuid
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
-from django.utils import timezone
+from django.utils import timezone as dj_timezone
 
 
 class UserManager(BaseUserManager):
@@ -41,9 +41,13 @@ class User(AbstractBaseUser, PermissionsMixin):
         related_name="default_for_users",
     )
 
+    # IANA zone name (e.g. "America/Chicago"), used to compute "today"/overdue
+    # and recurrence dates in the user's own local time instead of UTC.
+    timezone = models.CharField(max_length=64, default="UTC")
+
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
-    date_joined = models.DateTimeField(default=timezone.now)
+    date_joined = models.DateTimeField(default=dj_timezone.now)
 
     objects = UserManager()
 

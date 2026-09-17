@@ -1,7 +1,7 @@
 import json
 import re
 import markdown as md
-from datetime import date, timedelta
+from datetime import timedelta
 from urllib.parse import parse_qs, urlparse
 
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -156,14 +156,14 @@ def _task_matches_column(task, filter_config, user):
     if tags and not any(t in task.tags for t in tags):
         return False
     if due == "overdue":
-        today = date.today()
+        today = timezone.localdate()
         if not task.due_date or task.due_date >= today:
             return False
     elif due == "today":
-        if task.due_date != date.today():
+        if task.due_date != timezone.localdate():
             return False
     elif due == "this_week":
-        today = date.today()
+        today = timezone.localdate()
         end = today + timedelta(days=7)
         if not task.due_date or task.due_date < today or task.due_date > end:
             return False
