@@ -208,8 +208,9 @@ def update_task(
     omitting them (that means "leave as is"), so pass clear_notes=True,
     clear_due_date=True, clear_due_time=True, clear_duration=True, or
     clear_recurrence=True to empty them. Clearing due_date also clears
-    due_time (a time-of-day is meaningless without a date), unless you pass
-    a new due_time in the same call. Pass archived=True/False to archive or
+    due_time (a time-of-day is meaningless without a date) — to reschedule
+    to a new date and time in one call, pass due_date together with
+    due_time (not clear_due_date). Pass archived=True/False to archive or
     unarchive the task without deleting it. due_time format: HH:MM.
     recurrence_from is "completion" (default) or "due_date".
     """
@@ -224,13 +225,18 @@ def update_task(
         fields["status"] = status
     if clear_due_date:
         fields["due_date"] = None
-        fields["due_time"] = None
     elif due_date is not None:
         fields["due_date"] = due_date
     if clear_due_time:
         fields["due_time"] = None
     elif due_time is not None:
         fields["due_time"] = due_time
+    # A cleared due_date always wins over an explicit due_time in the same
+    # call: a bare time-of-day with no date is the exact inconsistency this
+    # cascade exists to prevent, so clear_due_date can't be overridden by
+    # also passing due_time (pass due_date, not clear_due_date, to reschedule).
+    if fields.get("due_date", False) is None:
+        fields["due_time"] = None
     if clear_duration:
         fields["duration_minutes"] = None
     elif duration_minutes is not None:
