@@ -15,16 +15,14 @@
       <textarea id="task-notes-{{ task.pk }}" name="notes" rows="4" placeholder="Add context, links, or next steps">{{ task.notes }}</textarea>
     </div>
 
-    <div class="form-grid form-grid--two">
-      <div class="form-field">
-        <label class="field-label" for="task-due-{{ task.pk }}">Due date</label>
-        <input id="task-due-{{ task.pk }}" type="date" name="due_date" value="{{ task.due_date|date:'Y-m-d' }}">
-      </div>
+    <div class="form-field">
+      <label class="field-label" for="{{ tags_field_id }}-field">Tags</label>
+      {% include "partials/_tag_input.html" with field_id=tags_field_id value=task.tags|join:", " known_tags=known_tags %}
+    </div>
 
-      <div class="form-field">
-        <label class="field-label" for="{{ tags_field_id }}-field">Tags</label>
-        {% include "partials/_tag_input.html" with field_id=tags_field_id value=task.tags|join:", " known_tags=known_tags %}
-      </div>
+    <div class="form-field">
+      <label class="field-label" for="task-due-{{ task.pk }}">Due date</label>
+      <input id="task-due-{{ task.pk }}" type="date" name="due_date" value="{{ task.due_date|date:'Y-m-d' }}">
     </div>
 
     <div class="form-grid form-grid--two">

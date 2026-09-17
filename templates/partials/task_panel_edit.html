@@ -25,16 +25,14 @@
       <textarea id="task-notes-editor" name="notes">{{ task.notes }}</textarea>
     </div>
 
-    <div class="form-grid form-grid--two">
-      <div class="form-field">
-        <label class="field-label" for="task-panel-due">Due date</label>
-        <input id="task-panel-due" type="date" name="due_date" value="{{ task.due_date|date:'Y-m-d' }}">
-      </div>
+    <div class="form-field">
+      <label class="field-label" for="task-panel-tags-field">Tags</label>
+      {% include "partials/_tag_input.html" with field_id="task-panel-tags" value=task.tags|join:", " known_tags=known_tags %}
+    </div>
 
-      <div class="form-field">
-        <label class="field-label" for="task-panel-tags-field">Tags</label>
-        {% include "partials/_tag_input.html" with field_id="task-panel-tags" value=task.tags|join:", " known_tags=known_tags %}
-      </div>
+    <div class="form-field">
+      <label class="field-label" for="task-panel-due">Due date</label>
+      <input id="task-panel-due" type="date" name="due_date" value="{{ task.due_date|date:'Y-m-d' }}">
     </div>
 
     <div class="form-grid form-grid--two">
