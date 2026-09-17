@@ -67,6 +67,43 @@ def test_task_patch_can_set_is_archived(api_client_for):
 
 
 @pytest.mark.django_db
+def test_task_patch_can_set_calendar_and_recurrence_fields(api_client_for):
+    user = User.objects.create_user()
+    task = Task.objects.create(user=user, title="Standup", status="todo", due_date="2026-01-01")
+    client = api_client_for(user)
+
+    response = client.patch(
+        reverse("task-detail", kwargs={"pk": task.pk}),
+        {
+            "due_time": "09:30",
+            "duration_minutes": 15,
+            "recurrence_days": 1,
+            "recurrence_from": "due_date",
+        },
+    )
+
+    assert response.status_code == 200
+    task.refresh_from_db()
+    assert str(task.due_time) == "09:30:00"
+    assert task.duration_minutes == 15
+    assert task.recurrence_days == 1
+    assert task.recurrence_from == "due_date"
+
+
+@pytest.mark.django_db
+def test_task_patch_rejects_invalid_recurrence_from(api_client_for):
+    user = User.objects.create_user()
+    task = Task.objects.create(user=user, title="Standup", status="todo")
+    client = api_client_for(user)
+
+    response = client.patch(
+        reverse("task-detail", kwargs={"pk": task.pk}), {"recurrence_from": "next_tuesday"}
+    )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
 def test_task_reorder_updates_order(api_client_for):
     user = User.objects.create_user()
     a = Task.objects.create(user=user, title="A", status="todo", order=0)

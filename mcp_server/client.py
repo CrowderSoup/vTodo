@@ -69,8 +69,12 @@ class VtodoClient:
         notes: str | None = None,
         status: str | None = None,
         due_date: str | None = None,
+        due_time: str | None = None,
+        duration_minutes: int | None = None,
         tags: list[str] | None = None,
         team_id: int | None = None,
+        recurrence_days: int | None = None,
+        recurrence_from: str | None = None,
     ) -> dict:
         payload: dict[str, Any] = {"title": title}
         if notes is not None:
@@ -79,10 +83,18 @@ class VtodoClient:
             payload["status"] = status
         if due_date is not None:
             payload["due_date"] = due_date
+        if due_time is not None:
+            payload["due_time"] = due_time
+        if duration_minutes is not None:
+            payload["duration_minutes"] = duration_minutes
         if tags is not None:
             payload["tags"] = tags
         if team_id is not None:
             payload["team"] = team_id
+        if recurrence_days is not None:
+            payload["recurrence_days"] = recurrence_days
+        if recurrence_from is not None:
+            payload["recurrence_from"] = recurrence_from
         r = self._session.post(f"{self._base}/tasks/", json=payload)
         self._raise(r)
         return r.json()
