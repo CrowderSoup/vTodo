@@ -101,7 +101,7 @@ def move_task(user, task, new_status_slug):
     task.save(update_fields=update_fields)
 
     if is_done and not was_already_done:
-        task.spawn_recurrence(completion_date=task.completed_at.date())
+        task.spawn_recurrence(completion_date=timezone.localdate(task.completed_at))
 
     return task
 

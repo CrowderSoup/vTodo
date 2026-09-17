@@ -1,3 +1,7 @@
+from datetime import date, datetime, timezone as dt_timezone
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
+
 import pytest
 
 from apps.tasks.models import Task, TaskStatus
@@ -6,6 +10,7 @@ from apps.tasks.selectors import (
     assign_task,
     get_task_or_404,
     grouped_visible_statuses,
+    move_task,
     resolve_status_for_task,
     visible_statuses_qs,
     visible_tasks_qs,
@@ -13,6 +18,7 @@ from apps.tasks.selectors import (
 from apps.teams.models import Team, TeamMembership
 from apps.users.models import User
 from django.http import Http404
+from django.utils import timezone
 
 
 @pytest.mark.django_db
@@ -180,3 +186,23 @@ def test_grouped_visible_statuses_omits_teams_with_no_statuses():
     groups = grouped_visible_statuses(user)
 
     assert [g["label"] for g in groups] == ["Personal"]
+
+
+@pytest.mark.django_db
+def test_move_task_spawns_recurrence_from_users_local_completion_date():
+    """completed_at is stamped in UTC; the recurrence must be based on the
+    user's local calendar date, not the UTC date, which can already be a day
+    ahead in the evening in a UTC-negative zone."""
+    user = User.objects.create_user(timezone="America/Chicago")
+    task = Task.objects.create(
+        user=user, title="Nightly check", status="todo", recurrence_days=1,
+    )
+
+    # 9pm on Jan 1 in America/Chicago (UTC-6) is already Jan 2 in UTC.
+    completed_at_utc = datetime(2026, 1, 2, 3, 0, tzinfo=dt_timezone.utc)
+    with timezone.override(ZoneInfo("America/Chicago")):
+        with patch("apps.tasks.selectors.timezone.now", return_value=completed_at_utc):
+            move_task(user, task, "done")
+
+    spawned = Task.objects.get(title="Nightly check", status="backlog")
+    assert spawned.due_date == date(2026, 1, 2)

@@ -25,6 +25,16 @@
              value="{{ user.avatar_url }}"
              placeholder="https://example.com/avatar.jpg">
     </div>
+
+    <div class="form-field">
+      <label class="field-label" for="timezone">Timezone</label>
+      <select id="timezone" name="timezone">
+        {% for tz in timezones %}
+        <option value="{{ tz }}" {% if user.timezone == tz %}selected{% endif %}>{{ tz }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <p class="field-help">Used to figure out "today" for due dates, overdue tasks, and when recurring tasks come back.</p>
   </section>
 
   <section class="settings-card surface-panel">
