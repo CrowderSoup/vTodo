@@ -2427,19 +2427,17 @@ textarea:has(+ .EasyMDEContainer) {
 
 .calendar-layout {
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
   gap: 0.85rem;
   min-width: 0;
 }
 
 .calendar-grid-wrap {
-  flex: 1;
   min-width: 0;
 }
 
 .calendar-nodate-pane {
-  width: 17rem;
-  flex-shrink: 0;
+  width: 100%;
   padding: 0.8rem;
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -2458,9 +2456,17 @@ textarea:has(+ .EasyMDEContainer) {
 
 .calendar-nodate-list {
   display: flex;
-  flex-direction: column;
+  flex-flow: row wrap;
   gap: 0.65rem;
   min-height: 4rem;
+}
+
+.calendar-nodate-list .task-card {
+  flex: 1 1 16rem;
+}
+
+.calendar-nodate-list .task-empty {
+  flex: 1 1 100%;
 }
 
 .calendar-month-grid {
@@ -2643,16 +2649,6 @@ textarea:has(+ .EasyMDEContainer) {
   outline: 2px dashed var(--border-strong);
   outline-offset: 2px;
   background: rgba(255, 255, 255, 0.18);
-}
-
-@media (max-width: 820px) {
-  .calendar-layout {
-    flex-direction: column;
-  }
-
-  .calendar-nodate-pane {
-    width: 100%;
-  }
 }
 
 @media (max-width: 640px) {
