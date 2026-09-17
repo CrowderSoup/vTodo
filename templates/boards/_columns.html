@@ -2,16 +2,29 @@
 <section class="board-column{% if lane.collapsed %} is-collapsed{% endif %}"
          data-column-id="{{ lane.dom_id }}"
          data-lane-kind="{{ lane.kind }}"
-         {% if lane.color %}
-         style="--column-accent: {{ lane.color }};"
-         {% elif lane.default_status == "backlog" %}
-         style="--column-accent: #4f78ff;"
-         {% elif lane.default_status == "in_progress" %}
-         style="--column-accent: var(--accent-warm);"
-         {% elif lane.default_status == done_slug %}
-         style="--column-accent: var(--success);"
-         {% endif %}>
-  <div class="column-header">
+         style="view-transition-name: lane-{{ lane.kind }}-{{ lane.pk }};
+                {% if lane.color %}--column-accent: {{ lane.color }};
+                {% elif lane.default_status == "backlog" %}--column-accent: #4f78ff;
+                {% elif lane.default_status == "in_progress" %}--column-accent: var(--accent-warm);
+                {% elif lane.default_status == done_slug %}--column-accent: var(--success);
+                {% endif %}">
+  {% if lane.collapsed %}
+  <div class="column-collapsed-strip col-drag-handle"
+       draggable="true"
+       data-column-id="{{ lane.dom_id }}"
+       title="Drag to reorder &ldquo;{{ lane.label }}&rdquo;">
+    <button class="col-actions-btn column-collapsed-expand" type="button" title="Expand &ldquo;{{ lane.label }}&rdquo;"
+            hx-post="{{ lane.hide_url }}"
+            hx-target="#task-list-content"
+            hx-swap="innerHTML transition:true">
+      »
+    </button>
+    <span class="column-badge">{{ lane.tasks|length }}</span>
+    <span class="column-collapsed-label">{{ lane.label }}</span>
+  </div>
+  {% endif %}
+
+  <div class="column-header{% if lane.collapsed %} column-header--collapsed{% endif %}">
     <div class="column-header-main">
       <span class="col-drag-handle" draggable="true" data-column-id="{{ lane.dom_id }}" title="Drag to reorder">⋮⋮</span>
       <div>
@@ -29,7 +42,7 @@
       <button class="col-actions-btn" type="button" title="Expand &ldquo;{{ lane.label }}&rdquo;"
               hx-post="{{ lane.hide_url }}"
               hx-target="#task-list-content"
-              hx-swap="innerHTML">
+              hx-swap="innerHTML transition:true">
         ⌄
       </button>
       {% else %}
@@ -45,7 +58,7 @@
           </button>
           <button hx-post="{{ lane.hide_url }}"
                   hx-target="#task-list-content"
-                  hx-swap="innerHTML">
+                  hx-swap="innerHTML transition:true">
             Collapse lane
           </button>
           <button hx-post="{{ lane.archive_url }}"

@@ -31,6 +31,7 @@
   --page-max: 1440px;
   --page-max-narrow: 1120px;
   --column-width: 300px;
+  --column-collapsed-width: 3.25rem;
 }
 
 [data-theme="dark"] {
@@ -779,11 +780,10 @@ hr {
 }
 
 .board-columns {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(var(--column-width), 1fr);
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
   gap: 0.85rem;
-  align-items: start;
   overflow-x: auto;
   padding: 0.1rem 0.05rem 0.6rem;
   min-width: 0;
@@ -837,14 +837,15 @@ hr {
 
 .board-column {
   position: relative;
+  flex: 1 1 var(--column-width);
+  min-width: var(--column-width);
   padding: 0.8rem;
   min-height: 12rem;
-  min-width: 0;
-  width: auto;
   background: linear-gradient(180deg, rgba(255, 253, 250, 0.92), rgba(255, 251, 247, 0.8));
   border: 1px solid var(--border);
   border-radius: 16px;
   box-shadow: var(--shadow-md);
+  transition: flex-basis 0.22s ease, min-width 0.22s ease, max-width 0.22s ease;
 }
 
 [data-theme="dark"] .board-column {
@@ -860,12 +861,102 @@ hr {
   background: linear-gradient(90deg, var(--column-accent, var(--accent)), transparent 82%);
 }
 
+/* Narrow/mobile screens (the board is a single stacked column here, see the
+   640px breakpoint below) keep the simpler height-collapse treatment: the
+   column-collapsed-strip below is desktop-only. */
 .board-column.is-collapsed {
   min-height: 0;
 }
 
 .board-column.is-collapsed .column-header {
   margin-bottom: 0;
+}
+
+/* Two classes to reliably beat the shared ".col-drag-handle { display:
+   inline-grid }" utility rule below, which the strip also carries so it can
+   act as the collapsed column's drag handle. */
+.column-collapsed-strip.col-drag-handle {
+  display: none;
+}
+
+@media (min-width: 641px) {
+  .board-column.is-collapsed {
+    /* Becomes the flex container for the strip below, instead of the usual
+       block layout -- the strip fills it with flex-grow (a percentage height
+       on the strip won't reliably resolve here, since this section's own
+       height comes from flex align-self:stretch, not a specified height). */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 0 0 var(--column-collapsed-width);
+    min-width: var(--column-collapsed-width);
+    max-width: var(--column-collapsed-width);
+    align-self: stretch;
+    padding: 0.6rem 0;
+    overflow: hidden;
+  }
+
+  .board-column.is-collapsed::before {
+    inset: 0 auto 0 0;
+    width: 5px;
+    height: auto;
+    border-radius: 16px 0 0 16px;
+    background: var(--column-accent, var(--accent));
+  }
+
+  .board-column.is-collapsed .column-header--collapsed {
+    display: none;
+  }
+
+  .board-column.is-collapsed .column-collapsed-strip {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+}
+
+.column-collapsed-strip {
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0 0 0.5rem;
+  background: none;
+  border: none;
+  cursor: grab;
+}
+
+.column-collapsed-strip:active {
+  cursor: grabbing;
+}
+
+.column-collapsed-expand {
+  flex-shrink: 0;
+}
+
+.column-collapsed-label {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 700;
+  font-size: 0.92rem;
+  letter-spacing: -0.01em;
+}
+
+/* Collapse/expand is animated via the View Transitions API (see hx-swap
+   "transition:true" on the lane-hide/expand triggers and the per-lane
+   view-transition-name set inline in _columns.html) -- browsers without
+   support just apply the swap instantly, no fallback needed here. */
+::view-transition-group(*) {
+  animation-duration: 0.22s;
+  animation-timing-function: ease;
 }
 
 .column-header {
@@ -2191,8 +2282,9 @@ textarea:has(+ .EasyMDEContainer) {
     margin-left: auto;
   }
 
-  .board-columns {
-    grid-auto-columns: minmax(min(100%, 20rem), 1fr);
+  .board-column {
+    flex-basis: min(100%, 20rem);
+    min-width: min(100%, 20rem);
   }
 
   .inline-form {
@@ -2233,10 +2325,14 @@ textarea:has(+ .EasyMDEContainer) {
   }
 
   .board-columns {
-    grid-template-columns: 1fr;
-    grid-auto-flow: row;
-    grid-auto-columns: auto;
+    flex-direction: column;
     overflow-x: visible;
+  }
+
+  .board-column {
+    flex-basis: auto;
+    min-width: 0;
+    width: 100%;
   }
 
   .page-board .page-shell {
