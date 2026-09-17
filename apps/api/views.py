@@ -49,6 +49,36 @@ class TaskStatusViewSet(viewsets.ModelViewSet):
             order = TaskStatus.objects.filter(user=self.request.user, team__isnull=True).count()
             serializer.save(user=self.request.user, order=order)
 
+    @extend_schema(
+        request={"application/json": {"type": "object", "properties": {"order": {"type": "array", "items": {"type": "integer"}}}}},
+        responses={204: None},
+    )
+    @action(detail=False, methods=["post"])
+    def reorder(self, request):
+        order = request.data.get("order")
+        if not isinstance(order, list):
+            return Response({"detail": "order must be a list of status IDs."}, status=status.HTTP_400_BAD_REQUEST)
+
+        statuses = {s.pk: s for s in TaskStatus.objects.filter(pk__in=order)}
+        if statuses:
+            first = next(iter(statuses.values()))
+            same_scope = all(
+                s.user_id == first.user_id and s.team_id == first.team_id for s in statuses.values()
+            )
+            if first.team_id:
+                owns_scope = user_teams_qs(request.user).filter(pk=first.team_id).exists()
+            else:
+                owns_scope = first.user_id == request.user.id
+            if not same_scope or not owns_scope:
+                return Response(status=status.HTTP_403_FORBIDDEN)
+
+        for i, pk in enumerate(order):
+            if pk in statuses:
+                statuses[pk].order = i
+                statuses[pk].save(update_fields=["order"])
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class TaskViewSet(viewsets.ModelViewSet):
     serializer_class = TaskSerializer
@@ -66,11 +96,33 @@ class TaskViewSet(viewsets.ModelViewSet):
         if tags:
             matching_pks = [t.pk for t in qs if all(tag in (t.tags or []) for tag in tags)]
             qs = qs.filter(pk__in=matching_pks)
+        exclude_tags = self.request.query_params.getlist("exclude_tags")
+        if exclude_tags:
+            excluded_pks = [t.pk for t in qs if any(tag in (t.tags or []) for tag in exclude_tags)]
+            qs = qs.exclude(pk__in=excluded_pks)
         return qs
 
     def perform_create(self, serializer):
         order = Task.objects.filter(user=self.request.user).count()
         serializer.save(user=self.request.user, order=order)
+
+    @extend_schema(
+        request={"application/json": {"type": "object", "properties": {"order": {"type": "array", "items": {"type": "integer"}}}}},
+        responses={204: None},
+    )
+    @action(detail=False, methods=["post"])
+    def reorder(self, request):
+        order = request.data.get("order")
+        if not isinstance(order, list):
+            return Response({"detail": "order must be a list of task IDs."}, status=status.HTTP_400_BAD_REQUEST)
+
+        tasks = {t.pk: t for t in visible_tasks_qs(request.user).filter(pk__in=order)}
+        for i, pk in enumerate(order):
+            if pk in tasks:
+                tasks[pk].order = i
+                tasks[pk].save(update_fields=["order"])
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @extend_schema(
         request={"application/json": {"type": "object", "properties": {"new_status": {"type": "string"}}}},
