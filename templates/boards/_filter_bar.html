@@ -69,7 +69,7 @@
         {% for lane in active_filter.hidden_lanes %}
         <label class="filter-pill">
           <input type="checkbox" name="hidden_lanes" value="{{ lane.dom_id }}" checked style="display: none;">
-          Hidden: {{ lane.label }} ×
+          Collapsed: {{ lane.label }} ×
         </label>
         {% endfor %}
       </div>

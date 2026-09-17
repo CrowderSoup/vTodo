@@ -860,6 +860,14 @@ hr {
   background: linear-gradient(90deg, var(--column-accent, var(--accent)), transparent 82%);
 }
 
+.board-column.is-collapsed {
+  min-height: 0;
+}
+
+.board-column.is-collapsed .column-header {
+  margin-bottom: 0;
+}
+
 .column-header {
   display: flex;
   align-items: flex-start;

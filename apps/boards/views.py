@@ -174,9 +174,9 @@ def _task_matches_column(task, filter_config, user):
 def _matching_saved_filter_name(saved_filters, tags, exclude_tags, due, assignee, hidden_lanes=None):
     """The name of the SavedFilter (if any) whose filter_config exactly matches the
     given filter values -- used to highlight the active saved view in the filter
-    bar's select. hidden_lanes is board-only (calendar has no lanes, so callers
-    there simply omit it and every saved filter's hidden_lanes -- always [] on a
-    board-created view too, unless lanes were hidden -- is compared against [])."""
+    bar's select. hidden_lanes is a set/list of lane keys (the calendar has no
+    lanes of its own, but mirrors the board's collapsed-lane state, so it passes
+    the same keys too; callers with none simply omit it)."""
     hidden_lanes = sorted(hidden_lanes or [])
     for sf in saved_filters:
         sf_config = sf.filter_config
@@ -189,6 +189,29 @@ def _matching_saved_filter_name(saved_filters, tags, exclude_tags, due, assignee
         ):
             return sf.name
     return None
+
+
+def _hidden_lane_context(user, board, hidden_lane_keys):
+    """(matchers, summaries) for the given collapsed/hidden lane keys on this board.
+    matchers are per-lane task predicates for callers (e.g. the calendar) that need
+    to exclude those lanes' tasks without rendering lanes at all; summaries are
+    {dom_id, label} dicts for the filter bar's pills."""
+    if not hidden_lane_keys:
+        return [], []
+    statuses, _, _ = _status_context_for(user, board.team)
+    matchers = []
+    summaries = []
+    for status in statuses:
+        key = _lane_key("status", status.pk)
+        if key in hidden_lane_keys:
+            matchers.append(lambda t, slug=status.slug: t.status == slug)
+            summaries.append({"dom_id": key, "label": status.name})
+    for column in board.columns.all():
+        key = _lane_key("column", column.pk)
+        if key in hidden_lane_keys:
+            matchers.append(lambda t, cfg=column.filter_config: _task_matches_column(t, cfg, user))
+            summaries.append({"dom_id": key, "label": column.label})
+    return matchers, summaries
 
 
 def _status_context_for(user, team=None):
@@ -366,7 +389,7 @@ def _build_board_context(user, board, session=None):
     # status lane and a matching custom lane -- custom lanes are supplementary views
     # layered on top, not exclusive claims, so there's no "first match wins" logic here.
     lanes = []
-    hidden_lanes = []
+    hidden_lane_summaries = []
 
     for status in statuses:
         key = _lane_key("status", status.pk)
@@ -382,11 +405,14 @@ def _build_board_context(user, board, session=None):
             "subtitle": "",
             "tasks": lane_tasks,
             "default_status": status.slug,
+            "collapsed": key in hidden_lane_keys,
             "hide_url": reverse("boards:lane-hide", args=[key]),
             "archive_url": reverse("boards:lane-archive", args=[key]),
             "create_lane_param": key,
         }
-        (hidden_lanes if key in hidden_lane_keys else lanes).append(lane)
+        lanes.append(lane)
+        if lane["collapsed"]:
+            hidden_lane_summaries.append(lane)
 
     for column in board.columns.all():
         key = _lane_key("column", column.pk)
@@ -402,11 +428,14 @@ def _build_board_context(user, board, session=None):
             "subtitle": _column_subtitle(column.filter_config),
             "tasks": lane_tasks,
             "default_status": column.default_status(user, team=board.team),
+            "collapsed": key in hidden_lane_keys,
             "hide_url": reverse("boards:lane-hide", args=[key]),
             "archive_url": reverse("boards:lane-archive", args=[key]),
             "create_lane_param": key,
         }
-        (hidden_lanes if key in hidden_lane_keys else lanes).append(lane)
+        lanes.append(lane)
+        if lane["collapsed"]:
+            hidden_lane_summaries.append(lane)
 
     saved_filters = list(board.saved_filters.all())
     active_saved_filter_name = _matching_saved_filter_name(
@@ -424,7 +453,7 @@ def _build_board_context(user, board, session=None):
             "exclude_tags": exclude_tags,
             "due": filter_due,
             "assignee": filter_assignee,
-            "hidden_lanes": hidden_lanes,
+            "hidden_lanes": hidden_lane_summaries,
         },
         "saved_filters": saved_filters,
         "active_saved_filter_name": active_saved_filter_name,
@@ -545,13 +574,18 @@ def _resolve_lane_and_board(user, lane_key):
 
 
 class LaneHideView(LoginRequiredMixin, View):
-    """Add a lane (status or custom column) to the session hidden-lanes filter."""
+    """Toggle a lane (status or custom column) collapsed/expanded in the session
+    filter. A collapsed lane stays on the board -- just without its task list --
+    but its tasks are excluded from the calendar entirely (see
+    apps.boards.views_calendar._build_calendar_context)."""
 
     def post(self, request, lane_key):
         board, _label, _matches = _resolve_lane_and_board(request.user, lane_key)
         board_filter = _board_filter_for(board, request.session)
         hidden = board_filter.get("hidden_lanes", [])
-        if lane_key not in hidden:
+        if lane_key in hidden:
+            hidden = [key for key in hidden if key != lane_key]
+        else:
             hidden = hidden + [lane_key]
         _set_board_filter(request, board, {**board_filter, "hidden_lanes": hidden})
         context = _build_board_context(request.user, board, request.session)
