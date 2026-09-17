@@ -32,6 +32,7 @@
   --page-max-narrow: 1120px;
   --column-width: 300px;
   --column-collapsed-width: 3.25rem;
+  --column-collapsed-height: 745px;
 }
 
 [data-theme="dark"] {
@@ -884,14 +885,17 @@ hr {
     /* Becomes the flex container for the strip below, instead of the usual
        block layout -- the strip fills it with flex-grow (a percentage height
        on the strip won't reliably resolve here, since this section's own
-       height comes from flex align-self:stretch, not a specified height). */
+       height comes from a specified height, not stretch). Fixed (not
+       stretched to match a tall sibling column) so the whole collapsed
+       column, plus the header above it, fits on screen without scrolling. */
     display: flex;
     flex-direction: column;
     align-items: center;
     flex: 0 0 var(--column-collapsed-width);
     min-width: var(--column-collapsed-width);
     max-width: var(--column-collapsed-width);
-    align-self: stretch;
+    align-self: flex-start;
+    height: var(--column-collapsed-height);
     padding: 0.6rem 0;
     overflow: hidden;
   }
