@@ -243,6 +243,27 @@ def test_calendar_ignores_board_due_filter(logged_in_client):
 
 
 @pytest.mark.django_db
+def test_calendar_excludes_tasks_from_collapsed_lane(logged_in_client):
+    """A lane collapsed on the board (LaneHideView) must still hide its tasks
+    from the calendar -- collapsing only changes the board's own rendering."""
+    from apps.tasks.models import TaskStatus
+
+    client, user = logged_in_client
+    status = TaskStatus.objects.get(user=user, team__isnull=True, slug="todo")
+    today = timezone.localdate()
+    Task.objects.create(user=user, title="In collapsed lane", status="todo", due_date=today)
+    Task.objects.create(user=user, title="Elsewhere", status="backlog", due_date=today)
+
+    client.post(reverse("boards:lane-hide", args=[f"status:{status.pk}"]))
+    response = client.get(reverse("calendar:calendar"))
+
+    all_cell_tasks = [t for week in response.context["weeks"] for cell in week for t in cell["tasks"]]
+    titles = [t.title for t in all_cell_tasks]
+    assert "In collapsed lane" not in titles
+    assert "Elsewhere" in titles
+
+
+@pytest.mark.django_db
 def test_calendar_honors_board_session_assignee_filter(logged_in_client):
     client, user = logged_in_client
     other = User.objects.create_user()

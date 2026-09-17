@@ -973,3 +973,37 @@ def test_lane_hide_and_archive_by_status(logged_in_client):
     assert archive_response.status_code == 200
     task.refresh_from_db()
     assert task.is_archived is True
+
+
+@pytest.mark.django_db
+def test_lane_hide_collapses_in_place_instead_of_removing_the_lane(logged_in_client):
+    """Collapsing a lane keeps it in `lanes` (marked collapsed) rather than
+    dropping it entirely -- its tasks stay off the rendered board (no task-list
+    markup), but the column itself, and its count, remain visible."""
+    client, user = logged_in_client
+    status = TaskStatus.objects.get(user=user, team__isnull=True, slug="todo")
+    Task.objects.create(user=user, title="Still counted", status="todo")
+
+    response = client.post(reverse("boards:lane-hide", args=[f"status:{status.pk}"]))
+
+    lanes = {lane["dom_id"]: lane for lane in response.context["lanes"]}
+    lane = lanes[f"status:{status.pk}"]
+    assert lane["collapsed"] is True
+    assert len(lane["tasks"]) == 1
+    assert f'id="col-tasks-status:{status.pk}"'.encode() not in response.content
+    assert b"is-collapsed" in response.content
+
+
+@pytest.mark.django_db
+def test_lane_hide_toggles_collapsed_state(logged_in_client):
+    client, user = logged_in_client
+    status = TaskStatus.objects.get(user=user, team__isnull=True, slug="todo")
+    key = f"status:{status.pk}"
+
+    first = client.post(reverse("boards:lane-hide", args=[key]))
+    lanes = {lane["dom_id"]: lane for lane in first.context["lanes"]}
+    assert lanes[key]["collapsed"] is True
+
+    second = client.post(reverse("boards:lane-hide", args=[key]))
+    lanes = {lane["dom_id"]: lane for lane in second.context["lanes"]}
+    assert lanes[key]["collapsed"] is False

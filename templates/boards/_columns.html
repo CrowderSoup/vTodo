@@ -1,5 +1,5 @@
 {% for lane in lanes %}
-<section class="board-column"
+<section class="board-column{% if lane.collapsed %} is-collapsed{% endif %}"
          data-column-id="{{ lane.dom_id }}"
          data-lane-kind="{{ lane.kind }}"
          {% if lane.color %}
@@ -17,7 +17,7 @@
       <div>
         <p class="column-kicker">Lane {{ forloop.counter }}</p>
         <h2 class="column-title">{{ lane.label }}</h2>
-        {% if lane.subtitle %}
+        {% if lane.subtitle and not lane.collapsed %}
         <p class="column-subtitle">{{ lane.subtitle }}</p>
         {% endif %}
       </div>
@@ -25,6 +25,14 @@
 
     <div class="column-header-tools">
       <span class="column-badge">{{ lane.tasks|length }}</span>
+      {% if lane.collapsed %}
+      <button class="col-actions-btn" type="button" title="Expand &ldquo;{{ lane.label }}&rdquo;"
+              hx-post="{{ lane.hide_url }}"
+              hx-target="#task-list-content"
+              hx-swap="innerHTML">
+        ⌄
+      </button>
+      {% else %}
       <div class="column-actions">
         <button class="col-actions-btn" type="button" title="Column actions" data-disclosure-toggle>⋯</button>
         <div class="col-actions-menu">
@@ -38,7 +46,7 @@
           <button hx-post="{{ lane.hide_url }}"
                   hx-target="#task-list-content"
                   hx-swap="innerHTML">
-            Hide lane
+            Collapse lane
           </button>
           <button hx-post="{{ lane.archive_url }}"
                   hx-target="#task-list-content"
@@ -48,9 +56,11 @@
           </button>
         </div>
       </div>
+      {% endif %}
     </div>
   </div>
 
+  {% if not lane.collapsed %}
   <div class="task-list" id="col-tasks-{{ lane.dom_id }}" data-default-status="{{ lane.default_status }}">
     {% for task in lane.tasks %}
     {% include "partials/task_card.html" %}
@@ -58,5 +68,6 @@
     <div class="task-empty">Nothing here yet. Add a card or drag one in.</div>
     {% endfor %}
   </div>
+  {% endif %}
 </section>
 {% endfor %}
