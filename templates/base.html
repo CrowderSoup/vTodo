@@ -48,33 +48,39 @@
           <div class="nav-links">
             <a class="nav-link {% if request.resolver_match.namespace == 'boards' %}is-active{% endif %}" href="{% url 'boards:board' %}">Board</a>
             <a class="nav-link {% if request.resolver_match.namespace == 'calendar' %}is-active{% endif %}" href="{% url 'calendar:calendar' %}">Calendar</a>
-            <a class="nav-link {% if request.resolver_match.namespace == 'users' %}is-active{% endif %}" href="{% url 'users:settings' %}">Settings</a>
-            {% if is_site_admin %}
-            <a class="nav-link {% if request.resolver_match.namespace == 'siteadmin' %}is-active{% endif %}" href="{% url 'siteadmin:dashboard' %}">Admin</a>
-            {% endif %}
           </div>
+        </div>
+      </div>
 
-          <span class="nav-spacer"></span>
+      <span class="nav-spacer"></span>
 
-          <div class="nav-meta">
-            <div class="user-chip">
-              {% if user.avatar_url %}
-              <img src="{{ user.avatar_url }}" alt="">
-              {% else %}
-              <span class="avatar-fallback">{{ user.display_name|default:user.username|slice:":1"|upper }}</span>
-              {% endif %}
-              <span class="user-name">{{ user.display_name|default:user.username }}</span>
-            </div>
+      <div class="user-menu">
+        <button class="user-chip user-menu-toggle" type="button" data-disclosure-toggle aria-haspopup="true" aria-label="Account menu" title="Account menu">
+          {% if user.avatar_url %}
+          <img src="{{ user.avatar_url }}" alt="">
+          {% else %}
+          <span class="avatar-fallback">{{ user.display_name|default:user.username|slice:":1"|upper }}</span>
+          {% endif %}
+          <span class="user-name">{{ user.display_name|default:user.username }}</span>
+          <span class="user-menu-caret" aria-hidden="true">&#9662;</span>
+        </button>
 
-            <button id="theme-toggle" class="btn-ghost btn-small theme-toggle" type="button" onclick="vtodoToggleTheme()">
-              <span id="theme-label">Dark</span> mode
-            </button>
+        <div class="user-menu-popover">
+          <a class="user-menu-link {% if request.resolver_match.namespace == 'users' %}is-active{% endif %}" href="{% url 'users:settings' %}">Settings</a>
+          {% if is_site_admin %}
+          <a class="user-menu-link {% if request.resolver_match.namespace == 'siteadmin' %}is-active{% endif %}" href="{% url 'siteadmin:dashboard' %}">Admin</a>
+          {% endif %}
 
-            <form method="post" action="{% url 'accounts:logout' %}">
-              {% csrf_token %}
-              <button type="submit" class="btn-secondary btn-small">Log out</button>
-            </form>
-          </div>
+          <div class="user-menu-divider"></div>
+
+          <button id="theme-toggle" class="user-menu-link" type="button" onclick="vtodoToggleTheme()">
+            <span id="theme-label">Dark</span> mode
+          </button>
+
+          <form method="post" action="{% url 'accounts:logout' %}" class="user-menu-logout-form">
+            {% csrf_token %}
+            <button type="submit" class="user-menu-link user-menu-link--danger">Log out</button>
+          </form>
         </div>
       </div>
     </nav>

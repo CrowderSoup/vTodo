@@ -391,7 +391,7 @@
   }
 
   function closeOpenDisclosures(exception) {
-    document.querySelectorAll(".calendar-day-popover.open, .filter-bar-popover.open, .nav-collapsible-menu.open").forEach(function (menu) {
+    document.querySelectorAll(".calendar-day-popover.open, .filter-bar-popover.open, .nav-collapsible-menu.open, .user-menu-popover.open").forEach(function (menu) {
       if (menu !== exception && !(exception && menu.contains(exception))) {
         menu.classList.remove("open");
       }
@@ -532,7 +532,8 @@
 
     if (
       !event.target.closest(".filter-bar-trigger-container") &&
-      !event.target.closest(".nav-collapsible-wrap")
+      !event.target.closest(".nav-collapsible-wrap") &&
+      !event.target.closest(".user-menu")
     ) {
       closeOpenDisclosures(null);
     }
