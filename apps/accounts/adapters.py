@@ -9,8 +9,9 @@ from django.urls import reverse
 
 class SocialAccountAdapter(DefaultSocialAccountAdapter):
     """
-    Routes OAuth logins through the same EmailIdentity model email-OTP uses,
-    so a verified email matches the same account regardless of login method.
+    Matches an OAuth login to an existing account by verified email via
+    EmailIdentity, so team invites and admin-email checks work the same
+    way regardless of when the account was first created.
     """
 
     def pre_social_login(self, request, sociallogin):

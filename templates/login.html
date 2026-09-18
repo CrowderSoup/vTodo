@@ -15,7 +15,7 @@
       </div>
       <h1 class="auth-heading">A more polished place for the work you actually care about.</h1>
       <p class="auth-copy">
-        vtodo keeps the kanban board small, fast, and yours. Sign in with Google or email, then manage work with customizable columns, quick notes, and calm HTMX interactions.
+        vtodo keeps the kanban board small, fast, and yours. Sign in with Google, then manage work with customizable columns, quick notes, and calm HTMX interactions.
       </p>
     </div>
 
@@ -29,36 +29,13 @@
 
   <div class="auth-card surface-panel">
     <span class="eyebrow">Sign in</span>
-    <h2 class="card-title">Choose your path in.</h2>
-    <p class="card-subtitle">Both options create the same account experience once you’re inside.</p>
+    <h2 class="card-title">Get started with Google.</h2>
+    <p class="card-subtitle">One click and you're on your board.</p>
 
-    <div class="auth-tabs" role="tablist">
-      <button class="auth-tab" role="tab" id="tab-google" aria-controls="panel-google" aria-selected="true" type="button" onclick="switchTab('google')">
-        Google
-      </button>
-      <button class="auth-tab" role="tab" id="tab-email" aria-controls="panel-email" aria-selected="false" type="button" onclick="switchTab('email')">
-        Email
-      </button>
-    </div>
-
-    <div id="panel-google" class="auth-panel" role="tabpanel" aria-labelledby="tab-google">
-      <form class="auth-form" method="post" action="{% provider_login_url 'google' next=next %}">
-        {% csrf_token %}
-        <button type="submit" class="btn-primary">Sign in with Google</button>
-      </form>
-    </div>
-
-    <div id="panel-email" class="auth-panel" role="tabpanel" aria-labelledby="tab-email" hidden>
-      <form class="auth-form" method="post" action="{% url 'emailauth:request' %}">
-        {% csrf_token %}
-        <input type="hidden" name="next" value="{{ next }}">
-        <div class="form-field">
-          <label class="field-label" for="email">Your email address</label>
-          <input type="email" id="email" name="email" placeholder="you@example.com" required>
-        </div>
-        <button type="submit" class="btn-primary">Send login code</button>
-      </form>
-    </div>
+    <form class="auth-form" method="post" action="{% provider_login_url 'google' next=next %}">
+      {% csrf_token %}
+      <button type="submit" class="btn-primary">Sign in with Google</button>
+    </form>
   </div>
 </section>
 {% endblock %}
