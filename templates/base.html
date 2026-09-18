@@ -37,37 +37,45 @@
         </span>
       </a>
 
-      <div class="nav-links">
-        <a class="nav-link {% if request.resolver_match.namespace == 'boards' %}is-active{% endif %}" href="{% url 'boards:board' %}">Board</a>
-        <a class="nav-link {% if request.resolver_match.namespace == 'calendar' %}is-active{% endif %}" href="{% url 'calendar:calendar' %}">Calendar</a>
-        <a class="nav-link {% if request.resolver_match.namespace == 'users' %}is-active{% endif %}" href="{% url 'users:settings' %}">Settings</a>
-        {% if is_site_admin %}
-        <a class="nav-link {% if request.resolver_match.namespace == 'siteadmin' %}is-active{% endif %}" href="{% url 'siteadmin:dashboard' %}">Admin</a>
-        {% endif %}
-      </div>
-
-      <span class="nav-spacer"></span>
-
       <div id="board-filter" class="nav-filter-slot">{% if board %}{% include "boards/_filter_bar.html" %}{% endif %}</div>
 
-      <div class="nav-meta">
-        <div class="user-chip">
-          {% if user.avatar_url %}
-          <img src="{{ user.avatar_url }}" alt="">
-          {% else %}
-          <span class="avatar-fallback">{{ user.display_name|default:user.username|slice:":1"|upper }}</span>
-          {% endif %}
-          <span class="user-name">{{ user.display_name|default:user.username }}</span>
-        </div>
-
-        <button id="theme-toggle" class="btn-ghost btn-small theme-toggle" type="button" onclick="vtodoToggleTheme()">
-          <span id="theme-label">Dark</span> mode
+      <div class="nav-collapsible-wrap">
+        <button class="btn-ghost btn-small nav-menu-toggle" type="button" data-disclosure-toggle aria-label="Menu" title="Menu">
+          <span class="nav-menu-icon" aria-hidden="true">&#9776;</span>
         </button>
 
-        <form method="post" action="{% url 'accounts:logout' %}">
-          {% csrf_token %}
-          <button type="submit" class="btn-secondary btn-small">Log out</button>
-        </form>
+        <div class="nav-collapsible-menu">
+          <div class="nav-links">
+            <a class="nav-link {% if request.resolver_match.namespace == 'boards' %}is-active{% endif %}" href="{% url 'boards:board' %}">Board</a>
+            <a class="nav-link {% if request.resolver_match.namespace == 'calendar' %}is-active{% endif %}" href="{% url 'calendar:calendar' %}">Calendar</a>
+            <a class="nav-link {% if request.resolver_match.namespace == 'users' %}is-active{% endif %}" href="{% url 'users:settings' %}">Settings</a>
+            {% if is_site_admin %}
+            <a class="nav-link {% if request.resolver_match.namespace == 'siteadmin' %}is-active{% endif %}" href="{% url 'siteadmin:dashboard' %}">Admin</a>
+            {% endif %}
+          </div>
+
+          <span class="nav-spacer"></span>
+
+          <div class="nav-meta">
+            <div class="user-chip">
+              {% if user.avatar_url %}
+              <img src="{{ user.avatar_url }}" alt="">
+              {% else %}
+              <span class="avatar-fallback">{{ user.display_name|default:user.username|slice:":1"|upper }}</span>
+              {% endif %}
+              <span class="user-name">{{ user.display_name|default:user.username }}</span>
+            </div>
+
+            <button id="theme-toggle" class="btn-ghost btn-small theme-toggle" type="button" onclick="vtodoToggleTheme()">
+              <span id="theme-label">Dark</span> mode
+            </button>
+
+            <form method="post" action="{% url 'accounts:logout' %}">
+              {% csrf_token %}
+              <button type="submit" class="btn-secondary btn-small">Log out</button>
+            </form>
+          </div>
+        </div>
       </div>
     </nav>
   </header>

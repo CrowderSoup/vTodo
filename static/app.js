@@ -391,7 +391,7 @@
   }
 
   function closeOpenDisclosures(exception) {
-    document.querySelectorAll(".col-actions-menu.open, .calendar-day-popover.open, .filter-bar-popover.open").forEach(function (menu) {
+    document.querySelectorAll(".col-actions-menu.open, .calendar-day-popover.open, .filter-bar-popover.open, .nav-collapsible-menu.open").forEach(function (menu) {
       if (menu !== exception && !(exception && menu.contains(exception))) {
         menu.classList.remove("open");
       }
