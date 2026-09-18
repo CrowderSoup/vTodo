@@ -530,7 +530,11 @@
       return;
     }
 
-    if (!event.target.closest(".column-actions") && !event.target.closest(".filter-bar-trigger-container")) {
+    if (
+      !event.target.closest(".column-actions") &&
+      !event.target.closest(".filter-bar-trigger-container") &&
+      !event.target.closest(".nav-collapsible-wrap")
+    ) {
       closeOpenDisclosures(null);
     }
   });
