@@ -1,0 +1,53 @@
+{% extends "users/settings/_base.html" %}
+
+{% block settings_title %}Calendar{% endblock %}
+
+{% block settings_content %}
+<div class="settings-grid">
+  <section class="settings-card settings-card--wide surface-panel">
+    <div>
+      <h2 class="card-title">Google Calendar</h2>
+      <p class="card-subtitle">
+        vtodo creates its own "vTodo" calendar in your Google account and keeps it in sync with your
+        tasks that have a due date — your personal tasks, plus any team task assigned to you. It's
+        one-way: editing an event in Google doesn't change the task.
+      </p>
+    </div>
+
+    <div class="settings-list">
+      <div class="config-row">
+        <div class="config-main">
+          <div class="config-title"><span>vTodo calendar</span></div>
+          {% if connection %}
+          <div class="config-description">
+            {% if not connection.is_active %}
+              <span class="pill pill--error">Disconnected by Google — reconnect below</span>
+            {% elif connection.last_sync_error %}
+              <span class="pill pill--error">Last sync failed: {{ connection.last_sync_error|truncatechars:80 }}</span>
+            {% elif connection.last_synced_at %}
+              <span class="pill">Last synced {{ connection.last_synced_at|timesince }} ago</span>
+            {% else %}
+              <span class="pill">Connected — first sync pending</span>
+            {% endif %}
+          </div>
+          {% else %}
+          <div class="config-description"><span class="field-help">Not connected.</span></div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-footer-secondary">
+      {% if connection %}
+      <form method="post" action="{% url 'integrations:google-calendar-disconnect' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn-danger"
+                onclick="return confirm('Disconnect Google Calendar? Your vTodo calendar and its events will be deleted from Google.');">Disconnect</button>
+      </form>
+      {% else %}
+      <a class="btn-primary" href="{% url 'integrations:google-calendar-connect' %}">Connect Google Calendar</a>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -16,6 +16,7 @@ urlpatterns = [
     path("calendar/", include("apps.boards.urls_calendar", namespace="calendar")),
     path("settings/", include("apps.users.urls", namespace="users")),
     path("teams/", include("apps.teams.urls", namespace="teams")),
+    path("integrations/", include("apps.integrations.urls", namespace="integrations")),
     path("admin-panel/", include("apps.siteadmin.urls", namespace="siteadmin")),
     # OAuth 2.1 authorization server, for remote MCP clients (Claude) — see
     # config/settings.py:OAUTH2_PROVIDER. RFC 8414 well-known metadata is

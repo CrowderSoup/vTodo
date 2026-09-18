@@ -20,7 +20,6 @@ def test_settings_post_saves_default_status(logged_in_client):
         reverse("users:settings"),
         {
             "display_name": "",
-            "avatar_url": "",
             "default_status": str(default_status.pk),
         },
     )
@@ -28,6 +27,24 @@ def test_settings_post_saves_default_status(logged_in_client):
     user.refresh_from_db()
     assert response.status_code == 302
     assert user.default_status_id == default_status.pk
+
+
+@pytest.mark.django_db
+def test_settings_post_cannot_set_avatar_url_manually(logged_in_client):
+    client, user = logged_in_client
+    default_status = user.task_statuses.get(slug="done")
+
+    client.post(
+        reverse("users:settings"),
+        {
+            "display_name": "",
+            "avatar_url": "https://evil.example.com/not-my-avatar.jpg",
+            "default_status": str(default_status.pk),
+        },
+    )
+
+    user.refresh_from_db()
+    assert user.avatar_url == ""
 
 
 @pytest.mark.django_db
@@ -40,7 +57,6 @@ def test_settings_post_rejects_default_status_from_another_user(logged_in_client
         reverse("users:settings"),
         {
             "display_name": "",
-            "avatar_url": "",
             "default_status": str(other_status.pk),
         },
     )
@@ -48,6 +64,31 @@ def test_settings_post_rejects_default_status_from_another_user(logged_in_client
     user.refresh_from_db()
     assert response.status_code == 302
     assert user.default_status_id is None
+
+
+@pytest.mark.django_db
+def test_settings_calendar_shows_connect_link_when_disconnected(logged_in_client):
+    client, _ = logged_in_client
+    response = client.get(reverse("users:settings-calendar"))
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Connect Google Calendar" in content
+
+
+@pytest.mark.django_db
+def test_settings_calendar_shows_status_when_connected(logged_in_client):
+    from apps.integrations.models import GoogleCalendarConnection
+
+    client, user = logged_in_client
+    GoogleCalendarConnection.objects.create(user=user, calendar_id="cal-abc", refresh_token_encrypted="x")
+
+    response = client.get(reverse("users:settings-calendar"))
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Disconnect" in content
+    assert "Connect Google Calendar" not in content
 
 
 @pytest.mark.django_db

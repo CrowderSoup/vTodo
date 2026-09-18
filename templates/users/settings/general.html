@@ -17,14 +17,7 @@
       <input type="text" id="display_name" name="display_name" value="{{ user.display_name }}">
     </div>
 
-    <div class="form-field">
-      <label class="field-label" for="avatar_url">Avatar URL</label>
-      <input type="url"
-             id="avatar_url"
-             name="avatar_url"
-             value="{{ user.avatar_url }}"
-             placeholder="https://example.com/avatar.jpg">
-    </div>
+    <p class="field-help">Your avatar comes from Google if you signed in with it, otherwise from <a href="https://gravatar.com" target="_blank" rel="noopener">Gravatar</a>, otherwise it's just your initial.</p>
 
     <div class="form-field">
       <label class="field-label" for="timezone">Timezone</label>

@@ -87,7 +87,9 @@ def test_backfills_display_name_and_avatar_when_unset(request_factory):
 
 
 @pytest.mark.django_db
-def test_does_not_overwrite_existing_display_name_and_avatar(request_factory):
+def test_does_not_overwrite_existing_display_name_but_resyncs_avatar(request_factory):
+    # Display name is user-editable, so it's only ever backfilled once. Avatar
+    # has no user-editable alternative, so it always mirrors Google's picture.
     user = User.objects.create_user(display_name="Existing Name", avatar_url="https://example.com/existing.jpg")
     EmailIdentity.objects.create(user=user, email="keepmine@example.com", verified=True)
     request = request_factory()
@@ -101,7 +103,7 @@ def test_does_not_overwrite_existing_display_name_and_avatar(request_factory):
 
     user.refresh_from_db()
     assert user.display_name == "Existing Name"
-    assert user.avatar_url == "https://example.com/existing.jpg"
+    assert user.avatar_url == "https://example.com/new.jpg"
 
 
 @pytest.mark.django_db
@@ -147,13 +149,34 @@ def test_new_email_allowed_invite_only_with_valid_invite(request_factory):
 
 
 @pytest.mark.django_db
-def test_repeat_login_short_circuits(request_factory, django_assert_num_queries):
-    user = User.objects.create_user()
+def test_repeat_login_skips_identity_work(request_factory, django_assert_num_queries):
+    user = User.objects.create_user(display_name="Existing Name")
     account = SocialAccount(provider="google", uid="uid-existing", user=user)
     sociallogin = SocialLogin(user=user, account=account)
     request = request_factory()
 
     with django_assert_num_queries(1):
-        # is_existing itself issues one query (checking the user still exists);
-        # nothing else should run once it short-circuits.
+        # is_existing issues one query (checking the user still exists); no
+        # avatar/name sync work runs since extra_data has nothing to sync.
         SocialAccountAdapter().pre_social_login(request, sociallogin)
+
+
+@pytest.mark.django_db
+def test_repeat_login_refreshes_avatar_from_google(request_factory):
+    user = User.objects.create_user(
+        display_name="Existing Name", avatar_url="https://example.com/old.jpg"
+    )
+    account = SocialAccount(
+        provider="google",
+        uid="uid-existing",
+        user=user,
+        extra_data={"name": "New Name", "picture": "https://example.com/new.jpg"},
+    )
+    sociallogin = SocialLogin(user=user, account=account)
+    request = request_factory()
+
+    SocialAccountAdapter().pre_social_login(request, sociallogin)
+
+    user.refresh_from_db()
+    assert user.avatar_url == "https://example.com/new.jpg"
+    assert user.display_name == "Existing Name"
