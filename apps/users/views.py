@@ -19,7 +19,7 @@ def _hero_stats(user):
 
     return {
         "statuses_count": statuses_count,
-        "columns_count": columns_count,
+        "custom_lanes_count": columns_count,
     }
 
 
@@ -32,6 +32,7 @@ def _available_timezones():
 class SettingsGeneralView(LoginRequiredMixin, View):
     def get(self, request):
         from apps.tasks.models import TaskStatus
+        from apps.users.selectors import primary_email
 
         statuses = TaskStatus.objects.filter(user=request.user)
 
@@ -39,6 +40,7 @@ class SettingsGeneralView(LoginRequiredMixin, View):
             "statuses": statuses,
             "default_status_id": request.user.default_status_id,
             "timezones": _available_timezones(),
+            "signed_in_email": primary_email(request.user),
             "active_tab": "general",
         }
         context.update(_hero_stats(request.user))
@@ -122,7 +124,6 @@ class SettingsBoardView(LoginRequiredMixin, View):
             "user_teams": list(user_teams_qs(request.user)),
             "active_tab": "board",
         }
-        context.update(_hero_stats(request.user))
         return render(request, "users/settings/board.html", context)
 
 
@@ -132,14 +133,12 @@ class SettingsCalendarView(LoginRequiredMixin, View):
 
         connection = GoogleCalendarConnection.objects.filter(user=request.user).first()
         context = {"connection": connection, "active_tab": "calendar"}
-        context.update(_hero_stats(request.user))
         return render(request, "users/settings/calendar.html", context)
 
 
 class SettingsApiView(LoginRequiredMixin, View):
     def get(self, request):
         context = {"active_tab": "api"}
-        context.update(_hero_stats(request.user))
         return render(request, "users/settings/api.html", context)
 
 
@@ -164,7 +163,6 @@ class SettingsTeamsView(LoginRequiredMixin, View):
             })
 
         context = {"teams": teams, "active_tab": "teams"}
-        context.update(_hero_stats(request.user))
         return render(request, "users/settings/teams.html", context)
 
 

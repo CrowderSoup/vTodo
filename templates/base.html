@@ -58,9 +58,6 @@
         <button class="user-chip user-menu-toggle" type="button" data-disclosure-toggle aria-haspopup="true" aria-label="Account menu" title="Account menu">
           {% if user.avatar_url %}
           <img src="{{ user.avatar_url }}" alt="">
-          {% elif gravatar_url %}
-          <img src="{{ gravatar_url }}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.removeProperty('display');">
-          <span class="avatar-fallback" style="display:none">{{ user.display_name|default:user.username|slice:":1"|upper }}</span>
           {% else %}
           <span class="avatar-fallback">{{ user.display_name|default:user.username|slice:":1"|upper }}</span>
           {% endif %}
