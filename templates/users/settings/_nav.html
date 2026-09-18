@@ -2,5 +2,6 @@
   <a class="settings-subnav-link {% if active_tab == 'general' %}is-active{% endif %}" href="{% url 'users:settings' %}">General</a>
   <a class="settings-subnav-link {% if active_tab == 'board' %}is-active{% endif %}" href="{% url 'users:settings-board' %}">Board Setup</a>
   <a class="settings-subnav-link {% if active_tab == 'teams' %}is-active{% endif %}" href="{% url 'users:settings-teams' %}">Teams</a>
+  <a class="settings-subnav-link {% if active_tab == 'calendar' %}is-active{% endif %}" href="{% url 'users:settings-calendar' %}">Calendar</a>
   <a class="settings-subnav-link {% if active_tab == 'api' %}is-active{% endif %}" href="{% url 'users:settings-api' %}">API</a>
 </nav>

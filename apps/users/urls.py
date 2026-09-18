@@ -9,6 +9,7 @@ urlpatterns = [
     path("board/", views.SettingsBoardView.as_view(), name="settings-board"),
     path("api/", views.SettingsApiView.as_view(), name="settings-api"),
     path("teams/", views.SettingsTeamsView.as_view(), name="settings-teams"),
+    path("calendar/", views.SettingsCalendarView.as_view(), name="settings-calendar"),
     path("statuses/create/", views.TaskStatusCreateView.as_view(), name="status-create"),
     path("statuses/<int:pk>/delete/", views.TaskStatusDeleteView.as_view(), name="status-delete"),
     path("statuses/<int:pk>/color/", views.TaskStatusColorUpdateView.as_view(), name="status-color-update"),

@@ -51,7 +51,6 @@ class SettingsGeneralView(LoginRequiredMixin, View):
 
         user = request.user
         user.display_name = request.POST.get("display_name", "").strip()
-        user.avatar_url = request.POST.get("avatar_url", "").strip()
 
         default_status = None
         default_status_id = request.POST.get("default_status", "").strip()
@@ -68,7 +67,7 @@ class SettingsGeneralView(LoginRequiredMixin, View):
                 return redirect(reverse("users:settings"))
             user.timezone = tzname
 
-        user.save(update_fields=["display_name", "avatar_url", "default_status", "timezone"])
+        user.save(update_fields=["display_name", "default_status", "timezone"])
         messages.success(request, "Settings saved.")
         return redirect(reverse("users:settings"))
 
@@ -125,6 +124,16 @@ class SettingsBoardView(LoginRequiredMixin, View):
         }
         context.update(_hero_stats(request.user))
         return render(request, "users/settings/board.html", context)
+
+
+class SettingsCalendarView(LoginRequiredMixin, View):
+    def get(self, request):
+        from apps.integrations.models import GoogleCalendarConnection
+
+        connection = GoogleCalendarConnection.objects.filter(user=request.user).first()
+        context = {"connection": connection, "active_tab": "calendar"}
+        context.update(_hero_stats(request.user))
+        return render(request, "users/settings/calendar.html", context)
 
 
 class SettingsApiView(LoginRequiredMixin, View):

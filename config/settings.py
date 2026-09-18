@@ -143,6 +143,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "apps.siteadmin.context_processors.admin_status",
+                "apps.users.context_processors.avatar_status",
             ],
         },
     },
@@ -192,6 +193,12 @@ CACHES = {
 # Celery
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+CELERY_BEAT_SCHEDULE = {
+    "sync-google-calendar-connections": {
+        "task": "apps.integrations.tasks.sync_all_google_calendar_connections",
+        "schedule": 600.0,  # 10 minutes
+    },
+}
 
 # Email
 EMAIL_BACKEND = env(
@@ -237,12 +244,17 @@ LOGGING = {
     },
 }
 
-# Google OAuth (django-allauth) — settings-based provider app, no DB SocialApp/admin needed
+# Google OAuth (django-allauth) — settings-based provider app, no DB SocialApp/admin needed.
+# Exposed as plain settings too, since apps.integrations.google_calendar reuses the same
+# registered OAuth client for its own (separate, incremental-consent) calendar connect flow.
+GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID", default="")
+GOOGLE_CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET", default="")
+
 SOCIALACCOUNT_PROVIDERS = {
     "google": {
         "APP": {
-            "client_id": env("GOOGLE_CLIENT_ID", default=""),
-            "secret": env("GOOGLE_CLIENT_SECRET", default=""),
+            "client_id": GOOGLE_CLIENT_ID,
+            "secret": GOOGLE_CLIENT_SECRET,
             "key": "",
         },
         "SCOPE": ["profile", "email"],
