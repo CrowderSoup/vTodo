@@ -1,6 +1,5 @@
 import datetime
 
-from django.db.models import Q
 from django.utils import timezone as dj_timezone
 
 from apps.integrations.google_calendar.client import GoogleCalendarAPIError, GoogleCalendarAuthError, GoogleCalendarClient
@@ -10,16 +9,14 @@ from apps.tasks.models import Task
 DEFAULT_DURATION_MINUTES = 30
 
 
-def owned_or_assigned_tasks_qs(user):
-    """A user's own personal tasks plus any team task assigned to them --
-    everything relevant to that person's calendar. Mirrors the personal/team
-    split already enforced in apps.tasks.selectors.visible_tasks_qs. Public
-    since the disconnect view also needs it, to clean up ExternalLinks."""
-    return Task.objects.filter(Q(user=user, team__isnull=True) | Q(assignee=user))
+def user_tasks_qs(user):
+    """All of a user's tasks. Public since the disconnect view also needs it,
+    to clean up ExternalLinks."""
+    return Task.objects.filter(user=user)
 
 
 def _eligible_tasks_qs(user):
-    return owned_or_assigned_tasks_qs(user).filter(
+    return user_tasks_qs(user).filter(
         due_date__isnull=False, is_archived=False, completed_at__isnull=True,
     )
 
@@ -73,7 +70,7 @@ def _reconcile_linked_tasks(connection, client, eligible_by_id):
     still need a first-time push."""
     links = ExternalLink.objects.filter(
         provider=ExternalLink.Provider.GOOGLE_CALENDAR,
-        task__in=owned_or_assigned_tasks_qs(connection.user),
+        task__in=user_tasks_qs(connection.user),
     ).select_related("task")
 
     seen_task_ids = set()

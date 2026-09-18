@@ -2,7 +2,6 @@ import pytest
 from datetime import date, time
 
 from apps.tasks.models import Task
-from apps.teams.models import Team, TeamMembership
 from apps.users.models import User
 
 
@@ -45,17 +44,15 @@ def test_task_tags_default_empty_list():
 
 
 @pytest.mark.django_db
-def test_spawn_recurrence_keeps_team_task_on_the_team():
+def test_spawn_recurrence_keeps_task_owner():
     user = User.objects.create_user()
-    team = Team.objects.create(name="Rocketry")
-    TeamMembership.objects.create(team=team, user=user)
     task = Task.objects.create(
-        user=user, team=team, title="Weekly sync", recurrence_days=7,
+        user=user, title="Weekly sync", recurrence_days=7,
     )
 
     spawned = task.spawn_recurrence(completion_date=date(2026, 1, 1))
 
-    assert spawned.team_id == team.pk
+    assert spawned.user_id == user.pk
 
 
 @pytest.mark.django_db

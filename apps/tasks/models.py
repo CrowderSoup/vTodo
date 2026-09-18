@@ -15,21 +15,10 @@ DEFAULT_STATUS_DEFS = [
 
 
 class TaskStatus(models.Model):
-    """Owned by exactly one of user (personal) or team (shared team workflow)."""
-
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="task_statuses",
-        null=True,
-        blank=True,
-    )
-    team = models.ForeignKey(
-        "teams.Team",
-        on_delete=models.CASCADE,
-        related_name="task_statuses",
-        null=True,
-        blank=True,
     )
     name = models.CharField(max_length=100)
     slug = models.SlugField(max_length=50)
@@ -40,22 +29,9 @@ class TaskStatus(models.Model):
     class Meta:
         ordering = ["order"]
         constraints = [
-            models.CheckConstraint(
-                condition=(
-                    models.Q(user__isnull=False, team__isnull=True)
-                    | models.Q(user__isnull=True, team__isnull=False)
-                ),
-                name="taskstatus_exactly_one_owner",
-            ),
             models.UniqueConstraint(
                 fields=["user", "slug"],
-                condition=models.Q(team__isnull=True),
                 name="taskstatus_unique_user_slug",
-            ),
-            models.UniqueConstraint(
-                fields=["team", "slug"],
-                condition=models.Q(user__isnull=True),
-                name="taskstatus_unique_team_slug",
             ),
         ]
 
@@ -73,20 +49,6 @@ class Task(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="tasks",
-    )
-    team = models.ForeignKey(
-        "teams.Team",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="tasks",
-    )
-    assignee = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="assigned_tasks",
     )
     title = models.CharField(max_length=500)
     notes = models.TextField(blank=True, default="")
@@ -141,7 +103,6 @@ class Task(models.Model):
 
         return Task.objects.create(
             user=self.user,
-            team=self.team,
             title=self.title,
             notes=self.notes,
             status="backlog",
@@ -166,24 +127,3 @@ class TaskComment(models.Model):
         return f"Comment on {self.task_id} @ {self.created_at}"
 
 
-class TaskActivity(models.Model):
-    """Audit trail entry for a field change on a task (e.g. assignee)."""
-
-    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="activity")
-    actor = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name="task_activity_entries",
-    )
-    field = models.CharField(max_length=50)
-    old_value = models.CharField(max_length=255, blank=True, default="")
-    new_value = models.CharField(max_length=255, blank=True, default="")
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["created_at"]
-        verbose_name_plural = "task activity"
-
-    def __str__(self):
-        return f"{self.field} change on {self.task_id} @ {self.created_at}"

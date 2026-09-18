@@ -5,10 +5,7 @@
       <strong>{{ column.label }}</strong>
     </div>
     <div class="config-description">
-      {% with statuses=column.filter_config.statuses tags=column.filter_config.tags due=column.filter_config.due assignee=column.filter_config.assignee %}
-      {% if assignee and assignee != "any" %}
-      <span class="pill">Assignee: {{ assignee }}</span>
-      {% endif %}
+      {% with statuses=column.filter_config.statuses tags=column.filter_config.tags due=column.filter_config.due %}
       {% if statuses %}
       <span class="pill">Statuses: {{ statuses|join:", " }}</span>
       {% endif %}

@@ -7,7 +7,6 @@ A personal kanban-style task manager built with Django. Log in with Google, then
 - **Kanban board** — columns that filter tasks by status, tags, or due date (overdue / today / this week)
 - **Custom task statuses** — define your own ordered statuses with optional colors
 - **Task details** — title, notes, tags, due date, completion tracking
-- **Teams** — shared task pools with email invites, assignment, and an audit trail of who did what
 - **Google sign-in** — OAuth login via django-allauth (more providers easy to add)
 - **HTMX-powered UI** — fast partial-page updates without a full JS framework
 - **Docker-ready** — single Dockerfile, configurable via environment variables

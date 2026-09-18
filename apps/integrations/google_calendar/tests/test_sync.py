@@ -6,7 +6,6 @@ from apps.integrations.google_calendar import sync
 from apps.integrations.google_calendar.client import GoogleCalendarAPIError, GoogleCalendarAuthError
 from apps.integrations.models import ExternalLink, GoogleCalendarConnection
 from apps.tasks.models import Task
-from apps.teams.models import Team, TeamMembership
 from apps.users.models import User
 
 
@@ -67,24 +66,9 @@ def test_personal_task_creates_event(connection, fake_client):
 
 
 @pytest.mark.django_db
-def test_team_task_assigned_to_user_creates_event(connection, fake_client):
-    team = Team.objects.create(name="Ops")
-    TeamMembership.objects.create(team=team, user=connection.user, role=TeamMembership.ROLE_MEMBER)
-    Task.objects.create(
-        user=connection.user, team=team, assignee=connection.user, title="Ship release", due_date=date(2026, 1, 1)
-    )
-
-    sync.sync_connection(connection)
-
-    assert len(fake_client[0].created) == 1
-
-
-@pytest.mark.django_db
-def test_team_task_not_assigned_to_user_is_not_synced(connection, fake_client):
+def test_another_users_task_is_not_synced(connection, fake_client):
     other_user = User.objects.create_user()
-    team = Team.objects.create(name="Ops")
-    TeamMembership.objects.create(team=team, user=connection.user, role=TeamMembership.ROLE_MEMBER)
-    Task.objects.create(user=other_user, team=team, title="Not mine", due_date=date(2026, 1, 1))
+    Task.objects.create(user=other_user, title="Not mine", due_date=date(2026, 1, 1))
 
     sync.sync_connection(connection)
 

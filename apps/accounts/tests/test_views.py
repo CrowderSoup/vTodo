@@ -34,9 +34,9 @@ def test_logout_clears_session_and_redirects(client):
 def test_login_redirects_authenticated_user_to_next(client):
     user = User.objects.create_user()
     client.force_login(user)
-    response = client.get(reverse("accounts:login"), {"next": "/teams/invite/abc/accept/"})
+    response = client.get(reverse("accounts:login"), {"next": "/board/some-deep-link/"})
     assert response.status_code == 302
-    assert response["Location"] == "/teams/invite/abc/accept/"
+    assert response["Location"] == "/board/some-deep-link/"
 
 
 @pytest.mark.django_db
@@ -50,9 +50,9 @@ def test_login_ignores_unsafe_next_for_authenticated_user(client):
 
 @pytest.mark.django_db
 def test_login_page_threads_next_into_google_login_link(client):
-    response = client.get(reverse("accounts:login"), {"next": "/teams/invite/abc/accept/"})
+    response = client.get(reverse("accounts:login"), {"next": "/board/some-deep-link/"})
     assert response.status_code == 200
-    assert b"next=%2Fteams%2Finvite%2Fabc%2Faccept%2F" in response.content
+    assert b"next=%2Fboard%2Fsome-deep-link%2F" in response.content
 
 
 @pytest.mark.django_db

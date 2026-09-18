@@ -1,4 +1,3 @@
-from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from drf_spectacular.utils import extend_schema
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication, TokenHasScope
@@ -10,24 +9,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.tasks.models import Task, TaskComment, TaskStatus
-from apps.tasks.selectors import (
-    AssignmentError,
-    InvalidStatusError,
-    assign_task,
-    move_task,
-    user_team_ids,
-    user_teams_qs,
-    visible_tasks_qs,
-)
-from apps.users.models import User
+from apps.tasks.selectors import InvalidStatusError, move_task, visible_tasks_qs
 
-from .serializers import (
-    TaskActivitySerializer,
-    TaskCommentSerializer,
-    TaskSerializer,
-    TaskStatusSerializer,
-    TeamSerializer,
-)
+from .serializers import TaskCommentSerializer, TaskSerializer, TaskStatusSerializer
 
 
 class TaskStatusViewSet(viewsets.ModelViewSet):
@@ -35,19 +19,11 @@ class TaskStatusViewSet(viewsets.ModelViewSet):
     lookup_field = "slug"
 
     def get_queryset(self):
-        team_id = self.request.query_params.get("team")
-        if team_id:
-            return TaskStatus.objects.filter(team_id=team_id, team_id__in=user_team_ids(self.request.user))
-        return TaskStatus.objects.filter(user=self.request.user, team__isnull=True)
+        return TaskStatus.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
-        team_id = self.request.data.get("team")
-        if team_id and int(team_id) in user_team_ids(self.request.user):
-            order = TaskStatus.objects.filter(team_id=team_id).count()
-            serializer.save(team_id=team_id, order=order)
-        else:
-            order = TaskStatus.objects.filter(user=self.request.user, team__isnull=True).count()
-            serializer.save(user=self.request.user, order=order)
+        order = TaskStatus.objects.filter(user=self.request.user).count()
+        serializer.save(user=self.request.user, order=order)
 
     @extend_schema(
         request={"application/json": {"type": "object", "properties": {"order": {"type": "array", "items": {"type": "integer"}}}}},
@@ -61,15 +37,8 @@ class TaskStatusViewSet(viewsets.ModelViewSet):
 
         statuses = {s.pk: s for s in TaskStatus.objects.filter(pk__in=order)}
         if statuses:
-            first = next(iter(statuses.values()))
-            same_scope = all(
-                s.user_id == first.user_id and s.team_id == first.team_id for s in statuses.values()
-            )
-            if first.team_id:
-                owns_scope = user_teams_qs(request.user).filter(pk=first.team_id).exists()
-            else:
-                owns_scope = first.user_id == request.user.id
-            if not same_scope or not owns_scope:
+            owns_scope = all(s.user_id == request.user.id for s in statuses.values())
+            if not owns_scope:
                 return Response(status=status.HTTP_403_FORBIDDEN)
 
         for i, pk in enumerate(order):
@@ -86,9 +55,6 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = visible_tasks_qs(self.request.user)
-        team_id = self.request.query_params.get("team")
-        if team_id:
-            qs = qs.filter(team_id=team_id)
         status_slug = self.request.query_params.get("status")
         if status_slug:
             qs = qs.filter(status=status_slug)
@@ -152,41 +118,12 @@ class TaskViewSet(viewsets.ModelViewSet):
         serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    @extend_schema(
-        request={"application/json": {"type": "object", "properties": {"assignee_id": {"type": "integer"}}}},
-        responses={200: TaskSerializer},
-    )
-    @action(detail=True, methods=["post"])
-    def assign(self, request, pk=None):
-        task = self.get_object()
-        assignee_id = request.data.get("assignee_id")
-        assignee = get_object_or_404(User, pk=assignee_id) if assignee_id else None
-
-        try:
-            assign_task(request.user, task, assignee)
-        except AssignmentError as e:
-            return Response({"detail": str(e)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-
-        return Response(TaskSerializer(task).data)
-
-    @action(detail=True, methods=["get"])
-    def activity(self, request, pk=None):
-        task = self.get_object()
-        return Response(TaskActivitySerializer(task.activity.all(), many=True).data)
-
 
 class TaskCommentViewSet(viewsets.GenericViewSet, mixins.DestroyModelMixin):
     serializer_class = TaskCommentSerializer
 
     def get_queryset(self):
         return TaskComment.objects.filter(task__in=visible_tasks_qs(self.request.user))
-
-
-class TeamViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = TeamSerializer
-
-    def get_queryset(self):
-        return user_teams_qs(self.request.user)
 
 
 def validate_whoami_resource_token(request_uri: str, audiences: list[str]) -> bool:

@@ -1,14 +1,13 @@
-def provision_statuses(*, user=None, team=None, copy_from_user=None):
-    """Seed TaskStatus rows for a new personal board or team.
+def provision_statuses(*, user, copy_from_user=None):
+    """Seed TaskStatus rows for a new personal board.
 
-    Copies copy_from_user's personal statuses (name/slug/order/color/is_done)
-    if given, else seeds from DEFAULT_STATUS_DEFS. Exactly one of user/team
-    must be given, matching TaskStatus's ownership constraint.
+    Copies copy_from_user's statuses (name/slug/order/color/is_done) if given,
+    else seeds from DEFAULT_STATUS_DEFS.
     """
     from apps.tasks.models import DEFAULT_STATUS_DEFS, TaskStatus
 
     if copy_from_user is not None:
-        source_statuses = TaskStatus.objects.filter(user=copy_from_user, team__isnull=True)
+        source_statuses = TaskStatus.objects.filter(user=copy_from_user)
         rows = [
             (status.name, status.slug, status.order, status.is_done, status.color)
             for status in source_statuses
@@ -19,7 +18,6 @@ def provision_statuses(*, user=None, team=None, copy_from_user=None):
     for name, slug, order, is_done, color in rows:
         TaskStatus.objects.create(
             user=user,
-            team=team,
             name=name,
             slug=slug,
             order=order,

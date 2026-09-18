@@ -103,104 +103,38 @@ def test_settings_includes_shared_confirm_modal(logged_in_client):
 
 
 # ---------------------------------------------------------------------------
-# SettingsTeamsView
+# Column/status creation
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-def test_settings_teams_lists_owned_team_with_pending_invite(logged_in_client):
-    from apps.teams.models import Team, TeamInvite, TeamMembership
+def test_column_create_creates_on_personal_board(logged_in_client):
+    from apps.boards.models import Board, Column
 
     client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-    TeamMembership.objects.create(team=team, user=user, role=TeamMembership.ROLE_OWNER)
-    TeamInvite.generate(team, "a@example.com", user)
-
-    response = client.get(reverse("users:settings-teams"))
-
-    assert response.status_code == 200
-    content = response.content.decode()
-    assert "Rocketry" in content
-    assert "a@example.com" in content
-
-
-@pytest.mark.django_db
-def test_settings_teams_empty_state_for_no_teams(logged_in_client):
-    client, _ = logged_in_client
-    response = client.get(reverse("users:settings-teams"))
-    assert response.status_code == 200
-    assert b"not on any teams yet" in response.content
-
-
-# ---------------------------------------------------------------------------
-# Team-scoped column/status creation
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_column_create_with_team_creates_on_team_board(logged_in_client):
-    from apps.boards.models import Board
-    from apps.teams.models import Team, TeamMembership
-
-    client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-    TeamMembership.objects.create(team=team, user=user, role=TeamMembership.ROLE_OWNER)
-    team_board = Board.objects.create(team=team, name=team.name)
 
     response = client.post(
         reverse("users:column-create"),
-        {"label": "Team Lane", "team": team.pk, "assignee": "unassigned"},
+        {"label": "Overdue", "due": "overdue"},
     )
 
     assert response.status_code == 200
-    from apps.boards.models import Column
-
-    column = Column.objects.get(label="Team Lane")
-    assert column.board_id == team_board.pk
-    assert "scope" not in column.filter_config
-    assert column.filter_config["assignee"] == "unassigned"
-    # Nothing leaked onto the creator's own personal board.
-    personal_board = Board.objects.get(user=user)
-    assert not personal_board.columns.filter(label="Team Lane").exists()
+    board = Board.objects.get(user=user)
+    column = Column.objects.get(label="Overdue")
+    assert column.board_id == board.pk
+    assert column.filter_config["due"] == "overdue"
 
 
 @pytest.mark.django_db
-def test_column_create_rejects_non_member_team(logged_in_client):
-    from apps.teams.models import Team
-
-    client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-
-    response = client.post(reverse("users:column-create"), {"label": "Team Lane", "team": team.pk})
-
-    assert response.status_code == 422
-
-
-@pytest.mark.django_db
-def test_status_create_with_team_scope(logged_in_client):
+def test_status_create_creates_for_user(logged_in_client):
     from apps.tasks.models import TaskStatus
-    from apps.teams.models import Team, TeamMembership
 
     client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-    TeamMembership.objects.create(team=team, user=user, role=TeamMembership.ROLE_MEMBER)
 
-    response = client.post(reverse("users:status-create"), {"name": "Review", "team": team.pk})
+    response = client.post(reverse("users:status-create"), {"name": "Review"})
 
     assert response.status_code == 200
-    assert TaskStatus.objects.filter(team=team, slug="review").exists()
-
-
-@pytest.mark.django_db
-def test_status_create_rejects_non_member_team(logged_in_client):
-    from apps.teams.models import Team
-
-    client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-
-    response = client.post(reverse("users:status-create"), {"name": "Review", "team": team.pk})
-
-    assert response.status_code == 422
+    assert TaskStatus.objects.filter(user=user, slug="review").exists()
 
 
 @pytest.mark.django_db

@@ -74,24 +74,11 @@ class SettingsGeneralView(LoginRequiredMixin, View):
         return redirect(reverse("users:settings"))
 
 
-def _resolve_settings_board(user, team_id_str):
-    """The board the Settings > Board page should show: the team board named by
-    team_id_str if it's valid and the user belongs to it, else the personal board."""
-    from apps.boards.selectors import resolve_board
-
-    if team_id_str and team_id_str.isdigit():
-        try:
-            return resolve_board(user, int(team_id_str))
-        except Http404:
-            pass
-    return resolve_board(user, None)
-
-
 def _saved_filters_with_labels(board):
     from apps.boards.views import _parse_lane_key
     from apps.tasks.selectors import visible_statuses_qs
 
-    statuses_by_pk = {s.pk: s.name for s in visible_statuses_qs(board.user, team=board.team)}
+    statuses_by_pk = {s.pk: s.name for s in visible_statuses_qs(board.user)}
     columns_by_pk = {column.pk: column.label for column in board.columns.all()}
     saved_filters = list(board.saved_filters.all())
     for sf in saved_filters:
@@ -108,20 +95,20 @@ def _saved_filters_with_labels(board):
 
 class SettingsBoardView(LoginRequiredMixin, View):
     def get(self, request):
-        from apps.tasks.selectors import grouped_visible_statuses, user_teams_qs
+        from apps.boards.selectors import resolve_board
+        from apps.tasks.selectors import visible_statuses_qs
 
-        board = _resolve_settings_board(request.user, request.GET.get("team", "").strip())
-        status_groups = grouped_visible_statuses(request.user)
+        board = resolve_board(request.user)
+        statuses = list(visible_statuses_qs(request.user).order_by("order"))
         columns = list(board.columns.all())
         saved_filters = _saved_filters_with_labels(board)
 
         context = {
-            "status_groups": status_groups,
+            "statuses": statuses,
             "board": board,
             "columns": columns,
             "saved_filters": saved_filters,
             "default_status_id": request.user.default_status_id,
-            "user_teams": list(user_teams_qs(request.user)),
             "active_tab": "board",
         }
         return render(request, "users/settings/board.html", context)
@@ -142,53 +129,13 @@ class SettingsApiView(LoginRequiredMixin, View):
         return render(request, "users/settings/api.html", context)
 
 
-class SettingsTeamsView(LoginRequiredMixin, View):
-    def get(self, request):
-        from apps.teams.models import TeamMembership
-
-        memberships = (
-            TeamMembership.objects.filter(user=request.user)
-            .select_related("team")
-            .prefetch_related("team__memberships__user", "team__invites")
-        )
-        teams = []
-        for membership in memberships:
-            team = membership.team
-            teams.append({
-                "team": team,
-                "role": membership.role,
-                "is_owner": membership.role == TeamMembership.ROLE_OWNER,
-                "members": list(team.memberships.select_related("user")),
-                "pending_invites": [inv for inv in team.invites.all() if inv.is_valid],
-            })
-
-        context = {"teams": teams, "active_tab": "teams"}
-        return render(request, "users/settings/teams.html", context)
-
-
-def _resolve_owned_team(user, team_id_str):
-    """Returns None (personal) or a Team the user belongs to, else False for an invalid id."""
-    if not team_id_str:
-        return None
-    from apps.tasks.selectors import user_teams_qs
-
-    if not team_id_str.isdigit():
-        return False
-    team = user_teams_qs(user).filter(pk=int(team_id_str)).first()
-    return team if team else False
-
-
 class TaskStatusCreateView(LoginRequiredMixin, View):
     def post(self, request):
         from django.http import HttpResponse
         from django.utils.text import slugify
 
         from apps.tasks.models import TaskStatus
-        from apps.tasks.selectors import grouped_visible_statuses
-
-        team = _resolve_owned_team(request.user, request.POST.get("team", "").strip())
-        if team is False:
-            return HttpResponse(status=422)
+        from apps.tasks.selectors import visible_statuses_qs
 
         name = request.POST.get("name", "").strip()
         is_done = request.POST.get("is_done") == "on"
@@ -196,41 +143,28 @@ class TaskStatusCreateView(LoginRequiredMixin, View):
             return HttpResponse(status=422)
 
         slug = slugify(name)
-        if team:
-            order = TaskStatus.objects.filter(team=team).count()
-            TaskStatus.objects.get_or_create(
-                team=team, slug=slug, defaults={"name": name, "is_done": is_done, "order": order}
-            )
-        else:
-            order = TaskStatus.objects.filter(user=request.user, team__isnull=True).count()
-            TaskStatus.objects.get_or_create(
-                user=request.user, slug=slug, defaults={"name": name, "is_done": is_done, "order": order}
-            )
+        order = TaskStatus.objects.filter(user=request.user).count()
+        TaskStatus.objects.get_or_create(
+            user=request.user, slug=slug, defaults={"name": name, "is_done": is_done, "order": order}
+        )
 
         return render(request, "users/_status_list.html", {
-            "status_groups": grouped_visible_statuses(request.user),
+            "statuses": list(visible_statuses_qs(request.user).order_by("order")),
             "default_status_id": request.user.default_status_id,
         })
 
 
 class TaskStatusDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        from django.db.models import Q
-
         from apps.tasks.models import TaskStatus
-        from apps.tasks.selectors import grouped_visible_statuses, user_team_ids
+        from apps.tasks.selectors import visible_statuses_qs
 
-        status = get_object_or_404(
-            TaskStatus.objects.filter(
-                Q(user=request.user, team__isnull=True) | Q(team_id__in=user_team_ids(request.user))
-            ),
-            pk=pk,
-        )
+        status = get_object_or_404(TaskStatus, user=request.user, pk=pk)
 
         status.delete()
         request.user.refresh_from_db(fields=["default_status"])
         return render(request, "users/_status_list.html", {
-            "status_groups": grouped_visible_statuses(request.user),
+            "statuses": list(visible_statuses_qs(request.user).order_by("order")),
             "default_status_id": request.user.default_status_id,
         })
 
@@ -238,17 +172,11 @@ class TaskStatusDeleteView(LoginRequiredMixin, View):
 class TaskStatusColorUpdateView(LoginRequiredMixin, View):
     def post(self, request, pk):
         import re
-        from django.db.models import Q
 
         from apps.tasks.models import TaskStatus
-        from apps.tasks.selectors import grouped_visible_statuses, user_team_ids
+        from apps.tasks.selectors import visible_statuses_qs
 
-        status = get_object_or_404(
-            TaskStatus.objects.filter(
-                Q(user=request.user, team__isnull=True) | Q(team_id__in=user_team_ids(request.user))
-            ),
-            pk=pk,
-        )
+        status = get_object_or_404(TaskStatus, user=request.user, pk=pk)
 
         color = request.POST.get("color", "").strip()
         if color and not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
@@ -258,7 +186,7 @@ class TaskStatusColorUpdateView(LoginRequiredMixin, View):
         status.save(update_fields=["color"])
 
         return render(request, "users/_status_list.html", {
-            "status_groups": grouped_visible_statuses(request.user),
+            "statuses": list(visible_statuses_qs(request.user).order_by("order")),
             "default_status_id": request.user.default_status_id,
         })
 
@@ -272,16 +200,7 @@ class ColumnCreateView(LoginRequiredMixin, View):
         if not label:
             return HttpResponse(status=422)
 
-        team = _resolve_owned_team(request.user, request.POST.get("team", "").strip())
-        if team is False:
-            return HttpResponse(status=422)
-        # team is already membership-validated above, so resolve its board directly
-        # rather than through _resolve_settings_board's silent fall-back-to-personal
-        # (that fall-back is meant for the Settings page's own, unvalidated ?team=
-        # query param, not for a column whose team the caller already picked).
-        board = resolve_board(request.user, team.pk if team else None)
-
-        assignee = request.POST.get("assignee", "any").strip() or "any"
+        board = resolve_board(request.user)
 
         tags_raw = request.POST.get("tags", "")
         due = request.POST.get("due") or None
@@ -297,7 +216,6 @@ class ColumnCreateView(LoginRequiredMixin, View):
                 "statuses": statuses,
                 "tags": tags,
                 "due": due,
-                "assignee": assignee,
             },
             order=order,
         )
@@ -309,11 +227,7 @@ class ColumnStatusOptionsView(LoginRequiredMixin, View):
     def get(self, request):
         from apps.tasks.selectors import visible_statuses_qs
 
-        team = _resolve_owned_team(request.user, request.GET.get("team", "").strip())
-        if team is False:
-            return HttpResponse(status=422)
-
-        statuses = visible_statuses_qs(request.user, team=team)
+        statuses = visible_statuses_qs(request.user)
         return render(request, "users/_column_status_options.html", {"statuses": statuses})
 
 

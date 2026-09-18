@@ -9,7 +9,7 @@ from django.urls import reverse
 from django.views import View
 
 from apps.integrations.google_calendar.client import GoogleCalendarAPIError, GoogleCalendarClient, exchange_code, revoke
-from apps.integrations.google_calendar.sync import owned_or_assigned_tasks_qs
+from apps.integrations.google_calendar.sync import user_tasks_qs
 from apps.integrations.models import ExternalLink, GoogleCalendarConnection
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -98,7 +98,7 @@ class GoogleCalendarDisconnectView(LoginRequiredMixin, View):
 
         ExternalLink.objects.filter(
             provider=ExternalLink.Provider.GOOGLE_CALENDAR,
-            task__in=owned_or_assigned_tasks_qs(request.user),
+            task__in=user_tasks_qs(request.user),
         ).delete()
         connection.delete()
 

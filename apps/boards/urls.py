@@ -6,7 +6,6 @@ app_name = "boards"
 
 urlpatterns = [
     path("", views.BoardView.as_view(), name="board"),
-    path("team/<int:team_id>/", views.BoardView.as_view(), name="board-team"),
     path("filter/", views.BoardFilterView.as_view(), name="board-filter"),
     path("filter/add-tag/", views.BoardFilterAddTagView.as_view(), name="board-filter-add-tag"),
     path("filter/exclude-tag/", views.BoardFilterExcludeTagView.as_view(), name="board-filter-exclude-tag"),
@@ -21,7 +20,6 @@ urlpatterns = [
     path("tasks/create/", views.TaskCreateView.as_view(), name="task-create"),
     path("tasks/<int:pk>/update/", views.TaskUpdateView.as_view(), name="task-update"),
     path("tasks/<int:pk>/move/", views.TaskMoveView.as_view(), name="task-move"),
-    path("tasks/<int:pk>/assign/", views.TaskAssignView.as_view(), name="task-assign"),
     path("tasks/<int:pk>/delete/", views.TaskDeleteView.as_view(), name="task-delete"),
     path("tasks/<int:pk>/", views.TaskDetailView.as_view(), name="task-detail"),
     path("tasks/<int:pk>/edit/", views.TaskEditView.as_view(), name="task-edit"),
