@@ -1,5 +1,3 @@
-import secrets
-
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
@@ -35,7 +33,6 @@ class SiteInvite(models.Model):
     time that email completes signup (see apps.siteadmin.selectors.consume_signup_slot)."""
 
     email = models.EmailField()
-    token = models.CharField(max_length=64, unique=True, editable=False)
     invited_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -51,9 +48,8 @@ class SiteInvite(models.Model):
 
     @classmethod
     def generate(cls, email: str, invited_by) -> "SiteInvite":
-        token = secrets.token_urlsafe(32)
         expires_at = timezone.now() + timezone.timedelta(days=7)
-        return cls.objects.create(email=email, token=token, invited_by=invited_by, expires_at=expires_at)
+        return cls.objects.create(email=email, invited_by=invited_by, expires_at=expires_at)
 
     @property
     def is_valid(self) -> bool:
