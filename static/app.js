@@ -391,11 +391,7 @@
   }
 
   function closeOpenDisclosures(exception) {
-    // "Save view" nests inside the filter bar's own popover, so closing every
-    // open disclosure except the exact exception would collapse the filter
-    // popover out from under it the moment Save view opens. Skip an open menu
-    // that's an ancestor of the exception, not just the exception itself.
-    document.querySelectorAll(".col-actions-menu.open, .save-filter-popover.open, .calendar-day-popover.open, .filter-bar-popover.open").forEach(function (menu) {
+    document.querySelectorAll(".col-actions-menu.open, .calendar-day-popover.open, .filter-bar-popover.open").forEach(function (menu) {
       if (menu !== exception && !(exception && menu.contains(exception))) {
         menu.classList.remove("open");
       }
@@ -504,7 +500,37 @@
       return;
     }
 
-    if (!event.target.closest(".column-actions") && !event.target.closest(".save-filter-container") && !event.target.closest(".filter-bar-trigger-container")) {
+    var modalOpenTrigger = event.target.closest("[data-open-modal]");
+    if (modalOpenTrigger) {
+      var modal = document.getElementById(modalOpenTrigger.getAttribute("data-open-modal"));
+      if (modal && typeof modal.showModal === "function") {
+        closeOpenDisclosures(null);
+        modal.showModal();
+        var nameInput = modal.querySelector('input[type="text"]');
+        if (nameInput) {
+          window.requestAnimationFrame(function () {
+            nameInput.focus();
+          });
+        }
+      }
+      return;
+    }
+
+    var modalCloseTrigger = event.target.closest("[data-close-modal]");
+    if (modalCloseTrigger) {
+      var closingModal = modalCloseTrigger.closest("dialog");
+      if (closingModal) {
+        closingModal.close();
+      }
+      return;
+    }
+
+    if (event.target.tagName === "DIALOG" && event.target.hasAttribute("data-close-on-backdrop")) {
+      event.target.close();
+      return;
+    }
+
+    if (!event.target.closest(".column-actions") && !event.target.closest(".filter-bar-trigger-container")) {
       closeOpenDisclosures(null);
     }
   });
