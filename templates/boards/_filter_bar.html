@@ -78,19 +78,7 @@
 
     {% if active_filter.tags or active_filter.exclude_tags or active_filter.due or active_filter.assignee or active_filter.hidden_lanes %}
     <div class="board-filter-actions">
-      <div class="save-filter-container">
-        <button class="btn-ghost btn-small" type="button" data-disclosure-toggle>Save view</button>
-        <div class="save-filter-popover">
-          <form hx-post="{% url 'boards:filter-save' %}"
-                hx-target="#task-list-content"
-                hx-swap="innerHTML"
-                hx-include="#board-filter-form">
-            {% csrf_token %}
-            <input type="text" name="name" placeholder="View name">
-            <button type="submit" class="btn-primary btn-small">Save</button>
-          </form>
-        </div>
-      </div>
+      <button class="btn-ghost btn-small" type="button" data-open-modal="save-filter-modal">Save view</button>
 
       <form hx-post="{% url 'boards:board-filter' %}"
             hx-target="#task-list-content"
@@ -102,3 +90,23 @@
     {% endif %}
   </div>
 </div>
+
+<dialog id="save-filter-modal" class="save-filter-modal" aria-labelledby="save-filter-modal-title" data-close-on-backdrop>
+  <form hx-post="{% url 'boards:filter-save' %}"
+        hx-target="#task-list-content"
+        hx-swap="innerHTML"
+        hx-include="#board-filter-form"
+        class="save-filter-modal-card">
+    {% csrf_token %}
+    <div class="save-filter-modal-copy">
+      <span class="eyebrow">Save filters</span>
+      <h2 id="save-filter-modal-title" class="save-filter-modal-title">Save this view</h2>
+    </div>
+    <label class="field-label" for="save-filter-name">View name</label>
+    <input type="text" id="save-filter-name" name="name" placeholder="e.g. My tasks this week">
+    <div class="save-filter-modal-actions">
+      <button type="button" class="btn-ghost" data-close-modal>Cancel</button>
+      <button type="submit" class="btn-primary">Save</button>
+    </div>
+  </form>
+</dialog>
