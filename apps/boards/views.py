@@ -407,7 +407,6 @@ def _build_board_context(user, board, session=None):
             "default_status": status.slug,
             "collapsed": key in hidden_lane_keys,
             "hide_url": reverse("boards:lane-hide", args=[key]),
-            "archive_url": reverse("boards:lane-archive", args=[key]),
             "create_lane_param": key,
         }
         lanes.append(lane)
@@ -430,7 +429,6 @@ def _build_board_context(user, board, session=None):
             "default_status": column.default_status(user, team=board.team),
             "collapsed": key in hidden_lane_keys,
             "hide_url": reverse("boards:lane-hide", args=[key]),
-            "archive_url": reverse("boards:lane-archive", args=[key]),
             "create_lane_param": key,
         }
         lanes.append(lane)
@@ -592,16 +590,16 @@ class LaneHideView(LoginRequiredMixin, View):
         return render(request, "boards/_filter_response.html", context)
 
 
-class LaneArchiveView(LoginRequiredMixin, View):
-    """Archive every task currently visible in a lane (status or custom column)."""
+class BoardArchiveDoneView(LoginRequiredMixin, View):
+    """Archive every done task on the board, regardless of which lane (status or
+    custom column) it happens to be displayed in. completed_at (not the done-status
+    slug) is the source of truth, since a board can have more than one is_done
+    status (e.g. "Done" and "Archived") -- see move_task."""
 
-    def post(self, request, lane_key):
-        board, label, matches = _resolve_lane_and_board(request.user, lane_key)
-        all_tasks = list(board_tasks_qs(board).filter(is_archived=False))
-        to_archive = [t.pk for t in all_tasks if matches(t)]
-        Task.objects.filter(pk__in=to_archive).update(is_archived=True)
-        context = _build_board_context(request.user, board, request.session)
-        return render(request, "boards/_columns.html", context)
+    def post(self, request):
+        board = _board_from_post(request)
+        board_tasks_qs(board).filter(is_archived=False, completed_at__isnull=False).update(is_archived=True)
+        return _render_filter_response(request, request.user, board, request.session)
 
 
 class ColumnReorderView(LoginRequiredMixin, View):

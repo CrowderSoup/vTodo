@@ -38,38 +38,13 @@
 
     <div class="column-header-tools">
       <span class="column-badge">{{ lane.tasks|length }}</span>
-      {% if lane.collapsed %}
-      <button class="col-actions-btn" type="button" title="Expand &ldquo;{{ lane.label }}&rdquo;"
+      <button class="col-actions-btn" type="button"
+              title="{% if lane.collapsed %}Expand{% else %}Collapse{% endif %} &ldquo;{{ lane.label }}&rdquo;"
               hx-post="{{ lane.hide_url }}"
               hx-target="#task-list-content"
               hx-swap="innerHTML transition:true">
-        ⌄
+        {% if lane.collapsed %}⌄{% else %}⌃{% endif %}
       </button>
-      {% else %}
-      <div class="column-actions">
-        <button class="col-actions-btn" type="button" title="Column actions" data-disclosure-toggle>⋯</button>
-        <div class="col-actions-menu">
-          <button hx-get="{% url 'boards:task-panel-create' %}?lane={{ lane.create_lane_param }}&team={{ board.team_id|default:'' }}"
-                  hx-target="#task-panel-content"
-                  hx-swap="innerHTML"
-                  hx-on:click="this.closest('.col-actions-menu').classList.remove('open')"
-                  hx-on::after-request="openTaskPanel()">
-            Add task
-          </button>
-          <button hx-post="{{ lane.hide_url }}"
-                  hx-target="#task-list-content"
-                  hx-swap="innerHTML transition:true">
-            Collapse lane
-          </button>
-          <button hx-post="{{ lane.archive_url }}"
-                  hx-target="#task-list-content"
-                  hx-swap="innerHTML"
-                  hx-confirm="Archive all {{ lane.tasks|length }} card{% if lane.tasks|length != 1 %}s{% endif %} in &ldquo;{{ lane.label }}&rdquo;?">
-            Archive all cards
-          </button>
-        </div>
-      </div>
-      {% endif %}
     </div>
   </div>
 
