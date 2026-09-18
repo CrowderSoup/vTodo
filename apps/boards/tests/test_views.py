@@ -281,14 +281,19 @@ def test_task_create_missing_title_returns_422(logged_in_client):
 
 
 @pytest.mark.django_db
-def test_board_uses_lane_menu_for_add_task(logged_in_client):
+def test_board_columns_have_no_per_lane_add_task_or_actions_menu(logged_in_client):
+    """Per-column "Add task" and the "Column actions" popover (with its lane-scoped
+    Archive all cards) were removed in favor of the global FAB and the board-wide
+    Archive done cards button -- only the collapse/expand toggle remains per column."""
     client, user = logged_in_client
     first_status = TaskStatus.objects.filter(user=user, team__isnull=True).order_by("order").first()
     response = client.get(reverse("boards:board"))
     content = response.content.decode()
     assert response.status_code == 200
-    assert 'class="add-task-form"' not in content
-    assert f'{reverse("boards:task-panel-create")}?lane=status:{first_status.pk}' in content
+    assert f'{reverse("boards:task-panel-create")}?lane=status:{first_status.pk}' not in content
+    assert "Column actions" not in content
+    assert "Archive all cards" not in content
+    assert 'class="col-actions-btn"' in content
 
 
 @pytest.mark.django_db
@@ -958,10 +963,9 @@ def test_status_reorder_rejects_another_users_statuses(logged_in_client):
 
 
 @pytest.mark.django_db
-def test_lane_hide_and_archive_by_status(logged_in_client):
+def test_lane_hide_by_status(logged_in_client):
     client, user = logged_in_client
     status = TaskStatus.objects.get(user=user, team__isnull=True, slug="todo")
-    task = Task.objects.create(user=user, title="Hide me", status="todo")
 
     hide_response = client.post(reverse("boards:lane-hide", args=[f"status:{status.pk}"]))
     assert hide_response.status_code == 200
@@ -969,10 +973,22 @@ def test_lane_hide_and_archive_by_status(logged_in_client):
     session_filter = client.session["board_filter"][str(board.pk)]
     assert f"status:{status.pk}" in session_filter["hidden_lanes"]
 
-    archive_response = client.post(reverse("boards:lane-archive", args=[f"status:{status.pk}"]))
-    assert archive_response.status_code == 200
-    task.refresh_from_db()
-    assert task.is_archived is True
+
+@pytest.mark.django_db
+def test_board_archive_done_archives_only_completed_tasks(logged_in_client):
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    done_status = TaskStatus.objects.get(user=user, team__isnull=True, is_done=True)
+    done_task = Task.objects.create(user=user, title="Done", status=done_status.slug, completed_at=timezone.now())
+    active_task = Task.objects.create(user=user, title="Still going", status="todo")
+
+    response = client.post(reverse("boards:board-archive-done"), data={"board_id": board.pk})
+
+    assert response.status_code == 200
+    done_task.refresh_from_db()
+    active_task.refresh_from_db()
+    assert done_task.is_archived is True
+    assert active_task.is_archived is False
 
 
 @pytest.mark.django_db

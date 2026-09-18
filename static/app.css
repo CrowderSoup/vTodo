@@ -770,10 +770,6 @@ hr {
   margin-left: auto;
 }
 
-.col-actions-menu.open {
-  display: block;
-}
-
 .save-filter-modal {
   width: min(24rem, calc(100vw - 1.5rem));
   margin: auto;
@@ -1058,10 +1054,6 @@ hr {
   font-weight: 700;
 }
 
-.column-actions {
-  position: relative;
-}
-
 .status-drag-handle {
   width: 1.9rem;
   height: 1.9rem;
@@ -1110,34 +1102,6 @@ hr {
 
 .col-drag-handle:active {
   cursor: grabbing;
-}
-
-.col-actions-menu {
-  display: none;
-  position: absolute;
-  top: calc(100% + 0.55rem);
-  right: 0;
-  min-width: 13rem;
-  padding: 0.35rem;
-  border-radius: 12px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
-  z-index: 30;
-}
-
-.col-actions-menu button {
-  width: 100%;
-  justify-content: flex-start;
-  padding-inline: 0.65rem;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-}
-
-.col-actions-menu button:hover {
-  background: var(--surface-muted);
-  transform: none;
 }
 
 .task-list {

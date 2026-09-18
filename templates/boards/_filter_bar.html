@@ -1,3 +1,13 @@
+{% if done_task_count %}
+<form hx-post="{% url 'boards:board-archive-done' %}"
+      hx-target="#task-list-content"
+      hx-swap="innerHTML"
+      hx-confirm="Archive {{ done_task_count }} done card{{ done_task_count|pluralize }}?">
+  <input type="hidden" name="board_id" value="{{ board.pk }}">
+  <button type="submit" class="btn-ghost btn-small">Archive done cards ({{ done_task_count }})</button>
+</form>
+{% endif %}
+
 <div class="filter-bar-trigger-container">
   <button class="btn-ghost btn-small filter-bar-trigger" type="button" data-disclosure-toggle>
     Filters{% if active_filter_count %} <span class="filter-count-badge">{{ active_filter_count }}</span>{% endif %}
