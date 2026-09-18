@@ -1,6 +1,6 @@
 # vtodo
 
-A personal kanban-style task manager built with Django. Log in with Google or with a passwordless email OTP, then manage tasks on a customizable board.
+A personal kanban-style task manager built with Django. Log in with Google, then manage tasks on a customizable board.
 
 ## Features
 
@@ -9,7 +9,6 @@ A personal kanban-style task manager built with Django. Log in with Google or wi
 - **Task details** — title, notes, tags, due date, completion tracking
 - **Teams** — shared task pools with email invites, assignment, and an audit trail of who did what
 - **Google sign-in** — OAuth login via django-allauth (more providers easy to add)
-- **Email OTP login** — passwordless magic-link / one-time-code via email
 - **HTMX-powered UI** — fast partial-page updates without a full JS framework
 - **Docker-ready** — single Dockerfile, configurable via environment variables
 
@@ -17,7 +16,7 @@ A personal kanban-style task manager built with Django. Log in with Google or wi
 
 - Python 3.12+
 - PostgreSQL
-- Redis (caching and OTP rate-limiting)
+- Redis (caching and invite rate-limiting)
 
 ## Local development
 
@@ -76,13 +75,7 @@ All configuration is through environment variables. Copy `.env.example` to `.env
 
 ## Authentication
 
-### Google OAuth
-
-Click "Sign in with Google" on the login page. Requires `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` from a Google Cloud Console OAuth 2.0 Client (Web application type), with the authorized redirect URI set to `<your-domain>/accounts/google/login/callback/`. A new account is created automatically on first login, matched by verified email to any existing email-OTP account with the same address.
-
-### Email OTP
-
-Enter your email address on the login page. A one-time code is sent to that address. Submit the code to complete login.
+Click "Sign in with Google" on the login page. Requires `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` from a Google Cloud Console OAuth 2.0 Client (Web application type), with the authorized redirect URI set to `<your-domain>/accounts/google/login/callback/`. A new account is created automatically on first login, matched by verified email to any existing account with the same address.
 
 ## Running tests
 

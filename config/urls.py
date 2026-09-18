@@ -8,10 +8,8 @@ from oauth2_provider.urls import metadata_urlpatterns as oauth2_metadata_urlpatt
 urlpatterns = [
     path("up/", lambda request: HttpResponse("OK")),
     path("", RedirectView.as_view(url="/login/", permanent=False)),
-    # Combined login page — Email OTP + Google OAuth tabs
     path("login/", include("apps.accounts.urls", namespace="accounts")),
     path("accounts/", include("allauth.urls")),
-    path("auth/email/", include("apps.emailauth.urls", namespace="emailauth")),
     path("board/", include("apps.boards.urls", namespace="boards")),
     path("calendar/", include("apps.boards.urls_calendar", namespace="calendar")),
     path("settings/", include("apps.users.urls", namespace="users")),

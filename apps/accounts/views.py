@@ -8,7 +8,7 @@ from .utils import safe_next_url
 
 
 class LoginView(View):
-    """Combined login page — Email OTP and OAuth provider tabs."""
+    """Login page — Google OAuth is the only sign-in method."""
 
     def get(self, request):
         next_url = safe_next_url(request, request.GET.get("next"))

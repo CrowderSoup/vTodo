@@ -2,11 +2,21 @@
 
 {% block settings_title %}Board Setup{% endblock %}
 
+{% block settings_header %}
+<header class="page-hero page-hero--settings surface-panel">
+  <div class="hero-copy">
+    <span class="eyebrow">Settings</span>
+    <h1 class="page-title">Board Setup</h1>
+    <p class="page-subtitle">Every status below is automatically a lane on your board. Add a custom lane further down for a filtered view that cuts across statuses, like "Overdue."</p>
+  </div>
+</header>
+{% endblock %}
+
 {% block settings_content %}
 <div class="settings-grid">
   <section class="settings-card settings-card--wide surface-panel">
     <div>
-      <h2 class="card-title">Lanes</h2>
+      <h2 class="card-title">Statuses</h2>
       <p class="card-subtitle">Each status is a lane on your board, shown in this order. Drag to reorder.</p>
     </div>
 
@@ -57,12 +67,15 @@
       </p>
 
       {% if user_teams %}
-      <nav class="settings-subnav" aria-label="Boards">
-        <a class="settings-subnav-link {% if not board.team_id %}is-active{% endif %}" href="{% url 'users:settings-board' %}">Personal</a>
-        {% for team in user_teams %}
-        <a class="settings-subnav-link {% if board.team_id == team.pk %}is-active{% endif %}" href="{% url 'users:settings-board' %}?team={{ team.pk }}">{{ team.name }}</a>
-        {% endfor %}
-      </nav>
+      <div class="form-field">
+        <label class="field-label" for="board-team-select">Board</label>
+        <select id="board-team-select" onchange="location.href=this.value">
+          <option value="{% url 'users:settings-board' %}" {% if not board.team_id %}selected{% endif %}>Personal</option>
+          {% for team in user_teams %}
+          <option value="{% url 'users:settings-board' %}?team={{ team.pk }}" {% if board.team_id == team.pk %}selected{% endif %}>{{ team.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
       {% endif %}
 
       <div id="column-list" class="settings-list">

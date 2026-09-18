@@ -12,12 +12,21 @@
       <p class="card-subtitle">This is the identity shown around the app and alongside your integrations.</p>
     </div>
 
+    <div class="settings-list">
+      <div class="config-row">
+        <div class="config-main">
+          <div class="config-title"><span>Signed in as</span></div>
+          <div class="config-description"><span class="pill">Google</span> {{ signed_in_email }}</div>
+        </div>
+      </div>
+    </div>
+
     <div class="form-field">
       <label class="field-label" for="display_name">Display name</label>
       <input type="text" id="display_name" name="display_name" value="{{ user.display_name }}">
     </div>
 
-    <p class="field-help">Your avatar comes from Google if you signed in with it, otherwise from <a href="https://gravatar.com" target="_blank" rel="noopener">Gravatar</a>, otherwise it's just your initial.</p>
+    <p class="field-help">Your avatar mirrors your Google account's picture.</p>
 
     <div class="form-field">
       <label class="field-label" for="timezone">Timezone</label>

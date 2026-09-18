@@ -5,12 +5,13 @@
 
 {% block content %}
 <section class="page-shell page-shell--narrow">
+  {% block settings_header %}
   <header class="page-hero page-hero--settings surface-panel">
     <div class="hero-copy">
       <span class="eyebrow">Settings and structure</span>
       <h1 class="page-title">Shape the board around how you actually work.</h1>
       <p class="page-subtitle">
-        Update your profile and tune the lanes that keep your board feeling like your own system instead of a default template.
+        Update your profile and tune the statuses and lanes that keep your board feeling like your own system instead of a default template.
       </p>
     </div>
 
@@ -18,15 +19,16 @@
       <div class="hero-stats">
         <div class="stat-pill">
           <span class="stat-value">{{ statuses_count }}</span>
-          <span class="stat-label">board lanes</span>
+          <span class="stat-label">statuses</span>
         </div>
         <div class="stat-pill">
-          <span class="stat-value">{{ columns_count }}</span>
+          <span class="stat-value">{{ custom_lanes_count }}</span>
           <span class="stat-label">custom lanes</span>
         </div>
       </div>
     </div>
   </header>
+  {% endblock %}
 
   {% include "users/settings/_nav.html" %}
 
