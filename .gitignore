@@ -39,6 +39,9 @@ htmlcov/
 *.swp
 *.swo
 
+# Claude Code (local settings and session state)
+.claude/
+
 # DigitalOcean App Platform
 .do/
 
