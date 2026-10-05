@@ -5,7 +5,7 @@ from django.db import models
 from django.utils.text import slugify
 
 # (name, slug, order, is_done) — the starter workflow given to every new personal
-# board and every new team, so a fresh owner never faces an empty status list.
+# board, so a fresh owner never faces an empty status list.
 DEFAULT_STATUS_DEFS = [
     ("Backlog", "backlog", 0, False),
     ("To Do", "todo", 1, False),

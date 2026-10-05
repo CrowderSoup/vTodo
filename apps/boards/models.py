@@ -8,7 +8,7 @@ class Board(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="boards",
+        related_name="board",
     )
     name = models.CharField(max_length=255, default="My Board")
     created_at = models.DateTimeField(auto_now_add=True)

@@ -37,6 +37,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='board',
             name='user',
-            field=models.OneToOneField(on_delete=models.deletion.CASCADE, related_name='boards', to=settings.AUTH_USER_MODEL),
+            field=models.OneToOneField(on_delete=models.deletion.CASCADE, related_name='board', to=settings.AUTH_USER_MODEL),
         ),
     ]

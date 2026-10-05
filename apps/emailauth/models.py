@@ -5,7 +5,7 @@ from django.db import models
 class EmailIdentity(models.Model):
     """Links a User to their verified sign-in email address (currently always
     populated via Google OAuth). Used to match a Google login to an existing
-    account, for admin-email checks, and for team-invite acceptance."""
+    account and for admin-email checks."""
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

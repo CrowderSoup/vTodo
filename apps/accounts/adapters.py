@@ -10,7 +10,7 @@ from django.urls import reverse
 class SocialAccountAdapter(DefaultSocialAccountAdapter):
     """
     Matches an OAuth login to an existing account by verified email via
-    EmailIdentity, so team invites and admin-email checks work the same
+    EmailIdentity, so admin-email checks work the same
     way regardless of when the account was first created.
     """
 
