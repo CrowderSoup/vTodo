@@ -2284,6 +2284,7 @@ textarea:has(+ .EasyMDEContainer) {
   }
 
   .nav-bar {
+    flex-wrap: wrap;
     border-radius: 16px;
   }
 
@@ -2292,7 +2293,15 @@ textarea:has(+ .EasyMDEContainer) {
   }
 
   .nav-filter-slot {
-    order: 2;
+    order: 5;
+    flex-basis: 100%;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .nav-filter-slot:empty {
+    display: none;
   }
 
   .nav-collapsible-wrap {
@@ -2346,6 +2355,11 @@ textarea:has(+ .EasyMDEContainer) {
 
   .nav-spacer {
     display: none;
+  }
+
+  .filter-bar-popover {
+    right: auto;
+    left: 0;
   }
 
   .user-menu {
