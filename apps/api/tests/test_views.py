@@ -231,6 +231,61 @@ def test_move_action_restores_prior_status_on_reopen(api_client_for):
 
 
 @pytest.mark.django_db
+def test_task_patch_status_done_completes_and_spawns_recurrence(api_client_for):
+    user = User.objects.create_user()
+    task = Task.objects.create(
+        user=user,
+        title="Stretch",
+        status="in_progress",
+        due_date="2026-01-01",
+        recurrence_days=1,
+    )
+    client = api_client_for(user)
+
+    response = client.patch(reverse("task-detail", kwargs={"pk": task.pk}), {"status": "done"})
+
+    assert response.status_code == 200
+    task.refresh_from_db()
+    assert task.status == "done"
+    assert task.completed_at is not None
+    assert task.previous_status == "in_progress"
+    assert Task.objects.filter(user=user, title="Stretch", completed_at__isnull=True).count() == 1
+
+
+@pytest.mark.django_db
+def test_task_patch_status_with_other_fields_saves_both(api_client_for):
+    user = User.objects.create_user()
+    task = Task.objects.create(user=user, title="Draft", status="todo")
+    client = api_client_for(user)
+
+    response = client.patch(
+        reverse("task-detail", kwargs={"pk": task.pk}), {"status": "done", "title": "Final"}
+    )
+
+    assert response.status_code == 200
+    task.refresh_from_db()
+    assert task.title == "Final"
+    assert task.status == "done"
+    assert task.completed_at is not None
+
+
+@pytest.mark.django_db
+def test_task_patch_rejects_unknown_status(api_client_for):
+    user = User.objects.create_user()
+    task = Task.objects.create(user=user, title="Draft", status="todo")
+    client = api_client_for(user)
+
+    response = client.patch(
+        reverse("task-detail", kwargs={"pk": task.pk}), {"status": "nope", "title": "Changed"}
+    )
+
+    assert response.status_code == 400
+    task.refresh_from_db()
+    assert task.status == "todo"
+    assert task.title == "Draft"  # nothing saved when the status is rejected
+
+
+@pytest.mark.django_db
 def test_activity_action_returns_ordered_entries(api_client_for):
     user = User.objects.create_user()
     other = User.objects.create_user()

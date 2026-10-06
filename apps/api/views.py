@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from drf_spectacular.utils import extend_schema
@@ -5,6 +6,7 @@ from oauth2_provider.contrib.rest_framework import OAuth2Authentication, TokenHa
 from oauth2_provider.oauth2_validators import validate_resource_as_url_prefix
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -105,6 +107,20 @@ class TaskViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         order = Task.objects.filter(user=self.request.user).count()
         serializer.save(user=self.request.user, order=order)
+
+    def perform_update(self, serializer):
+        # A status change has to go through move_task so completing a task
+        # sets completed_at / previous_status and spawns the next recurrence,
+        # the same as the board and the move action. Saving `status` as a
+        # plain field skipped all of that (e.g. the MCP's update_task).
+        new_status = serializer.validated_data.pop("status", None)
+        with transaction.atomic():
+            task = serializer.save()
+            if new_status is not None and new_status != task.status:
+                try:
+                    move_task(self.request.user, task, new_status)
+                except InvalidStatusError as e:
+                    raise ValidationError({"status": [str(e)]})
 
     @extend_schema(
         request={"application/json": {"type": "object", "properties": {"order": {"type": "array", "items": {"type": "integer"}}}}},
