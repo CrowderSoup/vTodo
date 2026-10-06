@@ -13,18 +13,14 @@ from django.views import View
 
 from apps.tasks.models import Task, TaskComment, TaskStatus
 from apps.tasks.selectors import (
-    AssignmentError,
     InvalidStatusError,
-    assign_task,
     board_tasks_qs,
     get_task_or_404,
     known_tags_for_board,
     move_task,
-    user_teams_qs,
     visible_statuses_qs,
     visible_tasks_qs,
 )
-from apps.users.models import User
 
 from .models import Board, Column, SavedFilter
 from .selectors import resolve_board, user_can_access_board
@@ -47,15 +43,9 @@ def _parse_lane_key(key):
     return kind, int(pk)
 
 
-def _board_for_team(user, team):
-    """The personal board (team is None) or a team's shared board -- team membership
-    is assumed already validated by the caller (e.g. via _resolve_team_param)."""
-    return Board.objects.get(team=team) if team else Board.objects.get(user=user)
-
-
 def _board_for_task(task):
-    """The board a task belongs on: its team's shared board, or its owner's personal board."""
-    return Board.objects.get(team_id=task.team_id) if task.team_id else Board.objects.get(user_id=task.user_id)
+    """The board a task belongs on."""
+    return Board.objects.get(user_id=task.user_id)
 
 
 def _board_from_post(request):
@@ -135,23 +125,11 @@ def _render_task_panel_with_list_update(request, user, task, board, session):
     return render(request, "partials/task_panel_board_response.html", context)
 
 
-def _task_matches_assignee(task, assignee_filter, user):
-    if not assignee_filter or assignee_filter == "any":
-        return True
-    if assignee_filter == "me":
-        return task.assignee_id == user.id
-    if assignee_filter == "unassigned":
-        return task.assignee_id is None
-    return str(task.assignee_id) == str(assignee_filter)
-
-
-def _task_matches_column(task, filter_config, user):
+def _task_matches_column(task, filter_config):
     statuses = filter_config.get("statuses", [])
     tags = filter_config.get("tags", [])
     due = filter_config.get("due")
 
-    if not _task_matches_assignee(task, filter_config.get("assignee"), user):
-        return False
     if statuses and task.status not in statuses:
         return False
     if tags and not any(t in task.tags for t in tags):
@@ -171,7 +149,7 @@ def _task_matches_column(task, filter_config, user):
     return True
 
 
-def _matching_saved_filter_name(saved_filters, tags, exclude_tags, due, assignee, hidden_lanes=None):
+def _matching_saved_filter_name(saved_filters, tags, exclude_tags, due, hidden_lanes=None):
     """The name of the SavedFilter (if any) whose filter_config exactly matches the
     given filter values -- used to highlight the active saved view in the filter
     bar's select. hidden_lanes is a set/list of lane keys (the calendar has no
@@ -184,7 +162,6 @@ def _matching_saved_filter_name(saved_filters, tags, exclude_tags, due, assignee
             sorted(sf_config.get("tags", [])) == sorted(tags)
             and sorted(sf_config.get("exclude_tags", [])) == sorted(exclude_tags)
             and sf_config.get("due", "") == due
-            and sf_config.get("assignee", "") == assignee
             and sorted(sf_config.get("hidden_lanes", [])) == hidden_lanes
         ):
             return sf.name
@@ -198,7 +175,7 @@ def _hidden_lane_context(user, board, hidden_lane_keys):
     {dom_id, label} dicts for the filter bar's pills."""
     if not hidden_lane_keys:
         return [], []
-    statuses, _, _ = _status_context_for(user, board.team)
+    statuses, _, _ = _status_context_for(user)
     matchers = []
     summaries = []
     for status in statuses:
@@ -209,30 +186,16 @@ def _hidden_lane_context(user, board, hidden_lane_keys):
     for column in board.columns.all():
         key = _lane_key("column", column.pk)
         if key in hidden_lane_keys:
-            matchers.append(lambda t, cfg=column.filter_config: _task_matches_column(t, cfg, user))
+            matchers.append(lambda t, cfg=column.filter_config: _task_matches_column(t, cfg))
             summaries.append({"dom_id": key, "label": column.label})
     return matchers, summaries
 
 
-def _status_context_for(user, team=None):
-    statuses = list(visible_statuses_qs(user, team=team))
+def _status_context_for(user):
+    statuses = list(visible_statuses_qs(user))
     done_slug = next((s.slug for s in statuses if s.is_done), "done")
     active_slug = next((s.slug for s in statuses if not s.is_done), "todo")
     return statuses, done_slug, active_slug
-
-
-def _status_context(user):
-    return _status_context_for(user, team=None)
-
-
-def _resolve_team_param(user, team_id_str):
-    """Returns None (personal), a Team the user belongs to, or False (invalid/not a member)."""
-    if not team_id_str:
-        return None
-    if not team_id_str.isdigit():
-        return False
-    team = user_teams_qs(user).filter(pk=int(team_id_str)).first()
-    return team if team else False
 
 
 def _resolve_status_slug(status, statuses):
@@ -255,10 +218,10 @@ def _resolve_task_create_selection(user, board, statuses, lane_param=""):
             return (
                 _lane_key("column", column.pk),
                 column.label,
-                column.default_status(user, team=board.team),
+                column.default_status(user),
             )
 
-    if board.team_id is None and user.default_status_id:
+    if user.default_status_id:
         status_slug = _resolve_status_slug(user.default_status.slug, statuses)
         status = next((s for s in statuses if s.slug == status_slug), None)
         if status:
@@ -273,7 +236,7 @@ def _resolve_task_create_selection(user, board, statuses, lane_param=""):
 
 
 def _task_render_context(user, task):
-    statuses, done_slug, active_slug = _status_context_for(user, task.team)
+    statuses, done_slug, active_slug = _status_context_for(user)
     return {
         "task": task,
         "board": _board_for_task(task),
@@ -289,15 +252,12 @@ def _task_panel_context(user, task):
     context.update({
         "notes_html": _render_markdown(task.notes) if task.notes else "",
         "comments": _render_comments(task),
-        "activity": task.activity.all() if task.team_id else [],
-        "team_members": list(task.team.memberships.select_related("user")) if task.team_id else [],
     })
     return context
 
 
 def _task_panel_create_context(user, board, lane_param="", form_values=None, form_error=""):
-    team = board.team
-    statuses, done_slug, active_slug = _status_context_for(user, team)
+    statuses, done_slug, active_slug = _status_context_for(user)
     selected_lane_key, selected_lane_name, selected_status = _resolve_task_create_selection(
         user, board, statuses, lane_param
     )
@@ -313,8 +273,6 @@ def _task_panel_create_context(user, board, lane_param="", form_values=None, for
         "selected_lane_name": selected_lane_name,
         "selected_status": selected_status,
         "selected_status_name": selected_status_name,
-        "selected_team": team,
-        "selected_team_id": team.pk if team else "",
         "title_value": form_values.get("title", ""),
         "notes_value": form_values.get("notes", ""),
         "due_date_value": form_values.get("due_date", ""),
@@ -360,7 +318,6 @@ def _build_board_context(user, board, session=None):
     filter_tags = board_filter.get("tags", [])
     exclude_tags = board_filter.get("exclude_tags", [])
     filter_due = board_filter.get("due", "").strip()
-    filter_assignee = board_filter.get("assignee", "").strip()
     hidden_lane_keys = set(board_filter.get("hidden_lanes", []))
 
     all_tasks = list(board_tasks_qs(board).filter(is_archived=False).order_by("order", "created_at"))
@@ -378,10 +335,8 @@ def _build_board_context(user, board, session=None):
         elif filter_due == "this_week":
             end = today + timedelta(days=7)
             tasks = [t for t in tasks if t.due_date and today <= t.due_date <= end]
-    if filter_assignee:
-        tasks = [t for t in tasks if _task_matches_assignee(t, filter_assignee, user)]
 
-    statuses, done_slug, active_slug = _status_context_for(user, board.team)
+    statuses, done_slug, active_slug = _status_context_for(user)
 
     # Lanes: one per status (the default, always-present lane -- a task belongs to
     # its status lane by plain equality, never ambiguous) followed by one per custom
@@ -415,7 +370,7 @@ def _build_board_context(user, board, session=None):
 
     for column in board.columns.all():
         key = _lane_key("column", column.pk)
-        lane_tasks = [t for t in tasks if _task_matches_column(t, column.filter_config, user)]
+        lane_tasks = [t for t in tasks if _task_matches_column(t, column.filter_config)]
         for t in lane_tasks:
             t.done_slug, t.active_slug = done_slug, active_slug
         lane = {
@@ -426,7 +381,7 @@ def _build_board_context(user, board, session=None):
             "color": column.color,
             "subtitle": _column_subtitle(column.filter_config),
             "tasks": lane_tasks,
-            "default_status": column.default_status(user, team=board.team),
+            "default_status": column.default_status(user),
             "collapsed": key in hidden_lane_keys,
             "hide_url": reverse("boards:lane-hide", args=[key]),
             "create_lane_param": key,
@@ -437,7 +392,7 @@ def _build_board_context(user, board, session=None):
 
     saved_filters = list(board.saved_filters.all())
     active_saved_filter_name = _matching_saved_filter_name(
-        saved_filters, filter_tags, exclude_tags, filter_due, filter_assignee, hidden_lane_keys
+        saved_filters, filter_tags, exclude_tags, filter_due, hidden_lane_keys
     )
 
     return {
@@ -450,7 +405,6 @@ def _build_board_context(user, board, session=None):
             "tags": filter_tags,
             "exclude_tags": exclude_tags,
             "due": filter_due,
-            "assignee": filter_assignee,
             "hidden_lanes": hidden_lane_summaries,
         },
         "saved_filters": saved_filters,
@@ -463,17 +417,15 @@ def _build_board_context(user, board, session=None):
         "overdue_count": sum(1 for task in tasks if task.due_date and task.due_date < today and not task.completed_at),
         "active_filter_count": (
             len(filter_tags) + len(exclude_tags) + len(hidden_lane_keys)
-            + (1 if filter_due else 0) + (1 if filter_assignee else 0)
+            + (1 if filter_due else 0)
         ),
-        "team_members": list(board.team.memberships.select_related("user")) if board.team_id else [],
     }
 
 
 class BoardView(LoginRequiredMixin, View):
-    def get(self, request, team_id=None):
-        board = resolve_board(request.user, team_id)
+    def get(self, request):
+        board = resolve_board(request.user)
         context = _build_board_context(request.user, board, request.session)
-        context["user_teams"] = list(user_teams_qs(request.user))
         return render(request, "boards/board.html", context)
 
 
@@ -483,13 +435,11 @@ class BoardFilterView(LoginRequiredMixin, View):
         tags = request.POST.getlist("tags")
         exclude_tags = request.POST.getlist("exclude_tags")
         due = request.POST.get("due", "").strip()
-        assignee = request.POST.get("assignee", "").strip()
         hidden_lanes = request.POST.getlist("hidden_lanes")
         _set_board_filter(request, board, {
             "tags": tags,
             "exclude_tags": exclude_tags,
             "due": due,
-            "assignee": assignee,
             "hidden_lanes": hidden_lanes,
         })
         return _render_filter_response(request, request.user, board, request.session)
@@ -505,7 +455,6 @@ class BoardFilterAddTagView(LoginRequiredMixin, View):
         current_tags = board_filter.get("tags", [])
         exclude_tags = [t for t in board_filter.get("exclude_tags", []) if t != tag]
         due = board_filter.get("due", "")
-        assignee = board_filter.get("assignee", "")
         hidden_lanes = board_filter.get("hidden_lanes", [])
         if tag and tag not in current_tags:
             current_tags = current_tags + [tag]
@@ -513,7 +462,6 @@ class BoardFilterAddTagView(LoginRequiredMixin, View):
             "tags": current_tags,
             "exclude_tags": exclude_tags,
             "due": due,
-            "assignee": assignee,
             "hidden_lanes": hidden_lanes,
         })
         return _render_filter_response(request, request.user, board, request.session)
@@ -529,7 +477,6 @@ class BoardFilterExcludeTagView(LoginRequiredMixin, View):
         current_tags = [t for t in board_filter.get("tags", []) if t != tag]
         exclude_tags = board_filter.get("exclude_tags", [])
         due = board_filter.get("due", "")
-        assignee = board_filter.get("assignee", "")
         hidden_lanes = board_filter.get("hidden_lanes", [])
         if tag and tag not in exclude_tags:
             exclude_tags = exclude_tags + [tag]
@@ -537,7 +484,6 @@ class BoardFilterExcludeTagView(LoginRequiredMixin, View):
             "tags": current_tags,
             "exclude_tags": exclude_tags,
             "due": due,
-            "assignee": assignee,
             "hidden_lanes": hidden_lanes,
         })
         return _render_filter_response(request, request.user, board, request.session)
@@ -550,14 +496,9 @@ def _resolve_lane_and_board(user, lane_key):
     kind, pk = _parse_lane_key(lane_key)
     if kind == "status":
         status = get_object_or_404(TaskStatus, pk=pk)
-        if status.team_id:
-            if not user_teams_qs(user).filter(pk=status.team_id).exists():
-                raise Http404()
-            board = Board.objects.get(team_id=status.team_id)
-        else:
-            if status.user_id != user.id:
-                raise Http404()
-            board = Board.objects.get(user=user)
+        if status.user_id != user.id:
+            raise Http404()
+        board = Board.objects.get(user=user)
         return board, status.name, (lambda t: t.status == status.slug)
     if kind == "column":
         column = get_object_or_404(Column.objects.select_related("board"), pk=pk)
@@ -566,7 +507,7 @@ def _resolve_lane_and_board(user, lane_key):
         return (
             column.board,
             column.label,
-            (lambda t: _task_matches_column(t, column.filter_config, user)),
+            (lambda t: _task_matches_column(t, column.filter_config)),
         )
     raise Http404()
 
@@ -644,13 +585,8 @@ class StatusReorderView(LoginRequiredMixin, View):
         statuses = {s.pk: s for s in TaskStatus.objects.filter(pk__in=order)}
         if statuses:
             first = next(iter(statuses.values()))
-            same_scope = all(
-                s.user_id == first.user_id and s.team_id == first.team_id for s in statuses.values()
-            )
-            if first.team_id:
-                owns_scope = user_teams_qs(request.user).filter(pk=first.team_id).exists()
-            else:
-                owns_scope = first.user_id == request.user.id
+            same_scope = all(s.user_id == first.user_id for s in statuses.values())
+            owns_scope = first.user_id == request.user.id
             if not same_scope or not owns_scope:
                 return HttpResponse(status=403)
 
@@ -681,18 +617,14 @@ class TaskReorderView(LoginRequiredMixin, View):
 
 class TaskCreateView(LoginRequiredMixin, View):
     def post(self, request):
-        team = _resolve_team_param(request.user, request.POST.get("team", "").strip())
-        if team is False:
-            return HttpResponse(status=422)
-
-        statuses, _, _ = _status_context_for(request.user, team)
+        statuses, _, _ = _status_context_for(request.user)
         status = _resolve_status_slug(request.POST.get("status", "").strip(), statuses)
         title = request.POST.get("title", "").strip()
 
         if not title:
             return HttpResponse(status=422)
 
-        task = Task.objects.create(user=request.user, team=team, title=title, status=status)
+        task = Task.objects.create(user=request.user, title=title, status=status)
         return render(request, "partials/task_card.html", _task_render_context(request.user, task))
 
 
@@ -741,24 +673,6 @@ class TaskMoveView(LoginRequiredMixin, View):
         return _render_task_list_update(request, request.user, board, request.session)
 
 
-class TaskAssignView(LoginRequiredMixin, View):
-    def post(self, request, pk):
-        task = get_task_or_404(request.user, pk)
-        assignee_id = request.POST.get("assignee_id", "").strip()
-        assignee = get_object_or_404(User, pk=assignee_id) if assignee_id else None
-
-        try:
-            assign_task(request.user, task, assignee)
-        except AssignmentError:
-            return HttpResponse(status=422)
-
-        if request.headers.get("HX-Target") == "task-panel-content":
-            context = _task_panel_context(request.user, task)
-            return render(request, "partials/task_panel_content.html", context)
-
-        return render(request, "partials/task_card.html", _task_render_context(request.user, task))
-
-
 class TaskDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
         task = get_task_or_404(request.user, pk)
@@ -800,10 +714,7 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
     """Return the panel create-mode content and handle initial task creation."""
 
     def get(self, request):
-        team = _resolve_team_param(request.user, request.GET.get("team", "").strip())
-        if team is False:
-            team = None
-        board = _board_for_team(request.user, team)
+        board = resolve_board(request.user)
         context = _task_panel_create_context(
             request.user,
             board,
@@ -813,10 +724,7 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
         return render(request, "partials/task_panel_create.html", context)
 
     def post(self, request):
-        team = _resolve_team_param(request.user, request.POST.get("team", "").strip())
-        if team is False:
-            return HttpResponse(status=422)
-        board = _board_for_team(request.user, team)
+        board = resolve_board(request.user)
 
         form_values = {
             "title": request.POST.get("title", "").strip(),
@@ -845,7 +753,6 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
 
         task = Task.objects.create(
             user=request.user,
-            team=team,
             title=form_values["title"],
             notes=form_values["notes"],
             status=context["selected_status"],

@@ -30,17 +30,6 @@
           hx-swap="innerHTML"
           hx-on::after-request="this.reset()">
       {% csrf_token %}
-      {% if user_teams %}
-      <div class="form-field">
-        <label class="field-label" for="status-team">Team</label>
-        <select id="status-team" name="team">
-          <option value="">Personal</option>
-          {% for team in user_teams %}
-          <option value="{{ team.pk }}">{{ team.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      {% endif %}
       <div class="form-field">
         <label class="field-label" for="status-name">Status name</label>
         <input id="status-name" type="text" name="name" placeholder="Status name" required>
@@ -66,18 +55,6 @@
         every status already gets its own lane above.
       </p>
 
-      {% if user_teams %}
-      <div class="form-field">
-        <label class="field-label" for="board-team-select">Board</label>
-        <select id="board-team-select" onchange="location.href=this.value">
-          <option value="{% url 'users:settings-board' %}" {% if not board.team_id %}selected{% endif %}>Personal</option>
-          {% for team in user_teams %}
-          <option value="{% url 'users:settings-board' %}?team={{ team.pk }}" {% if board.team_id == team.pk %}selected{% endif %}>{{ team.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      {% endif %}
-
       <div id="column-list" class="settings-list">
         {% include "users/_column_list.html" %}
       </div>
@@ -88,32 +65,18 @@
             hx-swap="innerHTML"
             hx-on::after-request="if (event.target === this) { this.reset(); if (event.detail.successful) { this.closest('details').open = false; } }">
         {% csrf_token %}
-        <input type="hidden" name="team" value="{{ board.team_id|default:'' }}">
 
         <div class="form-field">
           <label class="field-label" for="column-label">Lane label</label>
           <input id="column-label" type="text" name="label" placeholder="Lane label" required>
         </div>
 
-        {% if user_teams %}
-        <div class="form-grid form-grid--two">
-          <div class="form-field">
-            <label class="field-label" for="column-assignee">Assignee filter</label>
-            <select id="column-assignee" name="assignee">
-              <option value="any">Anyone</option>
-              <option value="me">Assigned to me</option>
-              <option value="unassigned">Unassigned</option>
-            </select>
-          </div>
-        </div>
-        {% endif %}
-
         <div class="form-grid form-grid--two">
           <div class="form-field">
             <label class="field-label">Filter by status</label>
             <div id="column-status-options"
                  class="checkbox-group"
-                 hx-get="{% url 'users:column-status-options' %}?team={{ board.team_id|default:'' }}"
+                 hx-get="{% url 'users:column-status-options' %}"
                  hx-trigger="toggle[event.target.open] from:closest details"
                  hx-target="this"
                  hx-swap="innerHTML">

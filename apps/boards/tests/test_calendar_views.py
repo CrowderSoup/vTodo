@@ -8,10 +8,9 @@ from django.utils import timezone
 
 from apps.boards.models import Board
 from apps.tasks.models import Task
-from apps.teams.models import Team, TeamMembership
 from apps.users.models import User
 
-from .test_views import _create_team_board, logged_in_client, user_with_board  # noqa: F401
+from .test_views import logged_in_client, user_with_board  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
@@ -174,36 +173,6 @@ def test_day_overflow_truncates_and_counts_remainder(logged_in_client):
 
 
 # ---------------------------------------------------------------------------
-# Team scoping
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_calendar_team_route_404s_for_non_member(logged_in_client):
-    client, _ = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-    _create_team_board(team)
-    response = client.get(reverse("calendar:calendar-team", args=[team.pk]))
-    assert response.status_code == 404
-
-
-@pytest.mark.django_db
-def test_calendar_team_route_shows_teammates_tasks(logged_in_client):
-    client, user = logged_in_client
-    other = User.objects.create_user()
-    team = Team.objects.create(name="Rocketry")
-    TeamMembership.objects.create(team=team, user=user)
-    TeamMembership.objects.create(team=team, user=other)
-    _create_team_board(team)
-    today = timezone.localdate()
-    Task.objects.create(user=other, team=team, title="Team task", status="todo", due_date=today)
-
-    response = client.get(reverse("calendar:calendar-team", args=[team.pk]))
-    all_cell_tasks = [t for week in response.context["weeks"] for cell in week for t in cell["tasks"]]
-    assert "Team task" in [t.title for t in all_cell_tasks]
-
-
-# ---------------------------------------------------------------------------
 # Filters shared with board (session-keyed by board.pk)
 # ---------------------------------------------------------------------------
 
@@ -249,7 +218,7 @@ def test_calendar_excludes_tasks_from_collapsed_lane(logged_in_client):
     from apps.tasks.models import TaskStatus
 
     client, user = logged_in_client
-    status = TaskStatus.objects.get(user=user, team__isnull=True, slug="todo")
+    status = TaskStatus.objects.get(user=user, slug="todo")
     today = timezone.localdate()
     Task.objects.create(user=user, title="In collapsed lane", status="todo", due_date=today)
     Task.objects.create(user=user, title="Elsewhere", status="backlog", due_date=today)
@@ -261,27 +230,6 @@ def test_calendar_excludes_tasks_from_collapsed_lane(logged_in_client):
     titles = [t.title for t in all_cell_tasks]
     assert "In collapsed lane" not in titles
     assert "Elsewhere" in titles
-
-
-@pytest.mark.django_db
-def test_calendar_honors_board_session_assignee_filter(logged_in_client):
-    client, user = logged_in_client
-    other = User.objects.create_user()
-    team = Team.objects.create(name="Rocketry")
-    TeamMembership.objects.create(team=team, user=user)
-    TeamMembership.objects.create(team=team, user=other)
-    board = _create_team_board(team)
-    today = timezone.localdate()
-    Task.objects.create(user=user, team=team, title="Mine", status="todo", due_date=today, assignee=user)
-    Task.objects.create(user=user, team=team, title="Theirs", status="todo", due_date=today, assignee=other)
-
-    client.post(reverse("boards:board-filter"), {"assignee": "me", "board_id": board.pk})
-    response = client.get(reverse("calendar:calendar-team", args=[team.pk]))
-
-    all_cell_tasks = [t for week in response.context["weeks"] for cell in week for t in cell["tasks"]]
-    titles = [t.title for t in all_cell_tasks]
-    assert "Mine" in titles
-    assert "Theirs" not in titles
 
 
 # ---------------------------------------------------------------------------
@@ -466,7 +414,7 @@ def test_task_panel_create_post_from_calendar_returns_calendar_oob(logged_in_cli
     client, _ = logged_in_client
     response = client.post(
         reverse("boards:task-panel-create"),
-        {"title": "Quick add", "team": "", "due_date": "", "tags": "",
+        {"title": "Quick add", "due_date": "", "tags": "",
          "recurrence_days": "", "recurrence_from": "completion"},
         HTTP_HX_CURRENT_URL=_calendar_current_url(),
     )
@@ -481,7 +429,7 @@ def test_task_panel_create_post_from_board_returns_board_oob(logged_in_client):
     client, _ = logged_in_client
     response = client.post(
         reverse("boards:task-panel-create"),
-        {"title": "Quick add", "team": "", "due_date": "", "tags": "",
+        {"title": "Quick add", "due_date": "", "tags": "",
          "recurrence_days": "", "recurrence_from": "completion"},
         HTTP_HX_CURRENT_URL="http://testserver/board/",
     )

@@ -7,7 +7,6 @@ from django.utils import timezone
 from apps.boards.models import Board, Column
 from apps.boards.views import _render_markdown
 from apps.tasks.models import Task, TaskStatus
-from apps.teams.models import Team, TeamMembership
 from apps.users.models import User
 
 
@@ -26,17 +25,6 @@ def user_with_board(db):
 def logged_in_client(client, user_with_board):
     client.force_login(user_with_board)
     return client, user_with_board
-
-
-def _create_team_board(team):
-    """Teams created directly via Team.objects.create() (bypassing TeamCreateView)
-    don't get the shared board TeamCreateView normally provisions -- tests that need
-    one set it up explicitly, same as they already do for TaskStatus."""
-    from apps.boards.models import Board, Column
-
-    board = Board.objects.create(team=team, name=team.name)
-    Column.objects.create(board=board, label=team.name, filter_config={}, order=0)
-    return board
 
 
 # ---------------------------------------------------------------------------
@@ -131,8 +119,8 @@ def test_task_matches_column_overdue_uses_users_local_today():
 
     with timezone.override(ZoneInfo("America/Chicago")):
         with patch("apps.boards.views.timezone.now", return_value=now_utc):
-            assert _task_matches_column(task, {"due": "overdue"}, user) is False
-            assert _task_matches_column(task, {"due": "today"}, user) is True
+            assert _task_matches_column(task, {"due": "overdue"}) is False
+            assert _task_matches_column(task, {"due": "today"}) is True
 
 
 @pytest.mark.django_db
@@ -164,7 +152,7 @@ def test_board_active_filter_count_combined(logged_in_client):
     """active_filter_count sums tags + due + hidden_lanes."""
     client, user = logged_in_client
     board = Board.objects.get(user=user)
-    status_pk = TaskStatus.objects.filter(user=user, team__isnull=True).first().pk
+    status_pk = TaskStatus.objects.filter(user=user).first().pk
     session = client.session
     session["board_filter"] = {str(board.pk): {"tags": ["x"], "due": "overdue", "hidden_lanes": [f"status:{status_pk}"]}}
     session.save()
@@ -286,7 +274,7 @@ def test_board_columns_have_no_per_lane_add_task_or_actions_menu(logged_in_clien
     Archive all cards) were removed in favor of the global FAB and the board-wide
     Archive done cards button -- only the collapse/expand toggle remains per column."""
     client, user = logged_in_client
-    first_status = TaskStatus.objects.filter(user=user, team__isnull=True).order_by("order").first()
+    first_status = TaskStatus.objects.filter(user=user).order_by("order").first()
     response = client.get(reverse("boards:board"))
     content = response.content.decode()
     assert response.status_code == 200
@@ -303,7 +291,7 @@ def test_board_renders_fab_for_task_creation(logged_in_client):
     content = response.content.decode()
     assert response.status_code == 200
     assert 'class="board-fab"' in content
-    assert f'hx-get="{reverse("boards:task-panel-create")}?team="' in content
+    assert f'hx-get="{reverse("boards:task-panel-create")}"' in content
 
 
 @pytest.mark.django_db
@@ -320,7 +308,7 @@ def test_board_includes_shared_confirm_modal(logged_in_client):
 @pytest.mark.django_db
 def test_task_panel_create_renders_without_comments_form(logged_in_client):
     client, user = logged_in_client
-    first_status = TaskStatus.objects.filter(user=user, team__isnull=True).order_by("order").first()
+    first_status = TaskStatus.objects.filter(user=user).order_by("order").first()
     response = client.get(reverse("boards:task-panel-create"))
     content = response.content.decode()
     assert response.status_code == 200
@@ -674,219 +662,17 @@ def test_board_requires_login(client):
 
 
 # ---------------------------------------------------------------------------
-# Teams regression — non-teammates still can't reach each other's tasks
+# Cross-user isolation
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-def test_task_detail_404s_for_non_teammates_task(logged_in_client):
-    """A user with no team memberships still can't reach another user's personal task."""
+def test_task_detail_404s_for_another_users_task(logged_in_client):
     client, _ = logged_in_client
     other = User.objects.create_user()
     task = Task.objects.create(user=other, title="Not yours", status="todo")
     response = client.get(reverse("boards:task-detail", kwargs={"pk": task.pk}))
     assert response.status_code == 404
-
-
-# ---------------------------------------------------------------------------
-# TaskAssignView
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_task_assign_claims_unassigned_team_task(logged_in_client):
-    client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-    TeamMembership.objects.create(team=team, user=user)
-    _create_team_board(team)
-    task = Task.objects.create(user=user, team=team, title="Team task", status="todo")
-
-    response = client.post(
-        reverse("boards:task-assign", kwargs={"pk": task.pk}),
-        {"assignee_id": user.pk},
-    )
-
-    assert response.status_code == 200
-    task.refresh_from_db()
-    assert task.assignee_id == user.pk
-    assert task.activity.count() == 1
-
-
-@pytest.mark.django_db
-def test_task_assign_rejects_non_member(logged_in_client):
-    client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-    TeamMembership.objects.create(team=team, user=user)
-    outsider = User.objects.create_user()
-    task = Task.objects.create(user=user, team=team, title="Team task", status="todo")
-
-    response = client.post(
-        reverse("boards:task-assign", kwargs={"pk": task.pk}),
-        {"assignee_id": outsider.pk},
-    )
-
-    assert response.status_code == 422
-    task.refresh_from_db()
-    assert task.assignee_id is None
-
-
-@pytest.mark.django_db
-def test_task_assign_rejects_personal_task(logged_in_client):
-    client, user = logged_in_client
-    task = Task.objects.create(user=user, title="Personal task", status="todo")
-
-    response = client.post(
-        reverse("boards:task-assign", kwargs={"pk": task.pk}),
-        {"assignee_id": user.pk},
-    )
-
-    assert response.status_code == 422
-
-
-# ---------------------------------------------------------------------------
-# Board & Column team-scoping
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_team_board_shows_teammates_tasks(logged_in_client):
-    """A team's shared board shows every member's tasks on that team, not just the
-    viewer's own."""
-    client, user = logged_in_client
-    other = User.objects.create_user()
-    team = Team.objects.create(name="Rocketry")
-    TeamMembership.objects.create(team=team, user=user)
-    TeamMembership.objects.create(team=team, user=other)
-    _create_team_board(team)
-    team_task = Task.objects.create(user=other, team=team, title="Team task", status="todo")
-
-    response = client.get(reverse("boards:board-team", args=[team.pk]))
-    all_tasks = [t for lane in response.context["lanes"] for t in lane["tasks"]]
-
-    assert team_task in all_tasks
-
-
-@pytest.mark.django_db
-def test_team_board_excludes_other_teams_tasks(logged_in_client):
-    """Board isolation: a team's board never shows another team's tasks, even for a
-    user who belongs to both teams."""
-    client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-    other_team = Team.objects.create(name="Other")
-    outsider = User.objects.create_user()
-    TeamMembership.objects.create(team=team, user=user)
-    TeamMembership.objects.create(team=other_team, user=outsider)
-    _create_team_board(team)
-    _create_team_board(other_team)
-    other_team_task = Task.objects.create(user=outsider, team=other_team, title="Other team task", status="todo")
-
-    response = client.get(reverse("boards:board-team", args=[team.pk]))
-    all_tasks = [t for lane in response.context["lanes"] for t in lane["tasks"]]
-    assert other_team_task not in all_tasks
-
-
-@pytest.mark.django_db
-def test_team_board_404s_for_non_member(logged_in_client):
-    client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-    _create_team_board(team)
-
-    response = client.get(reverse("boards:board-team", args=[team.pk]))
-    assert response.status_code == 404
-
-
-@pytest.mark.django_db
-def test_task_create_with_team_succeeds_for_member(logged_in_client):
-    client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-    TeamMembership.objects.create(team=team, user=user)
-    _create_team_board(team)
-
-    response = client.post(reverse("boards:task-create"), {"title": "Team task", "team": team.pk})
-
-    assert response.status_code == 200
-    task = Task.objects.get(title="Team task")
-    assert task.team_id == team.pk
-
-
-@pytest.mark.django_db
-def test_task_create_with_team_rejects_non_member(logged_in_client):
-    client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-
-    response = client.post(reverse("boards:task-create"), {"title": "Team task", "team": team.pk})
-
-    assert response.status_code == 422
-    assert not Task.objects.filter(title="Team task").exists()
-
-
-@pytest.mark.django_db
-def test_task_panel_renders_assignee_select_and_activity_for_team_task(logged_in_client):
-    client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-    TeamMembership.objects.create(team=team, user=user)
-    _create_team_board(team)
-    task = Task.objects.create(user=user, team=team, title="Team task", status="todo")
-    client.post(reverse("boards:task-assign", kwargs={"pk": task.pk}), {"assignee_id": user.pk})
-
-    response = client.get(reverse("boards:task-panel", kwargs={"pk": task.pk}))
-
-    assert response.status_code == 200
-    assert b"Assignee" in response.content
-    assert b"Activity" in response.content
-
-
-@pytest.mark.django_db
-def test_task_panel_create_has_no_team_select(logged_in_client):
-    """The team is implied by which board the create panel was opened from now
-    (via the hidden 'team' field), not a user-facing dropdown."""
-    client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-    TeamMembership.objects.create(team=team, user=user)
-    _create_team_board(team)
-
-    response = client.get(reverse("boards:task-panel-create"), {"team": team.pk})
-
-    assert response.status_code == 200
-    assert b'id="task-panel-create-team"' not in response.content
-    assert response.context["selected_team_id"] == team.pk
-
-
-@pytest.mark.django_db
-def test_task_panel_create_preselects_team_from_board(logged_in_client):
-    """Opening the create panel from a team board's "Add task" link (which now
-    carries ?team=<board's team id>) preselects that team instead of falling back
-    to personal."""
-    client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-    TeamMembership.objects.create(team=team, user=user)
-    team_board = _create_team_board(team)
-    column = team_board.columns.first()
-
-    response = client.get(
-        reverse("boards:task-panel-create"), {"lane": f"column:{column.pk}", "team": team.pk}
-    )
-    assert response.context["selected_team_id"] == team.pk
-
-
-@pytest.mark.django_db
-def test_team_board_mark_complete_uses_the_teams_own_done_slug(logged_in_client):
-    """A team whose "done" status has a different slug than the personal board's
-    "done" status must not have its quick-complete button wired to the wrong slug —
-    that would 422 against the task's own team and silently no-op in the UI."""
-    client, user = logged_in_client
-    team = Team.objects.create(name="Rocketry")
-    TeamMembership.objects.create(team=team, user=user)
-    TaskStatus.objects.create(team=team, name="Todo", slug="todo", is_done=False, order=0)
-    TaskStatus.objects.create(team=team, name="Shipped", slug="shipped", is_done=True, order=1)
-    _create_team_board(team)
-    task = Task.objects.create(user=user, team=team, title="Team task", status="todo")
-
-    response = client.get(reverse("boards:board-team", args=[team.pk]))
-
-    assert response.status_code == 200
-    all_tasks = [t for lane in response.context["lanes"] for t in lane["tasks"]]
-    assert all_tasks[0].done_slug == "shipped"
 
 
 # ---------------------------------------------------------------------------
@@ -932,7 +718,7 @@ def test_task_appears_in_both_status_lane_and_matching_custom_lane(logged_in_cli
 @pytest.mark.django_db
 def test_status_reorder_updates_order(logged_in_client):
     client, user = logged_in_client
-    statuses = list(TaskStatus.objects.filter(user=user, team__isnull=True).order_by("order"))
+    statuses = list(TaskStatus.objects.filter(user=user).order_by("order"))
     reversed_order = [s.pk for s in reversed(statuses)]
 
     response = client.post(
@@ -942,7 +728,7 @@ def test_status_reorder_updates_order(logged_in_client):
     )
 
     assert response.status_code == 204
-    new_order = list(TaskStatus.objects.filter(user=user, team__isnull=True).order_by("order"))
+    new_order = list(TaskStatus.objects.filter(user=user).order_by("order"))
     assert [s.pk for s in new_order] == reversed_order
 
 
@@ -951,7 +737,7 @@ def test_status_reorder_rejects_another_users_statuses(logged_in_client):
     """A user can't reorder statuses they don't own."""
     client, user = logged_in_client
     other = User.objects.create_user()
-    other_status_pk = TaskStatus.objects.filter(user=other, team__isnull=True).first().pk
+    other_status_pk = TaskStatus.objects.filter(user=other).first().pk
 
     response = client.post(
         reverse("boards:status-reorder"),
@@ -965,7 +751,7 @@ def test_status_reorder_rejects_another_users_statuses(logged_in_client):
 @pytest.mark.django_db
 def test_lane_hide_by_status(logged_in_client):
     client, user = logged_in_client
-    status = TaskStatus.objects.get(user=user, team__isnull=True, slug="todo")
+    status = TaskStatus.objects.get(user=user, slug="todo")
 
     hide_response = client.post(reverse("boards:lane-hide", args=[f"status:{status.pk}"]))
     assert hide_response.status_code == 200
@@ -978,7 +764,7 @@ def test_lane_hide_by_status(logged_in_client):
 def test_board_archive_done_archives_only_completed_tasks(logged_in_client):
     client, user = logged_in_client
     board = Board.objects.get(user=user)
-    done_status = TaskStatus.objects.get(user=user, team__isnull=True, is_done=True)
+    done_status = TaskStatus.objects.get(user=user, is_done=True)
     done_task = Task.objects.create(user=user, title="Done", status=done_status.slug, completed_at=timezone.now())
     active_task = Task.objects.create(user=user, title="Still going", status="todo")
 
@@ -997,7 +783,7 @@ def test_lane_hide_collapses_in_place_instead_of_removing_the_lane(logged_in_cli
     dropping it entirely -- its tasks stay off the rendered board (no task-list
     markup), but the column itself, and its count, remain visible."""
     client, user = logged_in_client
-    status = TaskStatus.objects.get(user=user, team__isnull=True, slug="todo")
+    status = TaskStatus.objects.get(user=user, slug="todo")
     Task.objects.create(user=user, title="Still counted", status="todo")
 
     response = client.post(reverse("boards:lane-hide", args=[f"status:{status.pk}"]))
@@ -1013,7 +799,7 @@ def test_lane_hide_collapses_in_place_instead_of_removing_the_lane(logged_in_cli
 @pytest.mark.django_db
 def test_lane_hide_toggles_collapsed_state(logged_in_client):
     client, user = logged_in_client
-    status = TaskStatus.objects.get(user=user, team__isnull=True, slug="todo")
+    status = TaskStatus.objects.get(user=user, slug="todo")
     key = f"status:{status.pk}"
 
     first = client.post(reverse("boards:lane-hide", args=[key]))

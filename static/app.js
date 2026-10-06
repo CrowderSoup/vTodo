@@ -3,7 +3,6 @@
   var draggingLaneKind = null;
   var draggingTaskId = null;
   var draggingStatusId = null;
-  var draggingStatusScope = null;
   var dropTargetCard = null;
   var dropPosition = null;
   var notesEditor = null;
@@ -783,8 +782,7 @@
 
   // Settings > Board Setup: drag-reorder the status list (independent of the live
   // board's column/lane drag handling above -- different page, own state, posts to
-  // StatusReorderView). A drag can't cross scope (personal vs a specific team),
-  // matching the endpoint's same-scope requirement.
+  // StatusReorderView).
   document.addEventListener("dragstart", function (event) {
     var handle = event.target.closest(".status-drag-handle[draggable]");
     if (!handle) {
@@ -792,7 +790,6 @@
     }
     var row = handle.closest(".status-row");
     draggingStatusId = handle.dataset.statusId;
-    draggingStatusScope = row ? row.dataset.statusScope : null;
     event.dataTransfer.setData("text/plain", "status:" + draggingStatusId);
     event.dataTransfer.effectAllowed = "move";
     setTimeout(function () {
@@ -811,7 +808,6 @@
       draggedRow.classList.remove("status-dragging");
     }
     draggingStatusId = null;
-    draggingStatusScope = null;
     document.querySelectorAll(".status-row.status-drag-over").forEach(function (row) {
       row.classList.remove("status-drag-over");
     });
@@ -822,7 +818,7 @@
       return;
     }
     var row = event.target.closest(".status-row");
-    if (!row || row.dataset.statusId === draggingStatusId || row.dataset.statusScope !== draggingStatusScope) {
+    if (!row || row.dataset.statusId === draggingStatusId) {
       return;
     }
     event.preventDefault();
@@ -850,7 +846,7 @@
       return;
     }
     var targetRow = event.target.closest(".status-row");
-    if (!targetRow || targetRow.dataset.statusId === draggingStatusId || targetRow.dataset.statusScope !== draggingStatusScope) {
+    if (!targetRow || targetRow.dataset.statusId === draggingStatusId) {
       return;
     }
     event.preventDefault();
@@ -866,9 +862,6 @@
     var targetIndex = rows.indexOf(targetRow);
 
     if (draggedRow) {
-      // Insert relative to targetRow's own parent (its .status-group), not #status-list
-      // directly -- rows are grouped by scope, and same-scope dragging (guarded above)
-      // means draggedRow and targetRow always share a parent.
       if (draggedIndex < targetIndex) {
         targetRow.parentElement.insertBefore(draggedRow, targetRow.nextSibling);
       } else {
@@ -876,7 +869,7 @@
       }
     }
 
-    var order = Array.from(list.querySelectorAll('.status-row[data-status-scope="' + draggingStatusScope + '"]')).map(function (row) {
+    var order = Array.from(list.querySelectorAll(".status-row")).map(function (row) {
       return parseInt(row.dataset.statusId, 10);
     });
 
@@ -893,7 +886,6 @@
       draggedRow.classList.remove("status-dragging");
     }
     draggingStatusId = null;
-    draggingStatusScope = null;
   });
 
   // Calendar: drag a task card onto a day cell or the no-date pane to reschedule

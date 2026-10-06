@@ -15,7 +15,6 @@ from .views import (
     _hidden_lane_context,
     _matching_saved_filter_name,
     _status_context_for,
-    _task_matches_assignee,
 )
 
 DAY_OVERFLOW_THRESHOLD = 3
@@ -45,7 +44,6 @@ def _build_calendar_context(user, board, year, month, session=None):
     board_filter = _board_filter_for(board, session)
     filter_tags = board_filter.get("tags", [])
     exclude_tags = board_filter.get("exclude_tags", [])
-    filter_assignee = board_filter.get("assignee", "").strip()
     hidden_lane_keys = set(board_filter.get("hidden_lanes", []))
     hidden_lane_matchers, hidden_lane_summaries = _hidden_lane_context(user, board, hidden_lane_keys)
     # board's "due" session filter is deliberately never read here -- month
@@ -61,15 +59,13 @@ def _build_calendar_context(user, board, year, month, session=None):
         all_tasks = [t for t in all_tasks if all(tag in t.tags for tag in filter_tags)]
     if exclude_tags:
         all_tasks = [t for t in all_tasks if not any(tag in t.tags for tag in exclude_tags)]
-    if filter_assignee:
-        all_tasks = [t for t in all_tasks if _task_matches_assignee(t, filter_assignee, user)]
     if hidden_lane_matchers:
         all_tasks = [t for t in all_tasks if not any(matches(t) for matches in hidden_lane_matchers)]
 
     dated = [t for t in all_tasks if t.due_date and grid_start <= t.due_date <= grid_end]
     undated = [t for t in all_tasks if not t.due_date]
 
-    statuses, done_slug, active_slug = _status_context_for(user, board.team)
+    statuses, done_slug, active_slug = _status_context_for(user)
 
     by_date = {}
     for t in dated:
@@ -108,7 +104,6 @@ def _build_calendar_context(user, board, year, month, session=None):
         "tags": filter_tags,
         "exclude_tags": exclude_tags,
         "due": "",
-        "assignee": filter_assignee,
         "hidden_lanes": hidden_lane_summaries,
     }
     saved_filters = list(board.saved_filters.all())
@@ -132,25 +127,21 @@ def _build_calendar_context(user, board, year, month, session=None):
         "today_month": today.month,
         "active_filter": active_filter,
         "active_filter_count": (
-            len(filter_tags) + len(exclude_tags) + len(hidden_lane_keys) + (1 if filter_assignee else 0)
+            len(filter_tags) + len(exclude_tags) + len(hidden_lane_keys)
         ),
         "saved_filters": saved_filters,
         "active_saved_filter_name": _matching_saved_filter_name(
-            saved_filters, filter_tags, exclude_tags, "", filter_assignee, hidden_lane_keys
+            saved_filters, filter_tags, exclude_tags, "", hidden_lane_keys
         ),
         "hide_due_filter": True,
-        "team_members": list(board.team.memberships.select_related("user")) if board.team_id else [],
     }
 
 
 class CalendarView(LoginRequiredMixin, View):
-    def get(self, request, team_id=None):
-        from apps.tasks.selectors import user_teams_qs
-
-        board = resolve_board(request.user, team_id)
+    def get(self, request):
+        board = resolve_board(request.user)
         year, month = _normalize_year_month(request.GET.get("year"), request.GET.get("month"))
         context = _build_calendar_context(request.user, board, year, month, request.session)
-        context["user_teams"] = list(user_teams_qs(request.user))
         return render(request, "calendar/calendar.html", context)
 
 

@@ -112,22 +112,14 @@ def list_tasks(
     status: str | None = None,
     tags: list[str] | None = None,
     exclude_tags: list[str] | None = None,
-    team_id: int | None = None,
 ) -> str:
-    """List tasks, optionally filtered by status slug, tags, and/or team.
+    """List tasks, optionally filtered by status slug and/or tags.
 
     tags requires a task to have every listed tag; exclude_tags drops any task
     that has any of the listed tags (e.g. "show me everything except `home`").
-
-    Without team_id, returns your personal tasks plus tasks from every team you
-    belong to. Pass team_id to see only that team's shared tasks.
     """
     try:
-        return _ok(
-            _current_client().list_tasks(
-                status=status, tags=tags, exclude_tags=exclude_tags, team_id=team_id
-            )
-        )
+        return _ok(_current_client().list_tasks(status=status, tags=tags, exclude_tags=exclude_tags))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -150,7 +142,6 @@ def create_task(
     due_time: str | None = None,
     duration_minutes: int | None = None,
     tags: list[str] | None = None,
-    team_id: int | None = None,
     recurrence_days: int | None = None,
     recurrence_from: str | None = None,
 ) -> str:
@@ -160,10 +151,6 @@ def create_task(
     recurring, set recurrence_days (how many days after it's next due) and
     optionally recurrence_from ("completion" (default) or "due_date" — which
     date the next recurrence counts forward from).
-
-    Pass team_id to create a shared task on that team instead of a personal
-    one — status must then be one of that team's status slugs (see
-    list_statuses(team_id=...)). You must be a member of the team.
     """
     try:
         return _ok(_current_client().create_task(
@@ -174,7 +161,6 @@ def create_task(
             due_time=due_time,
             duration_minutes=duration_minutes,
             tags=tags,
-            team_id=team_id,
             recurrence_days=recurrence_days,
             recurrence_from=recurrence_from,
         ))
@@ -291,28 +277,6 @@ def reorder_tasks(ids: list[int]) -> str:
         return _err(e)
 
 
-@mcp.tool()
-def assign_task(id: int, assignee_id: int | None = None) -> str:
-    """Assign (or unassign, by omitting assignee_id) a team task to a team member.
-
-    Only works on team tasks. Any member of the task's team can claim or
-    reassign it — the assignee must also be a member of that team.
-    """
-    try:
-        return _ok(_current_client().assign_task(id, assignee_id=assignee_id))
-    except VtodoAPIError as e:
-        return _err(e)
-
-
-@mcp.tool()
-def list_task_activity(task_id: int) -> str:
-    """List the assignment audit trail for a team task, oldest first."""
-    try:
-        return _ok(_current_client().list_task_activity(task_id))
-    except VtodoAPIError as e:
-        return _err(e)
-
-
 # ── Comment tools ──────────────────────────────────────────────────────────────
 
 
@@ -348,11 +312,10 @@ def delete_comment(comment_id: int) -> str:
 
 
 @mcp.tool()
-def list_statuses(team_id: int | None = None) -> str:
-    """List task statuses. Without team_id, lists your personal statuses;
-    pass team_id to list a team's shared statuses instead."""
+def list_statuses() -> str:
+    """List your task statuses."""
     try:
-        return _ok(_current_client().list_statuses(team_id=team_id))
+        return _ok(_current_client().list_statuses())
     except VtodoAPIError as e:
         return _err(e)
 
@@ -362,15 +325,10 @@ def create_status(
     name: str,
     color: str | None = None,
     is_done: bool | None = None,
-    team_id: int | None = None,
 ) -> str:
-    """Create a new status. color is a hex string e.g. #ff0000.
-
-    Pass team_id to add a shared status to that team's workflow instead of
-    your personal one. Any team member can do this.
-    """
+    """Create a new status. color is a hex string e.g. #ff0000."""
     try:
-        return _ok(_current_client().create_status(name, color=color, is_done=is_done, team_id=team_id))
+        return _ok(_current_client().create_status(name, color=color, is_done=is_done))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -410,26 +368,12 @@ def delete_status(slug: str) -> str:
 def reorder_statuses(ids: list[int]) -> str:
     """Set the display order of a set of status columns.
 
-    Pass status IDs in the order you want them to appear. All statuses in the
-    list must belong to the same scope (your personal statuses, or a single
-    team's) — mixing scopes, or reordering statuses you don't own, is
-    rejected.
+    Pass status IDs in the order you want them to appear. Reordering statuses
+    you don't own is rejected.
     """
     try:
         _current_client().reorder_statuses(ids)
         return f"Reordered {len(ids)} status(es)."
-    except VtodoAPIError as e:
-        return _err(e)
-
-
-# ── Team tools ─────────────────────────────────────────────────────────────────
-
-
-@mcp.tool()
-def list_teams() -> str:
-    """List the teams you belong to."""
-    try:
-        return _ok(_current_client().list_teams())
     except VtodoAPIError as e:
         return _err(e)
 

@@ -88,7 +88,7 @@ SPECTACULAR_SETTINGS = {
 OAUTH2_PROVIDER = {
     "PKCE_REQUIRED": True,
     "SCOPES": {
-        "tasks": "Read and write your vtodo tasks, statuses, comments, and teams",
+        "tasks": "Read and write your vtodo tasks, statuses, and comments",
     },
     "DEFAULT_SCOPES": ["tasks"],
     "ACCESS_TOKEN_EXPIRE_SECONDS": 3600,

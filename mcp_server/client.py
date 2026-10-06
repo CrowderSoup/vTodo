@@ -39,7 +39,6 @@ class VtodoClient:
         status: str | None = None,
         tags: list[str] | None = None,
         exclude_tags: list[str] | None = None,
-        team_id: int | None = None,
     ) -> list[dict]:
         params: dict[str, Any] = {}
         if status:
@@ -48,8 +47,6 @@ class VtodoClient:
             params["tags"] = tags
         if exclude_tags:
             params["exclude_tags"] = exclude_tags
-        if team_id is not None:
-            params["team"] = team_id
         r = self._session.get(f"{self._base}/tasks/", params=params)
         self._raise(r)
         return r.json()
@@ -72,7 +69,6 @@ class VtodoClient:
         due_time: str | None = None,
         duration_minutes: int | None = None,
         tags: list[str] | None = None,
-        team_id: int | None = None,
         recurrence_days: int | None = None,
         recurrence_from: str | None = None,
     ) -> dict:
@@ -89,8 +85,6 @@ class VtodoClient:
             payload["duration_minutes"] = duration_minutes
         if tags is not None:
             payload["tags"] = tags
-        if team_id is not None:
-            payload["team"] = team_id
         if recurrence_days is not None:
             payload["recurrence_days"] = recurrence_days
         if recurrence_from is not None:
@@ -115,25 +109,10 @@ class VtodoClient:
         self._raise(r)
         return r.json()
 
-    def assign_task(self, task_id: int, assignee_id: int | None = None) -> dict:
-        r = self._session.post(
-            f"{self._base}/tasks/{task_id}/assign/", json={"assignee_id": assignee_id}
-        )
-        self._raise(r)
-        return r.json()
-
-    def list_task_activity(self, task_id: int) -> list[dict]:
-        r = self._session.get(f"{self._base}/tasks/{task_id}/activity/")
-        self._raise(r)
-        return r.json()
-
     # ── Statuses ───────────────────────────────────────────────────────────
 
-    def list_statuses(self, team_id: int | None = None) -> list[dict]:
-        params: dict[str, Any] = {}
-        if team_id is not None:
-            params["team"] = team_id
-        r = self._session.get(f"{self._base}/statuses/", params=params)
+    def list_statuses(self) -> list[dict]:
+        r = self._session.get(f"{self._base}/statuses/")
         self._raise(r)
         return r.json()
 
@@ -142,15 +121,12 @@ class VtodoClient:
         name: str,
         color: str | None = None,
         is_done: bool | None = None,
-        team_id: int | None = None,
     ) -> dict:
         payload: dict[str, Any] = {"name": name}
         if color is not None:
             payload["color"] = color
         if is_done is not None:
             payload["is_done"] = is_done
-        if team_id is not None:
-            payload["team"] = team_id
         r = self._session.post(f"{self._base}/statuses/", json=payload)
         self._raise(r)
         return r.json()
@@ -183,10 +159,3 @@ class VtodoClient:
     def delete_comment(self, comment_id: int) -> None:
         r = self._session.delete(f"{self._base}/comments/{comment_id}/")
         self._raise(r)
-
-    # ── Teams ──────────────────────────────────────────────────────────────
-
-    def list_teams(self) -> list[dict]:
-        r = self._session.get(f"{self._base}/teams/")
-        self._raise(r)
-        return r.json()
