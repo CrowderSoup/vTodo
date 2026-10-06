@@ -720,6 +720,7 @@ hr {
 .nav-filter-slot {
   display: flex;
   align-items: center;
+  gap: 0.5rem;
   order: 4;
 }
 

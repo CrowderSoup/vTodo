@@ -35,3 +35,16 @@ def test_mobile_nav_filter_bar_wraps_to_its_own_row():
     assert "@media (max-width: 820px)" in css
     assert "flex-wrap: wrap;\n    border-radius: 16px;" in css
     assert "flex-basis: 100%;" in css
+
+
+def test_nav_filter_slot_spaces_its_buttons():
+    """Filters and Archive done cards sit side by side in the header; without a
+    gap they butt right up against each other."""
+    css = CSS_PATH.read_text()
+
+    assert (
+        ".nav-filter-slot {\n"
+        "  display: flex;\n"
+        "  align-items: center;\n"
+        "  gap: 0.5rem;\n"
+    ) in css
