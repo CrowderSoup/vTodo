@@ -78,6 +78,17 @@ def test_board_done_task_count(logged_in_client):
 
 
 @pytest.mark.django_db
+def test_header_shows_filters_before_archive_done(logged_in_client):
+    """The header filter slot lists the Filters trigger first, then Archive done cards."""
+    client, user = logged_in_client
+    Task.objects.create(user=user, title="Done", status="done", completed_at=timezone.now())
+    response = client.get(reverse("boards:board"))
+    html = response.content.decode()
+    slot = html[html.index('id="board-filter"'):]
+    assert slot.index("filter-bar-trigger") < slot.index("Archive done cards")
+
+
+@pytest.mark.django_db
 def test_board_due_today_count(logged_in_client):
     """due_today_count counts incomplete tasks due today."""
     client, user = logged_in_client
