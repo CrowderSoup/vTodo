@@ -2,6 +2,9 @@
   <button class="btn-ghost btn-small filter-bar-trigger" type="button" data-disclosure-toggle>
     Filters{% if active_filter_count %} <span class="filter-count-badge">{{ active_filter_count }}</span>{% endif %}
   </button>
+  {% if active_filter_count and hidden_task_count %}
+  <span class="filter-hidden-hint">{{ hidden_task_count }} of {{ total_task_count }} hidden</span>
+  {% endif %}
 
   <div class="filter-bar-popover">
     <div class="filter-group">

@@ -748,6 +748,13 @@ hr {
   font-weight: 700;
 }
 
+.filter-hidden-hint {
+  margin-left: 0.5rem;
+  color: var(--text-subtle);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
 .filter-bar-popover {
   display: none;
   position: absolute;

@@ -390,6 +390,12 @@ def _build_board_context(user, board, session=None):
         if lane["collapsed"]:
             hidden_lane_summaries.append(lane)
 
+    # Only status lanes count toward collapsed tasks: they're exclusive, whereas
+    # custom columns can overlap and would double-count.
+    hidden_task_count = (len(all_tasks) - len(tasks)) + sum(
+        len(lane["tasks"]) for lane in hidden_lane_summaries if lane["kind"] == "status"
+    )
+
     saved_filters = list(board.saved_filters.all())
     active_saved_filter_name = _matching_saved_filter_name(
         saved_filters, filter_tags, exclude_tags, filter_due, hidden_lane_keys
@@ -412,6 +418,7 @@ def _build_board_context(user, board, session=None):
         "today": today,
         "total_task_count": len(all_tasks),
         "visible_task_count": len(tasks),
+        "hidden_task_count": hidden_task_count,
         "done_task_count": sum(1 for task in all_tasks if task.completed_at),
         "due_today_count": sum(1 for task in tasks if task.due_date == today and not task.completed_at),
         "overdue_count": sum(1 for task in tasks if task.due_date and task.due_date < today and not task.completed_at),
