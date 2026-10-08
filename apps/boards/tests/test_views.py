@@ -55,6 +55,8 @@ def test_board_search_matches_title_or_notes(logged_in_client, title, notes, que
     assert response.context["hidden_task_count"] == 1
     html = response.content.decode()
     assert 'hx-swap-oob="true"' in html
+    assert "HX-Trigger-After-Swap" not in response
+    assert 'hx-preserve' in html
     assert 'filter-count-badge">1</span>' in html
     assert "1 of 2 hidden" in html
 
@@ -112,6 +114,8 @@ def test_board_clear_filters_clears_search(logged_in_client):
     assert client.session["board_filter"][str(board.pk)]["q"] == ""
     assert response.context["active_filter_count"] == 0
     assert response.context["visible_task_count"] == 2
+    assert json.loads(response["HX-Trigger-After-Swap"]) == {"boardSearchSync": {"q": ""}}
+    assert 'value=""' in response.content.decode()
 
 
 @pytest.mark.django_db
@@ -126,6 +130,8 @@ def test_board_search_input_renders_in_header(logged_in_client):
     assert 'form="board-filter-form"' in slot
     assert 'hx-include="#board-filter-form"' in slot
     assert 'hx-trigger="input changed delay:300ms"' in slot
+    assert "hx-preserve" in slot
+    assert 'hx-sync="this:replace"' in slot
 
 
 @pytest.mark.django_db
@@ -158,6 +164,26 @@ def test_board_saved_view_includes_search(logged_in_client):
     response = client.post(reverse("boards:filter-load", args=[saved_filter.pk]))
     assert client.session["board_filter"][str(board.pk)]["q"] == "release"
     assert response.context["active_saved_filter_name"] == "Release bugs"
+    assert json.loads(response["HX-Trigger-After-Swap"]) == {"boardSearchSync": {"q": "release"}}
+    assert 'value="release"' in response.content.decode()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("query", [None, "", 'release "notes" & <tasks>'])
+def test_board_saved_view_response_syncs_search(logged_in_client, query):
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    client.post(reverse("boards:board-filter"), {"board_id": board.pk, "q": "previous"})
+    filter_config = {"tags": ["bug"]}
+    if query is not None:
+        filter_config["q"] = query
+    saved_filter = board.saved_filters.create(name="Saved view", filter_config=filter_config)
+
+    response = client.post(reverse("boards:filter-load", args=[saved_filter.pk]))
+
+    assert response.status_code == 200
+    assert response.context["active_filter"]["q"] == (query or "")
+    assert json.loads(response["HX-Trigger-After-Swap"]) == {"boardSearchSync": {"q": query or ""}}
 
 
 @pytest.mark.django_db

@@ -10,6 +10,8 @@
        hx-post="{% url 'boards:board-filter' %}"
        hx-target="#task-list-content"
        hx-swap="innerHTML"
+       hx-preserve
+       hx-sync="this:replace"
        hx-include="#board-filter-form"
        hx-trigger="input changed delay:300ms">
 {% endif %}

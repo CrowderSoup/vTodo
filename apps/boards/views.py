@@ -95,7 +95,7 @@ def _render_task_list_update(request, user, board, session):
     return render(request, "boards/_columns.html", context)
 
 
-def _render_filter_response(request, user, board, session):
+def _render_filter_response(request, user, board, session, sync_search=False):
     """Same page-detection as _render_task_list_update, for the filter-bar response
     partials (which additionally re-render the filter bar itself, e.g. to update the
     active-filter pills and the saved-view select)."""
@@ -106,7 +106,12 @@ def _render_filter_response(request, user, board, session):
         context = _build_calendar_context(user, board, year, month, session)
         return render(request, "calendar/_filter_response.html", context)
     context = _build_board_context(user, board, session)
-    return render(request, "boards/_filter_response.html", context)
+    response = render(request, "boards/_filter_response.html", context)
+    if sync_search:
+        response["HX-Trigger-After-Swap"] = json.dumps({
+            "boardSearchSync": {"q": context["active_filter"]["q"]},
+        })
+    return response
 
 
 def _render_task_panel_with_list_update(request, user, task, board, session):
@@ -459,7 +464,9 @@ class BoardFilterView(LoginRequiredMixin, View):
             "q": q,
             "hidden_lanes": hidden_lanes,
         })
-        return _render_filter_response(request, request.user, board, request.session)
+        return _render_filter_response(
+            request, request.user, board, request.session, sync_search="q" not in request.POST
+        )
 
 
 class BoardFilterAddTagView(LoginRequiredMixin, View):
@@ -881,7 +888,7 @@ class SavedFilterLoadView(LoginRequiredMixin, View):
             raise Http404()
         board = saved_filter.board
         _set_board_filter(request, board, saved_filter.filter_config)
-        return _render_filter_response(request, request.user, board, request.session)
+        return _render_filter_response(request, request.user, board, request.session, sync_search=True)
 
 
 class SavedFilterSaveView(LoginRequiredMixin, View):
