@@ -724,6 +724,15 @@ hr {
   order: 4;
 }
 
+.board-task-search {
+  width: 11rem;
+  min-width: 0;
+  min-height: 2rem;
+  padding: 0.42rem 0.65rem;
+  border-radius: 10px;
+  font-size: 0.82rem;
+}
+
 .filter-bar-trigger-container {
   position: relative;
 }
@@ -2302,6 +2311,7 @@ textarea:has(+ .EasyMDEContainer) {
 
   .nav-filter-slot {
     order: 5;
+    flex-wrap: wrap;
     flex-basis: 100%;
     margin-top: 0.5rem;
     padding-top: 0.5rem;

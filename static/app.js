@@ -753,6 +753,37 @@
     flushTagInputFields(event);
   });
 
+  // Preserving the search node keeps live text; moving it during an OOB swap
+  // can still blur it, so restore its focus and selection before returning.
+  document.addEventListener("htmx:oobBeforeSwap", function (event) {
+    var input = document.getElementById("board-filter-q");
+    if (event.detail.target.id === "board-filter" && input === document.activeElement) {
+      event.detail.searchSelection = {
+        start: input.selectionStart,
+        end: input.selectionEnd,
+        direction: input.selectionDirection,
+      };
+    }
+  });
+
+  document.addEventListener("htmx:oobAfterSwap", function (event) {
+    var selection = event.detail.searchSelection;
+    var input = document.getElementById("board-filter-q");
+    if (selection && input) {
+      input.focus({ preventScroll: true });
+      input.setSelectionRange(selection.start, selection.end, selection.direction);
+      delete event.detail.searchSelection;
+    }
+  });
+
+  // Only Clear filters and saved-view loads replace the user's live search text.
+  document.addEventListener("boardSearchSync", function (event) {
+    var input = document.getElementById("board-filter-q");
+    if (input) {
+      input.value = event.detail.q;
+    }
+  });
+
   document.addEventListener("htmx:afterSettle", function (event) {
     initTagInputs(event.target);
 

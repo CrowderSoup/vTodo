@@ -1,3 +1,21 @@
+{% if show_task_search %}
+<input type="search"
+       id="board-filter-q"
+       class="board-task-search"
+       name="q"
+       form="board-filter-form"
+       value="{{ active_filter.q }}"
+       placeholder="Search tasks"
+       aria-label="Search tasks"
+       hx-post="{% url 'boards:board-filter' %}"
+       hx-target="#task-list-content"
+       hx-swap="innerHTML"
+       hx-preserve
+       hx-sync="this:replace"
+       hx-include="#board-filter-form"
+       hx-trigger="input changed delay:300ms">
+{% endif %}
+
 <div class="filter-bar-trigger-container">
   <button class="btn-ghost btn-small filter-bar-trigger" type="button" data-disclosure-toggle>
     Filters{% if active_filter_count %} <span class="filter-count-badge">{{ active_filter_count }}</span>{% endif %}
@@ -65,7 +83,7 @@
       {% endif %}
     </form>
 
-    {% if active_filter.tags or active_filter.exclude_tags or active_filter.due or active_filter.hidden_lanes %}
+    {% if active_filter.tags or active_filter.exclude_tags or active_filter.due or active_filter.q or active_filter.hidden_lanes %}
     <div class="board-filter-actions">
       <button class="btn-ghost btn-small" type="button" data-open-modal="save-filter-modal">Save view</button>
 

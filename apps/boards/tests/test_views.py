@@ -28,6 +28,172 @@ def logged_in_client(client, user_with_board):
 
 
 # ---------------------------------------------------------------------------
+# Board task search
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(("title", "notes", "query"), [
+    ("Plan release", "", "release"),
+    ("Planning", "Prepare the release checklist", "release"),
+    ("Plan RELEASE", "", "ReLeAsE"),
+    ("Planning", "Prepare the RELEASE checklist", "ReLeAsE"),
+])
+def test_board_search_matches_title_or_notes(logged_in_client, title, notes, query):
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    matching = Task.objects.create(user=user, title=title, notes=notes, status="todo")
+    Task.objects.create(user=user, title="Unrelated", status="todo")
+
+    response = client.post(reverse("boards:board-filter"), {"board_id": board.pk, "q": f"  {query}  "})
+
+    assert response.status_code == 200
+    tasks = [task for lane in response.context["lanes"] for task in lane["tasks"]]
+    assert tasks == [matching]
+    assert client.session["board_filter"][str(board.pk)]["q"] == query
+    assert response.context["active_filter_count"] == 1
+    assert response.context["hidden_task_count"] == 1
+    html = response.content.decode()
+    assert 'hx-swap-oob="true"' in html
+    assert "HX-Trigger-After-Swap" not in response
+    assert 'hx-preserve' in html
+    assert 'filter-count-badge">1</span>' in html
+    assert "1 of 2 hidden" in html
+
+    response = client.get(reverse("boards:board"))
+    assert response.context["visible_task_count"] == 1
+    assert response.context["active_filter"]["q"] == query
+
+
+@pytest.mark.django_db
+def test_board_search_combines_with_tag_filter(logged_in_client):
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    matching = Task.objects.create(user=user, title="Release bug", tags=["bug"], status="todo")
+    Task.objects.create(user=user, title="Release feature", tags=["feature"], status="todo")
+    Task.objects.create(user=user, title="Other bug", tags=["bug"], status="todo")
+
+    response = client.post(reverse("boards:board-filter"), {
+        "board_id": board.pk, "q": "release", "tags": ["bug"],
+    })
+
+    tasks = [task for lane in response.context["lanes"] for task in lane["tasks"]]
+    assert tasks == [matching]
+    assert response.context["active_filter_count"] == 2
+    assert response.context["hidden_task_count"] == 2
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("query", ["", "   "])
+def test_board_empty_search_is_not_an_active_filter(logged_in_client, query):
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    Task.objects.create(user=user, title="First", status="todo")
+    Task.objects.create(user=user, title="Second", status="todo")
+
+    response = client.post(reverse("boards:board-filter"), {"board_id": board.pk, "q": query})
+
+    assert response.context["visible_task_count"] == 2
+    assert response.context["active_filter_count"] == 0
+    assert response.context["hidden_task_count"] == 0
+    assert client.session["board_filter"][str(board.pk)]["q"] == ""
+
+
+@pytest.mark.django_db
+def test_board_clear_filters_clears_search(logged_in_client):
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    Task.objects.create(user=user, title="Release", status="todo")
+    Task.objects.create(user=user, title="Other", status="todo")
+    response = client.post(reverse("boards:board-filter"), {"board_id": board.pk, "q": "release"})
+    assert "Clear filters" in response.content.decode()
+    assert "Save view" in response.content.decode()
+
+    response = client.post(reverse("boards:board-filter"), {"board_id": board.pk})
+
+    assert client.session["board_filter"][str(board.pk)]["q"] == ""
+    assert response.context["active_filter_count"] == 0
+    assert response.context["visible_task_count"] == 2
+    assert json.loads(response["HX-Trigger-After-Swap"]) == {"boardSearchSync": {"q": ""}}
+    assert 'value=""' in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_board_search_input_renders_in_header(logged_in_client):
+    client, _ = logged_in_client
+    response = client.get(reverse("boards:board"))
+    html = response.content.decode()
+    slot = html[html.index('id="board-filter"'):]
+    assert slot.index('id="board-filter-q"') < slot.index("filter-bar-trigger")
+    assert 'placeholder="Search tasks"' in slot
+    assert 'aria-label="Search tasks"' in slot
+    assert 'form="board-filter-form"' in slot
+    assert 'hx-include="#board-filter-form"' in slot
+    assert 'hx-trigger="input changed delay:300ms"' in slot
+    assert "hx-preserve" in slot
+    assert 'hx-sync="this:replace"' in slot
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("url_name", ["boards:board-filter-add-tag", "boards:board-filter-exclude-tag"])
+def test_board_tag_shortcuts_preserve_search(logged_in_client, url_name):
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    client.post(reverse("boards:board-filter"), {"board_id": board.pk, "q": "release"})
+
+    response = client.post(reverse(url_name), {"board_id": board.pk, "tag": "bug"})
+
+    assert response.status_code == 200
+    assert client.session["board_filter"][str(board.pk)]["q"] == "release"
+    assert response.context["active_filter_count"] == 2
+
+
+@pytest.mark.django_db
+def test_board_saved_view_includes_search(logged_in_client):
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    client.post(reverse("boards:board-filter"), {"board_id": board.pk, "q": "release", "tags": ["bug"]})
+    response = client.post(reverse("boards:filter-save"), {"board_id": board.pk, "name": "Release bugs"})
+    saved_filter = board.saved_filters.get(name="Release bugs")
+    assert saved_filter.filter_config["q"] == "release"
+    assert response.context["active_saved_filter_name"] == "Release bugs"
+
+    response = client.post(reverse("boards:board-filter"), {"board_id": board.pk, "q": "other", "tags": ["bug"]})
+    assert response.context["active_saved_filter_name"] is None
+
+    response = client.post(reverse("boards:filter-load", args=[saved_filter.pk]))
+    assert client.session["board_filter"][str(board.pk)]["q"] == "release"
+    assert response.context["active_saved_filter_name"] == "Release bugs"
+    assert json.loads(response["HX-Trigger-After-Swap"]) == {"boardSearchSync": {"q": "release"}}
+    assert 'value="release"' in response.content.decode()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("query", [None, "", 'release "notes" & <tasks>'])
+def test_board_saved_view_response_syncs_search(logged_in_client, query):
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    client.post(reverse("boards:board-filter"), {"board_id": board.pk, "q": "previous"})
+    filter_config = {"tags": ["bug"]}
+    if query is not None:
+        filter_config["q"] = query
+    saved_filter = board.saved_filters.create(name="Saved view", filter_config=filter_config)
+
+    response = client.post(reverse("boards:filter-load", args=[saved_filter.pk]))
+
+    assert response.status_code == 200
+    assert response.context["active_filter"]["q"] == (query or "")
+    assert json.loads(response["HX-Trigger-After-Swap"]) == {"boardSearchSync": {"q": query or ""}}
+
+
+@pytest.mark.django_db
+def test_calendar_does_not_render_board_search(logged_in_client):
+    client, _ = logged_in_client
+    response = client.get(reverse("calendar:calendar"))
+    assert 'id="board-filter-q"' not in response.content.decode()
+
+
+# ---------------------------------------------------------------------------
 # BoardView — new stat context variables
 # ---------------------------------------------------------------------------
 
