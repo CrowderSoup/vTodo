@@ -184,6 +184,45 @@ def test_board_active_filter_count_with_exclude_tag_filter(logged_in_client):
 
 
 @pytest.mark.django_db
+def test_board_hidden_task_count_with_tag_filter(logged_in_client):
+    """hidden_task_count counts tasks removed by a tag filter."""
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    Task.objects.create(user=user, title="Match", status="todo", tags=["urgent"])
+    Task.objects.create(user=user, title="Other", status="todo", tags=["misc"])
+    session = client.session
+    session["board_filter"] = {str(board.pk): {"tags": ["urgent"], "due": "", "hidden_lanes": []}}
+    session.save()
+    response = client.get(reverse("boards:board"))
+    assert response.context["hidden_task_count"] == 1
+    assert "1 of 2 hidden" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_board_hidden_task_count_with_collapsed_status_lane(logged_in_client):
+    """hidden_task_count counts tasks sitting in a collapsed status lane."""
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    status = TaskStatus.objects.get(user=user, slug="todo")
+    Task.objects.create(user=user, title="Collapsed", status="todo")
+    session = client.session
+    session["board_filter"] = {str(board.pk): {"tags": [], "due": "", "hidden_lanes": [f"status:{status.pk}"]}}
+    session.save()
+    response = client.get(reverse("boards:board"))
+    assert response.context["hidden_task_count"] == 1
+
+
+@pytest.mark.django_db
+def test_board_hidden_hint_not_rendered_without_filters(logged_in_client):
+    """The hidden-tasks hint is absent when no filters are active."""
+    client, user = logged_in_client
+    Task.objects.create(user=user, title="T1", status="todo")
+    response = client.get(reverse("boards:board"))
+    assert response.context["hidden_task_count"] == 0
+    assert "filter-hidden-hint" not in response.content.decode()
+
+
+@pytest.mark.django_db
 def test_board_exclude_tag_filter_hides_matching_tasks(logged_in_client):
     """Tasks with an excluded tag are hidden from the board, others remain visible."""
     client, user = logged_in_client
