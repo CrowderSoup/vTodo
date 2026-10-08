@@ -149,7 +149,7 @@ def _task_matches_column(task, filter_config):
     return True
 
 
-def _matching_saved_filter_name(saved_filters, tags, exclude_tags, due, hidden_lanes=None):
+def _matching_saved_filter_name(saved_filters, tags, exclude_tags, due, hidden_lanes=None, q=""):
     """The name of the SavedFilter (if any) whose filter_config exactly matches the
     given filter values -- used to highlight the active saved view in the filter
     bar's select. hidden_lanes is a set/list of lane keys (the calendar has no
@@ -162,6 +162,7 @@ def _matching_saved_filter_name(saved_filters, tags, exclude_tags, due, hidden_l
             sorted(sf_config.get("tags", [])) == sorted(tags)
             and sorted(sf_config.get("exclude_tags", [])) == sorted(exclude_tags)
             and sf_config.get("due", "") == due
+            and sf_config.get("q", "").strip() == q
             and sorted(sf_config.get("hidden_lanes", [])) == hidden_lanes
         ):
             return sf.name
@@ -285,7 +286,7 @@ def _task_panel_create_context(user, board, lane_param="", form_values=None, for
 
 
 def _board_filter_for(board, session):
-    """This board's slice of the session's per-board tag/due/hidden-column filters."""
+    """This board's slice of the session's task filters."""
     all_filters = (session.get("board_filter") or {}) if session else {}
     return all_filters.get(str(board.pk), {})
 
@@ -318,6 +319,7 @@ def _build_board_context(user, board, session=None):
     filter_tags = board_filter.get("tags", [])
     exclude_tags = board_filter.get("exclude_tags", [])
     filter_due = board_filter.get("due", "").strip()
+    filter_q = board_filter.get("q", "").strip()
     hidden_lane_keys = set(board_filter.get("hidden_lanes", []))
 
     all_tasks = list(board_tasks_qs(board).filter(is_archived=False).order_by("order", "created_at"))
@@ -335,6 +337,10 @@ def _build_board_context(user, board, session=None):
         elif filter_due == "this_week":
             end = today + timedelta(days=7)
             tasks = [t for t in tasks if t.due_date and today <= t.due_date <= end]
+
+    if filter_q:
+        query = filter_q.lower()
+        tasks = [t for t in tasks if query in t.title.lower() or query in t.notes.lower()]
 
     statuses, done_slug, active_slug = _status_context_for(user)
 
@@ -398,7 +404,7 @@ def _build_board_context(user, board, session=None):
 
     saved_filters = list(board.saved_filters.all())
     active_saved_filter_name = _matching_saved_filter_name(
-        saved_filters, filter_tags, exclude_tags, filter_due, hidden_lane_keys
+        saved_filters, filter_tags, exclude_tags, filter_due, hidden_lane_keys, q=filter_q
     )
 
     return {
@@ -411,10 +417,12 @@ def _build_board_context(user, board, session=None):
             "tags": filter_tags,
             "exclude_tags": exclude_tags,
             "due": filter_due,
+            "q": filter_q,
             "hidden_lanes": hidden_lane_summaries,
         },
         "saved_filters": saved_filters,
         "active_saved_filter_name": active_saved_filter_name,
+        "show_task_search": True,
         "today": today,
         "total_task_count": len(all_tasks),
         "visible_task_count": len(tasks),
@@ -424,7 +432,7 @@ def _build_board_context(user, board, session=None):
         "overdue_count": sum(1 for task in tasks if task.due_date and task.due_date < today and not task.completed_at),
         "active_filter_count": (
             len(filter_tags) + len(exclude_tags) + len(hidden_lane_keys)
-            + (1 if filter_due else 0)
+            + (1 if filter_due else 0) + (1 if filter_q else 0)
         ),
     }
 
@@ -442,11 +450,13 @@ class BoardFilterView(LoginRequiredMixin, View):
         tags = request.POST.getlist("tags")
         exclude_tags = request.POST.getlist("exclude_tags")
         due = request.POST.get("due", "").strip()
+        q = request.POST.get("q", "").strip()
         hidden_lanes = request.POST.getlist("hidden_lanes")
         _set_board_filter(request, board, {
             "tags": tags,
             "exclude_tags": exclude_tags,
             "due": due,
+            "q": q,
             "hidden_lanes": hidden_lanes,
         })
         return _render_filter_response(request, request.user, board, request.session)
@@ -469,6 +479,7 @@ class BoardFilterAddTagView(LoginRequiredMixin, View):
             "tags": current_tags,
             "exclude_tags": exclude_tags,
             "due": due,
+            "q": board_filter.get("q", ""),
             "hidden_lanes": hidden_lanes,
         })
         return _render_filter_response(request, request.user, board, request.session)
@@ -491,6 +502,7 @@ class BoardFilterExcludeTagView(LoginRequiredMixin, View):
             "tags": current_tags,
             "exclude_tags": exclude_tags,
             "due": due,
+            "q": board_filter.get("q", ""),
             "hidden_lanes": hidden_lanes,
         })
         return _render_filter_response(request, request.user, board, request.session)
