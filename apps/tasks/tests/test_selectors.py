@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone as dt_timezone
+from datetime import date, datetime, timedelta, timezone as dt_timezone
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
@@ -77,6 +77,63 @@ def test_move_task_spawns_recurrence_from_users_local_completion_date():
 
     spawned = Task.objects.get(title="Nightly check", status="backlog")
     assert spawned.due_date == date(2026, 1, 2)
+
+
+@pytest.mark.django_db
+def test_completing_an_earlier_occurrence_does_not_spawn_while_one_is_open():
+    """Completing an earlier occurrence must not open a second copy while one
+    is still open.
+
+    Production: "Mobility / stretching session" task 166 stayed backlog,
+    never completed, and not archived, while task 171 was created due the
+    next day. The next copy is created only once no open copy remains.
+    """
+    user = User.objects.create_user()
+    earlier = Task.objects.create(
+        user=user,
+        title="Mobility / stretching session",
+        status="todo",
+        due_date=date(2026, 10, 8),
+        tags=["fitness", "health", "personal"],
+        recurrence_days=1,
+        recurrence_from=Task.RECURRENCE_FROM_COMPLETION,
+    )
+    current = Task.objects.create(
+        user=user,
+        title="Mobility / stretching session",
+        status="backlog",
+        due_date=date(2026, 10, 9),
+        tags=["fitness", "health", "personal"],
+        recurrence_days=1,
+        recurrence_from=Task.RECURRENCE_FROM_COMPLETION,
+    )
+
+    move_task(user, earlier, "done")
+
+    earlier.refresh_from_db()
+    current.refresh_from_db()
+    assert earlier.completed_at is not None
+    assert current.status == "backlog"
+    assert current.completed_at is None
+    assert Task.objects.filter(
+        user=user,
+        title="Mobility / stretching session",
+        completed_at__isnull=True,
+        is_archived=False,
+    ).count() == 1
+
+    # Completing the open copy is what should roll the series forward.
+    move_task(user, current, "done")
+    successor = Task.objects.get(
+        user=user,
+        title="Mobility / stretching session",
+        completed_at__isnull=True,
+        is_archived=False,
+    )
+    assert successor.status == "backlog"
+    assert successor.due_date == timezone.localdate() + timedelta(days=1)
+    assert successor.recurrence_days == 1
+    assert successor.recurrence_from == Task.RECURRENCE_FROM_COMPLETION
 
 
 @pytest.mark.django_db
