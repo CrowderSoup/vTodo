@@ -112,14 +112,27 @@ def list_tasks(
     status: str | None = None,
     tags: list[str] | None = None,
     exclude_tags: list[str] | None = None,
+    include_archived: bool = False,
+    include_done: bool = False,
 ) -> str:
     """List tasks, optionally filtered by status slug and/or tags.
 
     tags requires a task to have every listed tag; exclude_tags drops any task
     that has any of the listed tags (e.g. "show me everything except `home`").
+
+    Archived tasks are hidden unless include_archived is true. When no status
+    is given, tasks in a done status are hidden unless include_done is true;
+    passing a status (e.g. "done") always returns that status's tasks.
     """
     try:
-        return _ok(_current_client().list_tasks(status=status, tags=tags, exclude_tags=exclude_tags))
+        client = _current_client()
+        tasks = client.list_tasks(status=status, tags=tags, exclude_tags=exclude_tags)
+        if not include_archived:
+            tasks = [t for t in tasks if not t.get("is_archived")]
+        if status is None and not include_done:
+            done_ids = {s["id"] for s in client.list_statuses() if s.get("is_done")}
+            tasks = [t for t in tasks if t.get("status") not in done_ids]
+        return _ok(tasks)
     except VtodoAPIError as e:
         return _err(e)
 
