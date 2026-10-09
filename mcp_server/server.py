@@ -129,9 +129,9 @@ def list_tasks(
         tasks = client.list_tasks(status=status, tags=tags, exclude_tags=exclude_tags)
         if not include_archived:
             tasks = [t for t in tasks if not t.get("is_archived")]
-        if status is None and not include_done:
-            done_ids = {s["id"] for s in client.list_statuses() if s.get("is_done")}
-            tasks = [t for t in tasks if t.get("status") not in done_ids]
+        if not status and not include_done:
+            done_slugs = {s["slug"] for s in client.list_statuses() if s.get("is_done")}
+            tasks = [t for t in tasks if t.get("status") not in done_slugs]
         return _ok(tasks)
     except VtodoAPIError as e:
         return _err(e)
