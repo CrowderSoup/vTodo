@@ -90,8 +90,24 @@ class Task(models.Model):
         return self.title
 
     def spawn_recurrence(self, completion_date):
-        """Create the next recurrence of this task in backlog. Returns the new task or None."""
+        """Create the next recurrence of this task in backlog. Returns the new task or None.
+
+        Also returns None when an open occurrence of this series already exists
+        (same owner, title, and schedule; not completed and not archived).
+        Completing an older copy must not leave two open copies side by side.
+        """
         if not self.recurrence_days:
+            return None
+
+        open_sibling = Task.objects.filter(
+            user_id=self.user_id,
+            title=self.title,
+            recurrence_days=self.recurrence_days,
+            recurrence_from=self.recurrence_from,
+            is_archived=False,
+            completed_at__isnull=True,
+        ).exclude(pk=self.pk)
+        if open_sibling.exists():
             return None
 
         if self.recurrence_from == self.RECURRENCE_FROM_DUE_DATE and self.due_date:
