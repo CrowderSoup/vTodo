@@ -11,3 +11,10 @@ CACHES = {
         "LOCATION": "vtodo-tests",
     }
 }
+
+# The manifest storage needs `collectstatic` to have run (and to be current)
+# before any template using {% static %} renders. Tests serve the source files.
+STORAGES = {
+    **STORAGES,  # noqa: F405
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}

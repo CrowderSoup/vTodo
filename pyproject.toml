@@ -26,9 +26,13 @@ dev = [
     "pytest>=8.0",
     "pytest-django>=4.8",
     "django-debug-toolbar>=4.0",
+    "pytest-playwright>=0.10.0",
 ]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.test_settings"
 python_files = ["test_*.py"]
 pythonpath = ["."]
+markers = [
+    "browser: drives a headless Chromium via Playwright (see tests/browser/conftest.py)",
+]
