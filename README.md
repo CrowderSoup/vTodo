@@ -82,6 +82,14 @@ Click "Sign in with Google" on the login page. Requires `GOOGLE_CLIENT_ID`/`GOOG
 uv run pytest
 ```
 
+Browser tests in `tests/browser/` drive headless Chromium through Playwright and run offline. They skip if Chromium isn't installed; set `VTODO_REQUIRE_BROWSER=1` to make that a failure instead.
+
+```bash
+uv run playwright install chromium   # once
+uv run pytest -m browser             # only the browser tests
+uv run pytest -m "not browser"       # everything else
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
