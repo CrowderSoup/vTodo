@@ -1,0 +1,5 @@
+{% for lane in affected_lanes %}
+{% include "boards/_lane.html" with lane_oob=True %}
+{% endfor %}
+<div id="archive-done-slot" hx-swap-oob="innerHTML">{% include "boards/_archive_done_button.html" %}</div>
+<span id="hidden-count-slot" hx-swap-oob="innerHTML">{% include "boards/_hidden_hint.html" %}</span>

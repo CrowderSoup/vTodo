@@ -14,8 +14,8 @@ A personal kanban-style task manager built with Django. Log in with Google, then
 ## Requirements
 
 - Python 3.12+
-- PostgreSQL
-- Redis (caching and invite rate-limiting)
+
+The board runs on the SQLite file Django creates locally. PostgreSQL, Redis, and a Celery worker are the deploy shape. Redis backs invite rate limiting once `CELERY_BROKER_URL` is set, and the worker runs Google Calendar sync every 10 minutes. A local checkout can leave both unset.
 
 ## Local development
 
@@ -32,7 +32,7 @@ uv sync
 
 # 4. Copy and edit the environment file
 cp .env.example .env
-# edit .env — set DATABASE_URL, CELERY_BROKER_URL, etc.
+# edit .env — set SECRET_KEY. DATABASE_URL and CELERY_BROKER_URL are optional locally.
 
 # 5. Run migrations
 uv run manage.py migrate
@@ -58,8 +58,8 @@ All configuration is through environment variables. Copy `.env.example` to `.env
 |---|---|---|
 | `SECRET_KEY` | Django secret key | *(required)* |
 | `DEBUG` | Enable debug mode | `True` |
-| `DATABASE_URL` | PostgreSQL connection URL | `postgres://vtodo:vtodo@localhost:5432/vtodo` |
-| `CELERY_BROKER_URL` | Redis URL for Celery | `redis://localhost:6379/0` |
+| `DATABASE_URL` | Database URL. Unset uses SQLite at `db.sqlite3` | SQLite |
+| `CELERY_BROKER_URL` | Redis URL. Unset keeps the cache in memory and skips Redis. Set it for Google Calendar sync | |
 | `ALLOWED_HOSTS` | Comma-separated allowed hostnames | `localhost,127.0.0.1` |
 | `CSRF_TRUSTED_ORIGINS` | Comma-separated trusted origins | `http://localhost:8000` |
 | `GOOGLE_CLIENT_ID` | OAuth client ID from Google Cloud Console | |

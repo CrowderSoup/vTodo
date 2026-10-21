@@ -735,12 +735,88 @@ def test_task_move_from_panel_refreshes_panel_and_board(logged_in_client):
     content = response.content.decode()
     task.refresh_from_db()
 
+    todo = user.task_statuses.get(slug="todo")
+    in_progress = user.task_statuses.get(slug="in_progress")
+    done = user.task_statuses.get(slug="done")
+
     assert response.status_code == 200
     assert task.status == "in_progress"
-    assert 'id="task-list-content"' in content
-    assert 'hx-swap-oob="innerHTML"' in content
+    assert f'id="lane-status-{todo.pk}"' in content
+    assert f'id="lane-status-{in_progress.pk}"' in content
+    assert f'id="lane-status-{done.pk}"' not in content
+    assert 'hx-swap-oob="outerHTML"' in content
     assert f'id="task-panel-status-{task.pk}"' in content
     assert 'id="task-comment-form"' in content
+
+
+@pytest.mark.django_db
+def test_task_move_redraws_only_lanes_the_card_left_or_joined(logged_in_client):
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    urgent = Column.objects.create(board=board, label="Urgent", filter_config={"tags": ["urgent"]}, order=0)
+    later = Column.objects.create(board=board, label="Later", filter_config={"tags": ["later"]}, order=1)
+    task = Task.objects.create(user=user, title="Carry me", status="todo", tags=["urgent"])
+    todo = user.task_statuses.get(slug="todo")
+    in_progress = user.task_statuses.get(slug="in_progress")
+    backlog = user.task_statuses.get(slug="backlog")
+
+    response = client.post(
+        reverse("boards:task-move", kwargs={"pk": task.pk}),
+        {"new_status": "in_progress"},
+        HTTP_HX_CURRENT_URL="http://testserver/board/",
+    )
+    content = response.content.decode()
+
+    assert response.status_code == 200
+    assert f'id="lane-status-{todo.pk}"' in content
+    assert f'id="lane-status-{in_progress.pk}"' in content
+    assert f'id="lane-column-{urgent.pk}"' in content
+    assert f'id="lane-status-{backlog.pk}"' not in content
+    assert f'id="lane-column-{later.pk}"' not in content
+    assert f'id="task-{task.pk}-status-{in_progress.pk}"' in content
+    assert f'id="task-{task.pk}-column-{urgent.pk}"' in content
+    assert 'id="archive-done-slot"' in content
+
+
+@pytest.mark.django_db
+def test_completing_a_recurring_task_includes_the_spawned_card(logged_in_client):
+    client, user = logged_in_client
+    task = Task.objects.create(user=user, title="Weekly", status="todo", recurrence_days=7)
+    backlog = user.task_statuses.get(slug="backlog")
+    done = user.task_statuses.get(slug="done")
+    in_progress = user.task_statuses.get(slug="in_progress")
+
+    response = client.post(
+        reverse("boards:task-move", kwargs={"pk": task.pk}),
+        {"new_status": "done"},
+        HTTP_HX_CURRENT_URL="http://testserver/board/",
+    )
+    content = response.content.decode()
+    spawned = Task.objects.exclude(pk=task.pk).get(user=user)
+
+    assert response.status_code == 200
+    assert spawned.status == "backlog"
+    assert f'id="lane-status-{done.pk}"' in content
+    assert f'id="lane-status-{backlog.pk}"' in content
+    assert f'id="lane-status-{in_progress.pk}"' not in content
+    assert f'id="task-{spawned.pk}-status-{backlog.pk}"' in content
+    assert "Archive done cards (1)" in content
+
+
+@pytest.mark.django_db
+def test_board_gives_each_lane_occurrence_its_own_card_id(logged_in_client):
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    urgent = Column.objects.create(board=board, label="Urgent", filter_config={"tags": ["urgent"]}, order=0)
+    task = Task.objects.create(user=user, title="Fix it", status="todo", tags=["urgent"])
+    todo = user.task_statuses.get(slug="todo")
+
+    response = client.get(reverse("boards:board"))
+    content = response.content.decode()
+
+    assert f'id="task-{task.pk}-status-{todo.pk}"' in content
+    assert f'id="task-{task.pk}-column-{urgent.pk}"' in content
+    assert f'id="task-{task.pk}"' not in content
 
 
 @pytest.mark.django_db
@@ -855,13 +931,26 @@ def test_task_update_includes_today_in_context(logged_in_client):
 
 
 @pytest.mark.django_db
-def test_task_delete_returns_empty_response(logged_in_client):
-    """Deleting a task returns an empty 200 response."""
+def test_task_delete_redraws_the_lanes_that_showed_it(logged_in_client):
     client, user = logged_in_client
-    task = Task.objects.create(user=user, title="Bye", status="todo")
-    response = client.post(reverse("boards:task-delete", kwargs={"pk": task.pk}))
+    board = Board.objects.get(user=user)
+    urgent = Column.objects.create(board=board, label="Urgent", filter_config={"tags": ["urgent"]}, order=0)
+    task = Task.objects.create(user=user, title="Bye", status="todo", tags=["urgent"])
+    todo = user.task_statuses.get(slug="todo")
+    backlog = user.task_statuses.get(slug="backlog")
+
+    response = client.post(
+        reverse("boards:task-delete", kwargs={"pk": task.pk}),
+        HTTP_HX_CURRENT_URL="http://testserver/board/",
+    )
+    content = response.content.decode()
+
     assert response.status_code == 200
     assert not Task.objects.filter(pk=task.pk).exists()
+    assert f'id="lane-status-{todo.pk}"' in content
+    assert f'id="lane-column-{urgent.pk}"' in content
+    assert f'id="lane-status-{backlog.pk}"' not in content
+    assert "Bye" not in content
 
 
 # ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@
   var draggingColumnId = null;
   var draggingLaneKind = null;
   var draggingTaskId = null;
+  var draggingCard = null;
   var draggingStatusId = null;
   var dropTargetCard = null;
   var dropPosition = null;
@@ -549,6 +550,7 @@
       return;
     }
     draggingTaskId = card.dataset.taskId;
+    draggingCard = card;
     event.dataTransfer.setData("text/plain", card.dataset.taskId);
     event.dataTransfer.effectAllowed = "move";
     setTimeout(function () {
@@ -579,6 +581,7 @@
     });
     clearCardDropIndicators();
     draggingTaskId = null;
+    draggingCard = null;
     dropTargetCard = null;
     dropPosition = null;
   });
@@ -708,7 +711,7 @@
     clearCardDropIndicators();
 
     var taskId = event.dataTransfer.getData("text/plain");
-    var card = document.getElementById("task-" + taskId);
+    var card = draggingCard;
 
     if (card && card.closest(".task-list") === list) {
       if (dropTargetCard && dropTargetCard !== card) {
@@ -731,8 +734,8 @@
       });
     } else {
       window.htmx.ajax("POST", "/board/tasks/" + taskId + "/move/", {
-        target: "#task-list-content",
-        swap: "innerHTML",
+        target: "body",
+        swap: "none",
         values: { new_status: list.dataset.defaultStatus },
       });
     }
@@ -740,6 +743,7 @@
     dropTargetCard = null;
     dropPosition = null;
     draggingTaskId = null;
+    draggingCard = null;
   });
 
   document.addEventListener("htmx:configRequest", function (event) {
