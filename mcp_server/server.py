@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import time
+from collections import OrderedDict
 from datetime import date, datetime
 from typing import Any
 
@@ -18,36 +20,49 @@ from .config import load_settings
 _settings = load_settings()
 
 # stdio mode acts as a single fixed vtodo account (VTODO_API_TOKEN); sse mode
-# resolves a different account per request from the caller's OAuth access
-# token via _VtodoTokenVerifier below, so there's no single client to build
-# at import time in that case.
+# calls the API as each caller, with their own OAuth access token (checked by
+# _VtodoTokenVerifier below), so there's no single client to build at import
+# time in that case.
 _stdio_client = (
     VtodoClient(_settings.api_url, _settings.api_token) if _settings.transport == "stdio" else None
 )
 
-# Caller's OAuth access token -> their resolved vtodo DRF API token, so a
-# whoami round-trip to Django only happens once per access token per this TTL.
-_WHOAMI_CACHE_TTL_SECONDS = 300
-_whoami_cache: dict[str, tuple[str, float]] = {}
-# vtodo DRF API token -> VtodoClient, reused across calls/users so each gets
-# its own pooled requests.Session instead of a fresh one per tool call.
-_vtodo_clients: dict[str, VtodoClient] = {}
+# sha256(caller's OAuth access token) -> when its whoami check expires. Short
+# and bounded: a token revoked in vtodo stops working here within the TTL, and
+# a stream of distinct tokens can't grow the cache without limit. Only hashes
+# are kept, so the process never holds a pile of live tokens.
+_WHOAMI_CACHE_TTL_SECONDS = 60
+_WHOAMI_CACHE_MAX_ENTRIES = 1024
+_whoami_cache: OrderedDict[str, float] = OrderedDict()
+# sha256(OAuth access token) -> VtodoClient sending that token as a Bearer, so
+# a caller's tool calls reuse one pooled requests.Session. Bounded the same
+# way; access tokens expire hourly, so old entries are dead weight.
+_VTODO_CLIENTS_MAX_ENTRIES = 256
+_vtodo_clients: OrderedDict[str, VtodoClient] = OrderedDict()
 
 
-class _VtodoAccessToken(AccessToken):
-    vtodo_api_token: str
+def _token_key(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _remember(cache: OrderedDict, key: str, value: Any, max_entries: int) -> None:
+    cache[key] = value
+    cache.move_to_end(key)
+    while len(cache) > max_entries:
+        cache.popitem(last=False)
 
 
 class _VtodoTokenVerifier:
-    """Resolves a Claude-issued OAuth access token to a vtodo account by
-    asking Django's whoami endpoint who it belongs to
-    (apps/api/views.py:WhoAmIView) — the vtodo API itself still only ever
-    sees each user's regular DRF token, exactly as it does for stdio/local
-    use."""
+    """Checks a remote MCP client's OAuth access token by asking Django's
+    whoami endpoint (apps/api/views.py:WhoAmIView) whether it's valid. Tool
+    calls then send that same token to the vtodo API, which enforces scope
+    and audience itself, so no long-lived DRF token is involved."""
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        cached = _whoami_cache.get(token)
-        if cached is None or cached[1] <= time.monotonic():
+        key = _token_key(token)
+        expires_at = _whoami_cache.get(key)
+        if expires_at is None or expires_at <= time.monotonic():
+            _whoami_cache.pop(key, None)
             async with httpx.AsyncClient() as http:
                 try:
                     resp = await http.get(
@@ -59,24 +74,26 @@ class _VtodoTokenVerifier:
                     return None
             if resp.status_code != 200:
                 return None
-            api_token = resp.json().get("api_token")
-            if not api_token:
-                return None
-            cached = (api_token, time.monotonic() + _WHOAMI_CACHE_TTL_SECONDS)
-            _whoami_cache[token] = cached
+            _remember(
+                _whoami_cache,
+                key,
+                time.monotonic() + _WHOAMI_CACHE_TTL_SECONDS,
+                _WHOAMI_CACHE_MAX_ENTRIES,
+            )
 
-        return _VtodoAccessToken(token=token, client_id="vtodo", scopes=["tasks"], vtodo_api_token=cached[0])
+        return AccessToken(token=token, client_id="vtodo", scopes=["tasks"])
 
 
 def _current_client() -> VtodoClient:
     if _stdio_client is not None:
         return _stdio_client
     access_token = get_access_token()
-    assert isinstance(access_token, _VtodoAccessToken)
-    client = _vtodo_clients.get(access_token.vtodo_api_token)
+    assert access_token is not None
+    key = _token_key(access_token.token)
+    client = _vtodo_clients.get(key)
     if client is None:
-        client = VtodoClient(_settings.api_url, access_token.vtodo_api_token)
-        _vtodo_clients[access_token.vtodo_api_token] = client
+        client = VtodoClient(_settings.api_url, access_token.token, scheme="Bearer")
+    _remember(_vtodo_clients, key, client, _VTODO_CLIENTS_MAX_ENTRIES)
     return client
 
 

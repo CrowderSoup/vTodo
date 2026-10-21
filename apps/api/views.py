@@ -1,3 +1,6 @@
+from urllib.parse import urlsplit
+
+from django.conf import settings
 from django.db import transaction
 from django.urls import reverse
 from drf_spectacular.utils import extend_schema
@@ -142,43 +145,35 @@ class TaskCommentViewSet(viewsets.GenericViewSet, mixins.DestroyModelMixin):
         return TaskComment.objects.filter(task__in=visible_tasks_qs(self.request.user))
 
 
-def validate_whoami_resource_token(request_uri: str, audiences: list[str]) -> bool:
+def validate_api_resource_token(request_uri: str, audiences: list[str]) -> bool:
     """RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR (config/settings.py:OAUTH2_PROVIDER)
     for RFC 8707 resource-restricted access tokens.
 
-    mcp_server's caller tokens are minted for its own resource identifier
-    (VTODO_MCP_PUBLIC_URL, e.g. https://mcp.vtodo.crowdersoup.com/mcp), then
-    handed to WhoAmIView -- on a different host entirely -- to resolve who
-    they belong to. WhoAmIView isn't itself the resource those tokens were
-    restricted to, so the default prefix-match audience check
-    (validate_resource_as_url_prefix) rejects every one of them with
-    "The access token is not valid for this resource." Exempt this one
-    endpoint; everything else still gets the default check.
+    mcp_server's callers get tokens minted for its own resource identifier
+    (VTODO_MCP_PUBLIC_URL, e.g. https://mcp.vtodo.crowdersoup.com/mcp), and it
+    forwards them to this API on a different host. The default prefix match
+    (validate_resource_as_url_prefix) rejects those, so also accept exactly
+    that audience, and only under /api/v1/. A token restricted to any other
+    resource still gets the default check.
     """
-    path = request_uri.split("?", 1)[0].rstrip("/")
-    if path.endswith(reverse("mcp-whoami").rstrip("/")):
+    if validate_resource_as_url_prefix(request_uri, audiences):
         return True
-    return validate_resource_as_url_prefix(request_uri, audiences)
+    mcp_resource = settings.VTODO_MCP_RESOURCE_URL
+    if not mcp_resource or mcp_resource not in audiences:
+        return False
+    path = urlsplit(request_uri).path
+    return path.startswith(reverse("api-root"))
 
 
 class WhoAmIView(APIView):
-    """Resolves an OAuth access token (from a remote MCP client) to the
-    caller's vtodo DRF API token, so mcp_server can call the rest of this
-    API exactly as it does for stdio/local use. Deliberately the only place
-    an OAuth-authenticated request ever gets a raw DRF token back."""
+    """Tells mcp_server which vtodo account an OAuth access token (from a
+    remote MCP client) belongs to. mcp_server then calls the rest of this API
+    with that same token. It never hands back a DRF API token: a short-lived,
+    revocable OAuth grant must not turn into a permanent credential."""
 
     authentication_classes = [OAuth2Authentication]
     permission_classes = [IsAuthenticated, TokenHasScope]
     required_scopes = ["tasks"]
 
     def get(self, request):
-        from rest_framework.authtoken.models import Token
-
-        token, _ = Token.objects.get_or_create(user=request.user)
-        return Response(
-            {
-                "user_id": request.user.pk,
-                "username": request.user.username,
-                "api_token": token.key,
-            }
-        )
+        return Response({"user_id": request.user.pk, "username": request.user.username})
