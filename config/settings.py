@@ -31,6 +31,30 @@ ADMIN_EMAILS = [e.strip().lower() for e in env.list("ADMIN_EMAILS", default=[])]
 # so that request.build_absolute_uri() generates https:// URLs correctly.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
+if not DEBUG:
+    # The app sits behind a TLS-terminating proxy (see SECURE_PROXY_SSL_HEADER
+    # above), so it's safe to mark cookies secure-only and enable HSTS here.
+    #
+    # Kamal-proxy already terminates TLS and redirects http->https at the edge
+    # (see proxy.ssl in config/deploy.yml), so SECURE_SSL_REDIRECT defaults off
+    # to avoid a redundant/incorrect redirect if SECURE_PROXY_SSL_HEADER isn't
+    # seen (e.g. CI, or Kamal's healthcheck reaching the app directly). Flip it
+    # on via env if the proxy setup ever changes.
+    SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=False)
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    # CSRF_COOKIE_HTTPONLY stays off: static/app.js reads the csrftoken cookie
+    # to send X-CSRFToken on htmx requests.
+    SESSION_COOKIE_SAMESITE = "Lax"
+    CSRF_COOKIE_SAMESITE = "Lax"
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=60 * 60 * 24 * 365)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", default=True)
+    # Preload only means anything on a registrable domain; crowdersoup.com
+    # (webstead) already sends it, and that covers this subdomain.
+    SECURE_HSTS_PRELOAD = env.bool("SECURE_HSTS_PRELOAD", default=False)
+
 INSTALLED_APPS = [
     # Local apps — users first because AUTH_USER_MODEL depends on it
     "apps.users.apps.UsersConfig",
