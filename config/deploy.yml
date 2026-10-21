@@ -30,12 +30,10 @@ servers:
       clear:
         VTODO_API_URL: https://vtodo.crowdersoup.com
         VTODO_MCP_TRANSPORT: sse
-        # Must match the streamable_http_path Claude actually hits ("/mcp") --
-        # becomes the OAuth resource identifier (RFC 8707/9728). No API/MCP
-        # secrets needed here anymore: each caller authorizes via OAuth
-        # (config/settings.py:OAUTH2_PROVIDER) and mcp_server resolves their
-        # own vtodo account per request (apps/api/views.py:WhoAmIView).
-        VTODO_MCP_PUBLIC_URL: https://mcp.vtodo.crowdersoup.com/mcp
+        # VTODO_MCP_PUBLIC_URL is in the shared env below. No API/MCP secrets
+        # needed here: each caller authorizes via OAuth
+        # (config/settings.py:OAUTH2_PROVIDER), and mcp_server forwards that
+        # caller's token to the API.
   worker:
     hosts:
       - 64.23.247.60
@@ -60,6 +58,11 @@ ssh:
 env:
   clear:
     DEBUG: "False"
+    # Must match the streamable_http_path Claude actually hits ("/mcp"). It's
+    # the OAuth resource identifier (RFC 8707/9728) for mcp_server, and the
+    # web role needs it too: the API accepts tokens with this audience
+    # (apps/api/views.py:validate_api_resource_token).
+    VTODO_MCP_PUBLIC_URL: https://mcp.vtodo.crowdersoup.com/mcp
     ALLOWED_HOSTS: vtodo.crowdersoup.com,localhost,127.0.0.1,*
     CSRF_TRUSTED_ORIGINS: https://vtodo.crowdersoup.com
     EMAIL_BACKEND: django.core.mail.backends.smtp.EmailBackend

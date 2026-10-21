@@ -67,10 +67,14 @@ SITE_ID = 1
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.TokenAuthentication",
+        # Remote MCP clients' OAuth tokens, forwarded by mcp_server. Listed
+        # before SessionAuthentication so a 401 still advertises a scheme.
+        "oauth2_provider.contrib.rest_framework.OAuth2Authentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
+        "apps.api.permissions.OAuthTokenHasTasksScope",
     ],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
@@ -108,12 +112,16 @@ OAUTH2_PROVIDER = {
     "COMPLIANT_BCP_RFC9700_PKCE_METHOD": True,
     "COMPLIANT_BCP_RFC9700_ACCESS_TOKEN_TRANSPORT": True,
     "COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS": True,
-    # RFC 8707: without this, tokens minted for mcp_server's resource
-    # (VTODO_MCP_PUBLIC_URL) get rejected by WhoAmIView's own audience check
-    # since whoami lives on a different host than the resource the token was
-    # restricted to -- see apps/api/views.py:validate_whoami_resource_token.
-    "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR": "apps.api.views.validate_whoami_resource_token",
+    # RFC 8707: tokens minted for mcp_server's resource (VTODO_MCP_PUBLIC_URL)
+    # are forwarded by it to this API, which lives on a different host. Accept
+    # that one audience on /api/v1/ only -- see
+    # apps/api/views.py:validate_api_resource_token.
+    "RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR": "apps.api.views.validate_api_resource_token",
 }
+
+# mcp_server's public resource identifier, the audience of the OAuth tokens
+# it forwards to the API. Same value as the mcp role's VTODO_MCP_PUBLIC_URL.
+VTODO_MCP_RESOURCE_URL = env("VTODO_MCP_PUBLIC_URL", default="")
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

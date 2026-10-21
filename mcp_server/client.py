@@ -13,10 +13,12 @@ class VtodoAPIError(Exception):
 
 
 class VtodoClient:
-    def __init__(self, base_url: str, token: str) -> None:
+    def __init__(self, base_url: str, token: str, scheme: str = "Token") -> None:
+        """scheme is "Token" for a DRF API token (stdio mode) or "Bearer" for
+        a remote caller's OAuth access token forwarded by sse mode."""
         self._base = base_url.rstrip("/") + "/api/v1"
         self._session = requests.Session()
-        self._session.headers.update({"Authorization": f"Token {token}"})
+        self._session.headers.update({"Authorization": f"{scheme} {token}"})
 
     def _raise(self, response: requests.Response) -> None:
         try:
