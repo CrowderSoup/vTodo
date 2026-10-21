@@ -81,24 +81,31 @@ def _calendar_params_from_request(request):
     return True, year, month
 
 
-def _render_task_list_update(request, user, board, session):
-    """Re-render whichever content currently fills #task-list-content -- board
-    columns, or (if the request came from the calendar page) the calendar body --
-    since board.html and calendar.html share that container id."""
-    is_calendar, year, month = _calendar_params_from_request(request)
-    if is_calendar:
-        from .views_calendar import _build_calendar_context
+def _lane_dom_ids_containing(lanes, task_pks):
+    """Lane keys that currently show one of these tasks."""
+    wanted = {pk for pk in task_pks if pk}
+    if not wanted:
+        return set()
+    return {
+        lane["dom_id"]
+        for lane in lanes
+        if any(task.pk in wanted for task in lane["tasks"])
+    }
 
-        context = _build_calendar_context(user, board, year, month, session)
-        return render(request, "calendar/_calendar_body.html", context)
-    context = _build_board_context(user, board, session)
-    return render(request, "boards/_columns.html", context)
+
+def _with_affected_lanes(context, dom_ids):
+    """The lanes a mutation has to redraw: ones the task left, joined, or whose
+    card markup changed. Everything else stays on the page."""
+    context["affected_lanes"] = [
+        lane for lane in context["lanes"] if lane["dom_id"] in dom_ids
+    ]
+    return context
 
 
 def _render_filter_response(request, user, board, session, sync_search=False):
-    """Same page-detection as _render_task_list_update, for the filter-bar response
-    partials (which additionally re-render the filter bar itself, e.g. to update the
-    active-filter pills and the saved-view select)."""
+    """Filter-bar response partials. These re-render the list and the filter bar
+    (active pills, saved-view select). A move does not come through here: it
+    redraws only the lanes whose membership changed."""
     is_calendar, year, month = _calendar_params_from_request(request)
     if is_calendar:
         from .views_calendar import _build_calendar_context
@@ -115,10 +122,9 @@ def _render_filter_response(request, user, board, session, sync_search=False):
 
 
 def _render_task_panel_with_list_update(request, user, task, board, session):
-    """The task panel response used after an action that changes something the
-    board/calendar list view itself needs to reflect (e.g. a status change via the
-    panel's own dropdown) -- merges the panel content with a full board-columns or
-    calendar-body OOB update, page-detected the same way as _render_task_list_update."""
+    """Panel response for actions that still replace the whole list (creating a
+    task) or the calendar body. A status change from the panel's dropdown uses
+    TaskMoveView, which redraws only the lanes that changed."""
     context = _task_panel_context(user, task)
     is_calendar, year, month = _calendar_params_from_request(request)
     if is_calendar:
@@ -411,6 +417,8 @@ def _build_board_context(user, board, session=None):
     active_saved_filter_name = _matching_saved_filter_name(
         saved_filters, filter_tags, exclude_tags, filter_due, hidden_lane_keys, q=filter_q
     )
+    for number, lane in enumerate(lanes, start=1):
+        lane["number"] = number
 
     return {
         "board": board,
@@ -686,24 +694,62 @@ class TaskMoveView(LoginRequiredMixin, View):
     def post(self, request, pk):
         task = get_task_or_404(request.user, pk)
         new_status = request.POST.get("new_status", "")
+        board = _board_for_task(task)
+        is_calendar, year, month = _calendar_params_from_request(request)
+        before_ids = set()
+        if not is_calendar:
+            before = _build_board_context(request.user, board, request.session)
+            before_ids = _lane_dom_ids_containing(before["lanes"], [task.pk])
 
         try:
             move_task(request.user, task, new_status)
         except InvalidStatusError:
             return HttpResponse(status=422)
 
-        board = _board_for_task(task)
-        if request.headers.get("HX-Target") == "task-panel-content":
-            return _render_task_panel_with_list_update(request, request.user, task, board, request.session)
+        panel_target = request.headers.get("HX-Target") == "task-panel-content"
+        if is_calendar:
+            if panel_target:
+                return _render_task_panel_with_list_update(
+                    request, request.user, task, board, request.session
+                )
+            from .views_calendar import _build_calendar_context
 
-        return _render_task_list_update(request, request.user, board, request.session)
+            context = _build_calendar_context(request.user, board, year, month, request.session)
+            return render(request, "calendar/_move_response.html", context)
+
+        spawned = getattr(task, "spawned_recurrence", None)
+        touched_pks = [task.pk]
+        if spawned is not None:
+            touched_pks.append(spawned.pk)
+        after = _build_board_context(request.user, board, request.session)
+        touched = before_ids | _lane_dom_ids_containing(after["lanes"], touched_pks)
+        _with_affected_lanes(after, touched)
+        if panel_target:
+            after.update(_task_panel_context(request.user, task))
+            return render(request, "partials/task_panel_move_response.html", after)
+        return render(request, "boards/_lane_updates.html", after)
 
 
 class TaskDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
         task = get_task_or_404(request.user, pk)
+        board = _board_for_task(task)
+        is_calendar, year, month = _calendar_params_from_request(request)
+        if is_calendar:
+            deleted_pk = task.pk
+            task.delete()
+            from .views_calendar import _build_calendar_context
+
+            context = _build_calendar_context(request.user, board, year, month, request.session)
+            context["deleted_task_pk"] = deleted_pk
+            return render(request, "calendar/_delete_response.html", context)
+
+        before = _build_board_context(request.user, board, request.session)
+        before_ids = _lane_dom_ids_containing(before["lanes"], [task.pk])
         task.delete()
-        return HttpResponse("")
+        after = _build_board_context(request.user, board, request.session)
+        _with_affected_lanes(after, before_ids)
+        return render(request, "boards/_lane_updates.html", after)
 
 
 class TaskDetailView(LoginRequiredMixin, View):
@@ -802,7 +848,11 @@ class TaskPanelEditView(LoginRequiredMixin, View):
 
 
 class TaskPanelUpdateView(LoginRequiredMixin, View):
-    """Save task from the panel; returns updated panel read-mode + OOB card update."""
+    """Save task from the panel.
+
+    On the board, redraw the lanes the card left or joined. On the calendar,
+    swap the compact card out of band.
+    """
 
     def post(self, request, pk):
         task = get_task_or_404(request.user, pk)
@@ -818,6 +868,13 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
         if recurrence_from not in (Task.RECURRENCE_FROM_COMPLETION, Task.RECURRENCE_FROM_DUE_DATE):
             recurrence_from = Task.RECURRENCE_FROM_COMPLETION
 
+        board = _board_for_task(task)
+        is_calendar, _, _ = _calendar_params_from_request(request)
+        before_ids = set()
+        if not is_calendar:
+            before = _build_board_context(request.user, board, request.session)
+            before_ids = _lane_dom_ids_containing(before["lanes"], [task.pk])
+
         if title:
             task.title = title
         task.notes = notes
@@ -828,9 +885,14 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
         task.save(update_fields=["title", "notes", "due_date", "tags", "recurrence_days", "recurrence_from", "updated_at"])
 
         context = _task_panel_context(request.user, task)
-        is_calendar, _, _ = _calendar_params_from_request(request)
-        context["is_calendar"] = is_calendar
-        return render(request, "partials/task_panel_update_response.html", context)
+        if is_calendar:
+            return render(request, "partials/task_panel_update_response.html", context)
+
+        after = _build_board_context(request.user, board, request.session)
+        touched = before_ids | _lane_dom_ids_containing(after["lanes"], [task.pk])
+        _with_affected_lanes(after, touched)
+        context.update(after)
+        return render(request, "partials/task_panel_move_response.html", context)
 
 
 def _replace_task_checkbox(match):

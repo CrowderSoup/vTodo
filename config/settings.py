@@ -181,16 +181,36 @@ STORAGES = {
     },
 }
 
-# Cache (Redis for OTP rate limiting and endpoint caching)
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": env("CELERY_BROKER_URL", default="redis://localhost:6379/0"),
+def cache_config(broker_url):
+    """Redis when a broker is configured. In-memory when it is not.
+
+    The web process uses the cache for invite rate limiting only. Leaving
+    CELERY_BROKER_URL unset lets the board run without Redis. Production sets
+    the variable, and the Celery worker still needs Redis for Google Calendar
+    sync.
+    """
+    if broker_url:
+        return {
+            "default": {
+                "BACKEND": "django.core.cache.backends.redis.RedisCache",
+                "LOCATION": broker_url,
+            }
+        }
+    return {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "vtodo-local",
+        }
     }
-}
+
+
+# Empty means "no Redis for the web process". The worker default below is only
+# used when someone starts Celery without configuring a broker.
+_celery_broker_url = env("CELERY_BROKER_URL", default="")
+CACHES = cache_config(_celery_broker_url)
 
 # Celery
-CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
+CELERY_BROKER_URL = _celery_broker_url or "redis://localhost:6379/0"
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_BEAT_SCHEDULE = {
     "sync-google-calendar-connections": {

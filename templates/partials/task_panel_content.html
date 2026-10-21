@@ -92,22 +92,19 @@
     <button class="btn-primary"
             hx-post="{% url 'boards:task-move' task.pk %}"
             hx-vals='{"new_status": "{{ done_slug }}"}'
-            hx-target="#task-list-content"
-            hx-swap="innerHTML"
+            hx-swap="none"
             hx-on::after-request="closeTaskPanel()">Mark complete</button>
     {% else %}
     <button class="btn-secondary"
             hx-post="{% url 'boards:task-move' task.pk %}"
             hx-vals='{"new_status": "{{ task.previous_status|default:active_slug }}"}'
-            hx-target="#task-list-content"
-            hx-swap="innerHTML"
+            hx-swap="none"
             hx-on::after-request="closeTaskPanel()">Move to active</button>
     {% endif %}
 
     <button class="btn-danger"
             hx-post="{% url 'boards:task-delete' task.pk %}"
-            hx-target="#task-{{ task.pk }}"
-            hx-swap="outerHTML"
+            hx-swap="none"
             hx-on::after-request="closeTaskPanel()"
             hx-confirm="Delete &ldquo;{{ task.title|escapejs }}&rdquo;?">Delete</button>
   </div>

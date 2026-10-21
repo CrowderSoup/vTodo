@@ -95,20 +95,10 @@
   </div>
 
   {# After the popover: the trigger opens its nextElementSibling. #}
-  {% if active_filter_count and hidden_task_count %}
-  <span class="filter-hidden-hint">{{ hidden_task_count }} of {{ total_task_count }} hidden</span>
-  {% endif %}
+  <span id="hidden-count-slot">{% include "boards/_hidden_hint.html" %}</span>
 </div>
 
-{% if done_task_count %}
-<form hx-post="{% url 'boards:board-archive-done' %}"
-      hx-target="#task-list-content"
-      hx-swap="innerHTML"
-      hx-confirm="Archive {{ done_task_count }} done card{{ done_task_count|pluralize }}?">
-  <input type="hidden" name="board_id" value="{{ board.pk }}">
-  <button type="submit" class="btn-ghost btn-small">Archive done cards ({{ done_task_count }})</button>
-</form>
-{% endif %}
+<div id="archive-done-slot">{% include "boards/_archive_done_button.html" %}</div>
 
 <dialog id="save-filter-modal" class="save-filter-modal" aria-labelledby="save-filter-modal-title" data-close-on-backdrop>
   <form hx-post="{% url 'boards:filter-save' %}"

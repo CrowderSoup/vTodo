@@ -1,5 +1,5 @@
 <article class="task-card{% if task.completed_at %} task-card--complete{% endif %}{% if task.due_date and not task.completed_at %}{% if task.due_date < today %} task-card--overdue{% elif task.due_date == today %} task-card--today{% endif %}{% endif %}"
-         id="task-{{ task.pk }}"
+         id="task-{{ task.pk }}{% if lane %}-{{ lane.kind }}-{{ lane.pk }}{% endif %}"
          draggable="true"
          data-task-id="{{ task.pk }}"
          data-status="{{ task.status }}"{% if oob_swap %} hx-swap-oob="true"{% endif %}>
@@ -61,8 +61,7 @@
       <button class="btn-secondary btn-icon" title="Mark complete"
               hx-post="{% url 'boards:task-move' task.pk %}"
               hx-vals='{"new_status": "{{ task.done_slug|default:done_slug }}"}'
-              hx-target="#task-list-content"
-              hx-swap="innerHTML">✓</button>
+              hx-swap="none">✓</button>
       <button class="btn-secondary btn-icon" title="Edit task"
               hx-get="{% url 'boards:task-panel-edit' task.pk %}"
               hx-target="#task-panel-content"
@@ -70,15 +69,13 @@
               hx-on::after-request="openTaskPanel()">✎</button>
       <button class="btn-danger btn-icon" title="Delete task"
               hx-post="{% url 'boards:task-delete' task.pk %}"
-              hx-target="#task-{{ task.pk }}"
-              hx-swap="outerHTML"
+              hx-swap="none"
               hx-confirm="Delete &ldquo;{{ task.title|escapejs }}&rdquo;?">×</button>
       {% else %}
       <button class="btn-secondary btn-icon" title="Move back to active"
               hx-post="{% url 'boards:task-move' task.pk %}"
               hx-vals='{"new_status": "{{ task.previous_status|default:active_slug }}"}'
-              hx-target="#task-list-content"
-              hx-swap="innerHTML">↩</button>
+              hx-swap="none">↩</button>
       {% endif %}
     </div>
   </div>
