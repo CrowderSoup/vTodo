@@ -1,6 +1,7 @@
 import json
 import re
 import markdown as md
+import nh3
 from datetime import timedelta
 from urllib.parse import parse_qs, urlparse
 
@@ -908,9 +909,65 @@ def _replace_task_checkbox(match):
     )
 
 
+# Markdown passes raw HTML through, and notes/comments are rendered with
+# |safe. They're written by the user and by any OAuth/MCP client acting for
+# them (an AI agent reading untrusted text included), so everything goes
+# through this allowlist before it reaches a template.
+_MARKDOWN_TAGS = {
+    "a", "abbr", "b", "blockquote", "br", "code", "del", "em", "h1", "h2", "h3",
+    "h4", "h5", "h6", "hr", "i", "img", "li", "ol", "p", "pre", "s", "span",
+    "strong", "sub", "sup", "table", "tbody", "td", "th", "thead", "tr", "ul",
+}
+_MARKDOWN_ATTRIBUTES = {
+    "a": {"href", "title"},
+    "abbr": {"title"},
+    "img": {"src", "alt", "title"},
+    "td": {"align"},
+    "th": {"align"},
+    "li": {"class"},
+    "p": {"class"},
+    "span": {"class", "aria-hidden"},
+    "code": {"class"},
+}
+_MARKDOWN_URL_SCHEMES = {"http", "https", "mailto"}
+_CHECKBOX_CLASSES = {
+    "rendered-checkbox",
+    "rendered-checkbox-label",
+    "rendered-checkbox-line",
+    "rendered-checkbox-line--checked",
+}
+_CODE_LANGUAGE_CLASS = re.compile(r"^language-[\w+#.-]+$")
+
+
+def _filter_markdown_attribute(tag, attr, value):
+    """Keep only the class values our own markup uses: the task checkbox
+    classes, and fenced_code's language-* class on <code>."""
+    if attr == "class":
+        if tag == "code":
+            return value if _CODE_LANGUAGE_CLASS.match(value) else None
+        classes = value.split()
+        return value if classes and all(c in _CHECKBOX_CLASSES for c in classes) else None
+    if attr == "aria-hidden":
+        return value if value == "true" else None
+    return value
+
+
 def _render_markdown(text):
-    html = md.markdown(text, extensions=["fenced_code", "tables"])
-    return TASK_CHECKBOX_PATTERN.sub(_replace_task_checkbox, html)
+    # use_align_attribute: column alignment as align="..." rather than a
+    # style attribute, so no CSS has to be let through the sanitizer.
+    html = md.markdown(
+        text,
+        extensions=["fenced_code", "tables"],
+        extension_configs={"tables": {"use_align_attribute": True}},
+    )
+    html = TASK_CHECKBOX_PATTERN.sub(_replace_task_checkbox, html)
+    return nh3.clean(
+        html,
+        tags=_MARKDOWN_TAGS,
+        attributes=_MARKDOWN_ATTRIBUTES,
+        attribute_filter=_filter_markdown_attribute,
+        url_schemes=_MARKDOWN_URL_SCHEMES,
+    )
 
 
 def _render_comments(task):

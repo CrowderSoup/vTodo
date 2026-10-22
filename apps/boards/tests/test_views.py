@@ -896,6 +896,55 @@ def test_render_markdown_wraps_task_list_checkboxes():
     assert 'class="rendered-checkbox-label">Follow up</span>' in html
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        '<img src=x onerror="alert(1)">',
+        "<script>alert(1)</script>",
+        '<a href="javascript:alert(1)">click</a>',
+        "[click](javascript:alert(1))",
+        '<iframe src="https://evil.example"></iframe>',
+        '<p class="x" onclick="alert(1)" style="position:fixed">hi</p>',
+        '<svg onload="alert(1)"></svg>',
+    ],
+)
+def test_render_markdown_strips_scripts_and_handlers(payload):
+    html = _render_markdown(payload).lower()
+    assert "<script" not in html
+    assert "onerror" not in html
+    assert "onclick" not in html
+    assert "onload" not in html
+    assert "javascript:" not in html
+    assert "<iframe" not in html
+    assert "<svg" not in html
+    assert "style=" not in html
+
+
+def test_render_markdown_checkbox_label_cannot_smuggle_markup():
+    html = _render_markdown('- [ ] <img src=x onerror="alert(1)">Pay rent')
+    assert "onerror" not in html
+    assert 'class="rendered-checkbox-label">' in html
+    assert "Pay rent" in html
+
+
+def test_render_markdown_drops_foreign_classes():
+    html = _render_markdown('<span class="rendered-checkbox evil-overlay">x</span>')
+    assert "evil-overlay" not in html
+
+
+def test_render_markdown_keeps_fenced_code_tables_and_links():
+    html = _render_markdown(
+        "```python\nprint('<b>')\n```\n\n"
+        "| a | b |\n|:--|--:|\n| 1 | 2 |\n\n"
+        "[docs](https://example.com)"
+    )
+    assert '<code class="language-python">' in html
+    assert "&lt;b&gt;" in html
+    assert '<th align="left">a</th>' in html
+    assert '<td align="right">2</td>' in html
+    assert '<a href="https://example.com" rel="noopener noreferrer">docs</a>' in html
+
+
 @pytest.mark.django_db
 def test_render_markdown_wraps_paragraph_checkboxes():
     html = _render_markdown("[ ] Share the board")

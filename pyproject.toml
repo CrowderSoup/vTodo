@@ -19,6 +19,7 @@ dependencies = [
     "markdown>=3.10.2",
     "cryptography>=42.0",
     "django-oauth-toolkit>=3.4.0",
+    "nh3>=0.3",
 ]
 
 [dependency-groups]
