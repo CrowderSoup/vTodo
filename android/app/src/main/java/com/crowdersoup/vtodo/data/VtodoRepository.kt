@@ -6,6 +6,7 @@ import com.crowdersoup.vtodo.today.OpenTasks
 import com.crowdersoup.vtodo.today.StatusRecord
 import com.crowdersoup.vtodo.today.TodayTask
 import com.crowdersoup.vtodo.today.TodayTasks
+import com.crowdersoup.vtodo.today.normalizeTags
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -31,9 +32,8 @@ class VtodoRepository(
         return combine(database.taskDao().observe(), database.statusDao().observe()) { tasks, statuses ->
             val records = tasks.map { it.toRecord() }
             val statusRecords = statuses.map { it.toRecord() }
-            val done = statusRecords.filter { it.isDone }.map { it.slug }.toSet()
             TaskLists(
-                today = TodayTasks.select(records, done, LocalDate.now()),
+                today = TodayTasks.select(records, statusRecords, LocalDate.now()),
                 open = OpenTasks.select(records, statusRecords),
                 statuses = statusRecords.sortedBy { it.sortOrder },
             )
@@ -41,8 +41,8 @@ class VtodoRepository(
     }
 
     suspend fun todaySnapshot(today: LocalDate = LocalDate.now()): List<TodayTask> {
-        val done = database.statusDao().all().filter { it.isDone }.map { it.slug }.toSet()
-        return TodayTasks.select(database.taskDao().all().map { it.toRecord() }, done, today)
+        val statuses = database.statusDao().all().map { it.toRecord() }
+        return TodayTasks.select(database.taskDao().all().map { it.toRecord() }, statuses, today)
     }
 
     suspend fun findTask(id: Long): OpenTask? {
@@ -86,7 +86,7 @@ class VtodoRepository(
         }
     }
 
-    suspend fun createTask(title: String, notes: String, dueDate: LocalDate?): Result<Unit> {
+    suspend fun createTask(title: String, notes: String, dueDate: LocalDate?, tags: List<String>): Result<Unit> {
         val trimmed = title.trim()
         if (trimmed.isEmpty()) {
             return Result.failure(IllegalArgumentException("A title is required."))
@@ -95,7 +95,7 @@ class VtodoRepository(
             ?: return Result.failure(IllegalStateException("Sign in first."))
         return try {
             mutex.withLock {
-                api.createTask(session, trimmed, notes.trim(), dueDate?.toString())
+                api.createTask(session, trimmed, notes.trim(), dueDate?.toString(), normalizeTags(tags))
                 pull(session)
             }
             Result.success(Unit)
@@ -106,7 +106,13 @@ class VtodoRepository(
         }
     }
 
-    suspend fun saveTask(taskId: Long, title: String, notes: String, dueDate: LocalDate?): Result<Unit> {
+    suspend fun saveTask(
+        taskId: Long,
+        title: String,
+        notes: String,
+        dueDate: LocalDate?,
+        tags: List<String>,
+    ): Result<Unit> {
         val trimmed = title.trim()
         if (trimmed.isEmpty()) {
             return Result.failure(IllegalArgumentException("A title is required."))
@@ -115,7 +121,7 @@ class VtodoRepository(
             ?: return Result.failure(IllegalStateException("Sign in first."))
         return try {
             mutex.withLock {
-                api.patchTask(session, taskId, trimmed, notes.trim(), dueDate?.toString())
+                api.patchTask(session, taskId, trimmed, notes.trim(), dueDate?.toString(), normalizeTags(tags))
                 pull(session)
             }
             Result.success(Unit)

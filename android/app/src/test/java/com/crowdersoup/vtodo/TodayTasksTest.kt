@@ -6,8 +6,10 @@ import com.crowdersoup.vtodo.today.TaskRecord
 import com.crowdersoup.vtodo.today.TodayTask
 import com.crowdersoup.vtodo.today.TodayTasks
 import com.crowdersoup.vtodo.today.dueLabel
-import com.crowdersoup.vtodo.today.openLabel
+import com.crowdersoup.vtodo.today.normalizeTags
+import com.crowdersoup.vtodo.today.openDateLabel
 import com.crowdersoup.vtodo.today.parseDueInput
+import com.crowdersoup.vtodo.today.statusColorArgb
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.time.LocalDate
@@ -32,7 +34,11 @@ class TodayTasksTest {
             record(10, "Bad date", dueDate = "next week"),
         )
 
-        val selected = TodayTasks.select(tasks, doneSlugs = setOf("done"), today = today)
+        val selected = TodayTasks.select(
+            tasks,
+            listOf(StatusRecord("todo", "To Do", 0, false), StatusRecord("done", "Done", 1, true, "#336699")),
+            today,
+        )
 
         assertEquals(listOf(6L, 7L, 8L, 9L), selected.map { it.id })
         assertEquals(LocalTime.of(9, 0), selected[2].dueTime)
@@ -50,7 +56,7 @@ class TodayTasksTest {
     @Test
     fun selectOpenKeepsUndatedAndFutureTasks() {
         val statuses = listOf(
-            StatusRecord("backlog", "Backlog", 0, false),
+            StatusRecord("backlog", "Backlog", 0, false, "#112233"),
             StatusRecord("todo", "To Do", 1, false),
             StatusRecord("done", "Done", 2, true),
         )
@@ -60,7 +66,7 @@ class TodayTasksTest {
             record(3, "Done", dueDate = "2026-10-20", status = "done"),
             record(4, "Archived", dueDate = "2026-10-22", isArchived = true),
             record(5, "Finished", dueDate = "2026-10-22", completedAt = "2026-10-22T00:00:00Z"),
-            record(6, "Overdue", dueDate = "2026-10-21", dueTime = "09:00:00", sortOrder = 4),
+            record(6, "Overdue", dueDate = "2026-10-21", dueTime = "09:00:00", sortOrder = 4, tags = listOf("home")),
             record(7, "Bad date", dueDate = "next week", sortOrder = 2),
         )
 
@@ -68,9 +74,18 @@ class TodayTasksTest {
 
         assertEquals(listOf(6L, 1L, 2L, 7L), selected.map { it.id })
         assertEquals("Backlog", selected[1].statusName)
+        assertEquals("#112233", selected[1].statusColor)
+        assertEquals(listOf("home"), selected[0].tags)
         assertEquals(null, selected[2].dueDate)
-        assertEquals("To Do · Overdue · Oct 21 · 9:00 AM", openLabel(selected[0], today, Locale.US))
-        assertEquals("To Do · No date", openLabel(selected[3], today, Locale.US))
+        assertEquals("Overdue · Oct 21 · 9:00 AM", openDateLabel(selected[0], today, Locale.US))
+        assertEquals(null, openDateLabel(selected[3], today, Locale.US))
+    }
+
+    @Test
+    fun normalizeTagsTrimsAndDropsBlanks() {
+        assertEquals(listOf("home", "errands", "a", "b"), normalizeTags(listOf(" home ", "", "errands", "home", "a, b")))
+        assertEquals(0xFF336699L, statusColorArgb(" #336699 "))
+        assertEquals(null, statusColorArgb("blue"))
     }
 
     @Test
@@ -89,5 +104,6 @@ class TodayTasksTest {
         isArchived: Boolean = false,
         completedAt: String? = null,
         sortOrder: Int = 0,
-    ) = TaskRecord(id, title, status, dueDate, dueTime, isArchived, completedAt, sortOrder)
+        tags: List<String> = emptyList(),
+    ) = TaskRecord(id, title, status, dueDate, dueTime, isArchived, completedAt, sortOrder, tags = tags)
 }

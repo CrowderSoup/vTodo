@@ -92,7 +92,7 @@ uv run pytest -m "not browser"       # everything else
 
 ## Android
 
-`android/` is a Kotlin app for a home-screen widget. The website stays the source of truth. The app signs in with the API token from Settings → API token, stores it in the Android Keystore, and syncs tasks into a local database. The Today screen and the Today widget list open tasks that are overdue or due today. Open lists every task that is not done. You can add a task, and open one to edit its title, notes, due date, and status. Checking one off, or moving it to a completed status, calls `POST /api/v1/tasks/{id}/move/` so recurrence still runs on the server.
+`android/` is a Kotlin app for a home-screen widget. The website stays the source of truth. The app signs in with the API token from Settings → API token, stores it in the Android Keystore, and syncs tasks into a local database. The Today screen and the Today widget list open tasks that are overdue or due today. Open lists every task that is not done. Each row shows the status and tags. Open a task to read its notes, change its status, or edit the title, notes, due date, and tags. Notes use the same Markdown as the website, including lists, links, and checkboxes. Checking one off, or moving it to a completed status, calls `POST /api/v1/tasks/{id}/move/` so recurrence still runs on the server.
 
 The launcher icon is `static/logo.png`. Colors come from the variables in `static/app.css`. The Android build copies both, so the app does not keep a second copy. The widget list scrolls on Android 12 and newer.
 

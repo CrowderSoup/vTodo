@@ -22,13 +22,20 @@ private val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+private val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tasks ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")
+        db.execSQL("ALTER TABLE statuses ADD COLUMN color TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 class AppGraph(context: Application) {
     val sessionStore = SessionStore(context)
     val database: VtodoDatabase = Room.databaseBuilder(
         context,
         VtodoDatabase::class.java,
         "vtodo.db",
-    ).addMigrations(MIGRATION_1_2).build()
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
     val repository = VtodoRepository(database, VtodoApi(), sessionStore)
 }
 

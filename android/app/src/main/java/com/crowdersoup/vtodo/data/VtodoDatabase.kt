@@ -11,6 +11,9 @@ import androidx.room.RoomDatabase
 import com.crowdersoup.vtodo.today.StatusRecord
 import com.crowdersoup.vtodo.today.TaskRecord
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 
 @Entity(tableName = "tasks")
 data class TaskEntity(
@@ -23,6 +26,7 @@ data class TaskEntity(
     val completedAt: String?,
     val sortOrder: Int,
     val notes: String,
+    val tags: String,
 )
 
 @Entity(tableName = "statuses")
@@ -32,6 +36,7 @@ data class StatusEntity(
     val name: String,
     val sortOrder: Int,
     val isDone: Boolean,
+    val color: String,
 )
 
 fun TaskDto.toEntity() = TaskEntity(
@@ -44,6 +49,7 @@ fun TaskDto.toEntity() = TaskEntity(
     completedAt = completedAt,
     sortOrder = order,
     notes = notes,
+    tags = tagsToJson(tags),
 )
 
 fun TaskEntity.toRecord() = TaskRecord(
@@ -56,6 +62,7 @@ fun TaskEntity.toRecord() = TaskRecord(
     completedAt = completedAt,
     sortOrder = sortOrder,
     notes = notes,
+    tags = tagsFromJson(tags),
 )
 
 fun StatusDto.toEntity() = StatusEntity(
@@ -64,6 +71,7 @@ fun StatusDto.toEntity() = StatusEntity(
     name = name,
     sortOrder = order,
     isDone = isDone,
+    color = color,
 )
 
 fun StatusEntity.toRecord() = StatusRecord(
@@ -71,6 +79,7 @@ fun StatusEntity.toRecord() = StatusRecord(
     name = name,
     sortOrder = sortOrder,
     isDone = isDone,
+    color = color,
 )
 
 @Dao
@@ -112,9 +121,18 @@ interface StatusDao {
     suspend fun insertAll(statuses: List<StatusEntity>)
 }
 
+private val tagJson = Json { ignoreUnknownKeys = true }
+private val tagListSerializer = ListSerializer(String.serializer())
+
+internal fun tagsToJson(tags: List<String>): String = tagJson.encodeToString(tagListSerializer, tags)
+
+internal fun tagsFromJson(raw: String): List<String> {
+    return runCatching { tagJson.decodeFromString(tagListSerializer, raw) }.getOrDefault(emptyList())
+}
+
 @Database(
     entities = [TaskEntity::class, StatusEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class VtodoDatabase : RoomDatabase() {

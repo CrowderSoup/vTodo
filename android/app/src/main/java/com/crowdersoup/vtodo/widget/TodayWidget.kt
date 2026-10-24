@@ -170,6 +170,17 @@ private fun TaskRow(task: TodayTask, today: LocalDate) {
                 maxLines = 1,
                 style = TextStyle(color = labelColor, fontSize = 12.sp),
             )
+            val meta = listOfNotNull(
+                task.statusName.takeIf { it.isNotBlank() },
+                task.tags.takeIf { it.isNotEmpty() }?.joinToString(", "),
+            ).joinToString(" · ")
+            if (meta.isNotEmpty()) {
+                Text(
+                    text = meta,
+                    maxLines = 1,
+                    style = TextStyle(color = widgetSoft, fontSize = 12.sp),
+                )
+            }
         }
     }
 }
