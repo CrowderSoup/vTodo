@@ -8,7 +8,6 @@ import androidx.lifecycle.viewModelScope
 import com.crowdersoup.vtodo.MainActivity
 import com.crowdersoup.vtodo.VtodoApp
 import com.crowdersoup.vtodo.data.GoogleSignIn
-import com.crowdersoup.vtodo.data.SignInCancelled
 import com.crowdersoup.vtodo.today.OpenTask
 import com.crowdersoup.vtodo.today.StatusRecord
 import com.crowdersoup.vtodo.today.TodayTask
@@ -112,8 +111,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             refreshing.value = true
             message.value = null
-            finishSignIn(graph.repository.signIn(baseUrl, token))
-            refreshing.value = false
+            try {
+                finishSignIn(graph.repository.signIn(baseUrl, token))
+            } finally {
+                refreshing.value = false
+            }
         }
     }
 
@@ -122,11 +124,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             refreshing.value = true
             message.value = null
-            val result = graph.repository.signInWithGoogle(baseUrl) { clientId ->
-                GoogleSignIn.requestIdToken(activity, clientId)
+            try {
+                val result = graph.repository.signInWithGoogle(baseUrl) { clientId ->
+                    GoogleSignIn.requestIdToken(activity, clientId)
+                }
+                finishSignIn(result)
+            } finally {
+                refreshing.value = false
             }
-            finishSignIn(result)
-            refreshing.value = false
         }
     }
 
@@ -135,7 +140,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             SyncScheduler.onSignedIn(getApplication())
             refreshTodayWidget(getApplication())
         }.onFailure { error ->
-            if (error !is SignInCancelled) message.value = error.message
+            message.value = error.message
         }
     }
 
