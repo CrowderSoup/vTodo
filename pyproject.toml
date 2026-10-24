@@ -12,6 +12,7 @@ dependencies = [
     "gunicorn>=21.0",
     "requests>=2.31",
     "django-allauth[socialaccount]>=65.0",
+    "google-auth>=2.40",
     "django-environ>=0.11",
     "djangorestframework>=3.16.1",
     "drf-spectacular>=0.29.0",

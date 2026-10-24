@@ -9,10 +9,20 @@ from oauth2_provider.oauth2_validators import validate_resource_as_url_prefix
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.google_accounts import (
+    AccountDisabled,
+    GoogleSignInError,
+    GoogleSignInNotConfigured,
+    GoogleUnavailable,
+    InvalidGoogleIdToken,
+    SignupClosed,
+    UnverifiedGoogleEmail,
+    sign_in_with_google_id_token,
+)
 from apps.tasks.models import Task, TaskComment, TaskStatus
 from apps.tasks.selectors import InvalidStatusError, move_task, visible_tasks_qs
 
@@ -163,6 +173,51 @@ def validate_api_resource_token(request_uri: str, audiences: list[str]) -> bool:
         return False
     path = urlsplit(request_uri).path
     return path.startswith(reverse("api-root"))
+
+
+class GoogleSignInView(APIView):
+    """Exchange a Google ID token for the account's DRF API token.
+
+    The Android app uses this so a person can sign in with Google instead of
+    pasting the token from Settings. The token it returns is that same DRF
+    token. This is not the MCP OAuth server (django-oauth-toolkit stays for
+    remote MCP clients only).
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        responses={200: {"type": "object", "properties": {"client_id": {"type": "string"}}}},
+    )
+    def get(self, request):
+        client_id = settings.GOOGLE_CLIENT_ID
+        if not client_id:
+            return Response(
+                {"detail": "Google sign-in is not configured on this server."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response({"client_id": client_id})
+
+    @extend_schema(
+        request={"application/json": {"type": "object", "properties": {"id_token": {"type": "string"}}}},
+        responses={200: {"type": "object", "properties": {"token": {"type": "string"}}}},
+    )
+    def post(self, request):
+        raw = request.data.get("id_token") if hasattr(request.data, "get") else None
+        try:
+            token = sign_in_with_google_id_token(raw)
+        except GoogleSignInNotConfigured as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except GoogleUnavailable as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except InvalidGoogleIdToken as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_401_UNAUTHORIZED)
+        except (UnverifiedGoogleEmail, SignupClosed, AccountDisabled) as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_403_FORBIDDEN)
+        except GoogleSignInError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"token": token})
 
 
 class WhoAmIView(APIView):

@@ -1,11 +1,14 @@
 package com.crowdersoup.vtodo.ui
 
+import android.app.Activity as HostActivity
 import android.app.Application
 import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.crowdersoup.vtodo.MainActivity
 import com.crowdersoup.vtodo.VtodoApp
+import com.crowdersoup.vtodo.data.GoogleSignIn
+import com.crowdersoup.vtodo.data.SignInCancelled
 import com.crowdersoup.vtodo.today.OpenTask
 import com.crowdersoup.vtodo.today.StatusRecord
 import com.crowdersoup.vtodo.today.TodayTask
@@ -109,12 +112,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             refreshing.value = true
             message.value = null
-            val result = graph.repository.signIn(baseUrl, token)
-            result.onSuccess {
-                SyncScheduler.onSignedIn(getApplication())
-                refreshTodayWidget(getApplication())
-            }.onFailure { message.value = it.message }
+            finishSignIn(graph.repository.signIn(baseUrl, token))
             refreshing.value = false
+        }
+    }
+
+    fun signInWithGoogle(baseUrl: String, activity: HostActivity) {
+        if (refreshing.value) return
+        viewModelScope.launch {
+            refreshing.value = true
+            message.value = null
+            val result = graph.repository.signInWithGoogle(baseUrl) { clientId ->
+                GoogleSignIn.requestIdToken(activity, clientId)
+            }
+            finishSignIn(result)
+            refreshing.value = false
+        }
+    }
+
+    private suspend fun finishSignIn(result: Result<Unit>) {
+        result.onSuccess {
+            SyncScheduler.onSignedIn(getApplication())
+            refreshTodayWidget(getApplication())
+        }.onFailure { error ->
+            if (error !is SignInCancelled) message.value = error.message
         }
     }
 
