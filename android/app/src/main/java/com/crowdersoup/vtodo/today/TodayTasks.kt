@@ -15,6 +15,7 @@ data class TaskRecord(
     val completedAt: String?,
     val sortOrder: Int,
     val notes: String = "",
+    val tags: List<String> = emptyList(),
 )
 
 data class StatusRecord(
@@ -22,6 +23,7 @@ data class StatusRecord(
     val name: String,
     val sortOrder: Int,
     val isDone: Boolean,
+    val color: String = "",
 )
 
 data class OpenTask(
@@ -33,6 +35,8 @@ data class OpenTask(
     val dueTime: LocalTime?,
     val notes: String,
     val sortOrder: Int,
+    val statusColor: String = "",
+    val tags: List<String> = emptyList(),
 )
 
 data class TodayTask(
@@ -41,11 +45,15 @@ data class TodayTask(
     val dueDate: LocalDate,
     val dueTime: LocalTime?,
     val sortOrder: Int,
+    val statusName: String = "",
+    val statusColor: String = "",
+    val tags: List<String> = emptyList(),
 )
 
 object TodayTasks {
-    fun select(tasks: List<TaskRecord>, doneSlugs: Set<String>, today: LocalDate): List<TodayTask> {
-        return tasks.mapNotNull { task -> toTodayTask(task, doneSlugs, today) }
+    fun select(tasks: List<TaskRecord>, statuses: List<StatusRecord>, today: LocalDate): List<TodayTask> {
+        val doneSlugs = statuses.filter { it.isDone }.map { it.slug }.toSet()
+        return tasks.mapNotNull { task -> toTodayTask(task, statuses, doneSlugs, today) }
             .sortedWith(
                 compareBy<TodayTask> { it.dueDate }
                     .thenBy { it.dueTime != null }
@@ -55,7 +63,12 @@ object TodayTasks {
             )
     }
 
-    private fun toTodayTask(task: TaskRecord, doneSlugs: Set<String>, today: LocalDate): TodayTask? {
+    private fun toTodayTask(
+        task: TaskRecord,
+        statuses: List<StatusRecord>,
+        doneSlugs: Set<String>,
+        today: LocalDate,
+    ): TodayTask? {
         if (task.isArchived || !task.completedAt.isNullOrBlank() || task.status in doneSlugs) {
             return null
         }
@@ -64,12 +77,16 @@ object TodayTasks {
         val time = task.dueTime?.takeIf { it.isNotBlank() }?.let {
             runCatching { LocalTime.parse(it) }.getOrNull()
         }
+        val status = statuses.firstOrNull { it.slug == task.status }
         return TodayTask(
             id = task.id,
             title = task.title,
             dueDate = due,
             dueTime = time,
             sortOrder = task.sortOrder,
+            statusName = status?.name?.takeIf { it.isNotBlank() } ?: task.status,
+            statusColor = status?.color.orEmpty(),
+            tags = task.tags,
         )
     }
 }
@@ -97,6 +114,8 @@ object OpenTasks {
             dueTime = task.dueTime?.takeIf { it.isNotBlank() }?.let { runCatching { LocalTime.parse(it) }.getOrNull() },
             notes = task.notes,
             sortOrder = task.sortOrder,
+            statusColor = status?.color.orEmpty(),
+            tags = task.tags,
         )
     }
 
@@ -127,13 +146,35 @@ fun dueLabel(task: TodayTask, today: LocalDate, locale: Locale): String {
     return if (clock == null) day else "$day · $clock"
 }
 
-fun openLabel(task: OpenTask, today: LocalDate, locale: Locale): String {
+fun openDateLabel(task: OpenTask, today: LocalDate, locale: Locale): String? {
+    val due = task.dueDate ?: return null
+    return dueChipLabel(due, task.dueTime, today, locale)
+}
+
+fun dueChipLabel(due: LocalDate, time: LocalTime?, today: LocalDate, locale: Locale): String {
     val day = when {
-        task.dueDate == null -> "No date"
-        task.dueDate < today -> "Overdue · " + task.dueDate.format(DateTimeFormatter.ofPattern("MMM d", locale))
-        task.dueDate == today -> "Today"
-        else -> task.dueDate.format(DateTimeFormatter.ofPattern("MMM d", locale))
+        due < today -> "Overdue · " + due.format(DateTimeFormatter.ofPattern("MMM d", locale))
+        due == today -> "Today"
+        else -> due.format(DateTimeFormatter.ofPattern("MMM d", locale))
     }
-    val clock = task.dueTime?.format(DateTimeFormatter.ofPattern("h:mm a", locale))
-    return if (clock == null) "${task.statusName} · $day" else "${task.statusName} · $day · $clock"
+    val clock = time?.format(DateTimeFormatter.ofPattern("h:mm a", locale))
+    return if (clock == null) day else "$day · $clock"
+}
+
+private val statusColorPattern = Regex("""^#([0-9A-Fa-f]{6})$""")
+
+fun statusColorArgb(hex: String): Long? {
+    val match = statusColorPattern.matchEntire(hex.trim()) ?: return null
+    return match.groupValues[1].toLong(16) or 0xFF000000L
+}
+
+fun normalizeTags(tags: List<String>): List<String> {
+    val seen = LinkedHashSet<String>()
+    tags.forEach { tag ->
+        tag.split(',').forEach { part ->
+            val trimmed = part.trim()
+            if (trimmed.isNotEmpty()) seen.add(trimmed)
+        }
+    }
+    return seen.toList()
 }

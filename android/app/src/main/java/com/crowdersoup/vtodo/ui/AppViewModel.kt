@@ -9,6 +9,7 @@ import com.crowdersoup.vtodo.VtodoApp
 import com.crowdersoup.vtodo.today.OpenTask
 import com.crowdersoup.vtodo.today.StatusRecord
 import com.crowdersoup.vtodo.today.TodayTask
+import com.crowdersoup.vtodo.today.normalizeTags
 import com.crowdersoup.vtodo.today.parseDueInput
 import com.crowdersoup.vtodo.widget.refreshTodayWidget
 import com.crowdersoup.vtodo.work.SyncScheduler
@@ -19,12 +20,14 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.LocalTime
 
 enum class Section { Today, Open }
 
 sealed interface Screen {
     data object List : Screen
     data object Task : Screen
+    data object Edit : Screen
     data object NewTask : Screen
 }
 
@@ -33,13 +36,16 @@ data class TaskDraft(
     val title: String,
     val notes: String,
     val dueDate: String,
+    val dueTime: LocalTime?,
     val statusSlug: String,
+    val tags: List<String>,
 )
 
 data class NewTaskDraft(
     val title: String = "",
     val notes: String = "",
     val dueDate: String = "",
+    val tags: List<String> = emptyList(),
 )
 
 data class AppUiState(
@@ -140,12 +146,32 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         screen.value = Screen.NewTask
     }
 
-    fun updateNewTask(title: String? = null, notes: String? = null, dueDate: String? = null) {
+    fun startEditing() {
+        if (draft.value == null) return
+        message.value = null
+        screen.value = Screen.Edit
+    }
+
+    fun backFromEditor() {
+        if (screen.value == Screen.NewTask || draft.value == null) {
+            showList()
+            return
+        }
+        showTask(draft.value?.id ?: return)
+    }
+
+    fun updateNewTask(
+        title: String? = null,
+        notes: String? = null,
+        dueDate: String? = null,
+        tags: List<String>? = null,
+    ) {
         val current = newTask.value
         newTask.value = current.copy(
             title = title ?: current.title,
             notes = notes ?: current.notes,
             dueDate = dueDate ?: current.dueDate,
+            tags = tags?.let(::normalizeTags) ?: current.tags,
         )
     }
 
@@ -174,12 +200,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun updateDraft(title: String? = null, notes: String? = null, dueDate: String? = null) {
+    fun updateDraft(
+        title: String? = null,
+        notes: String? = null,
+        dueDate: String? = null,
+        tags: List<String>? = null,
+    ) {
         val current = draft.value ?: return
         draft.value = current.copy(
             title = title ?: current.title,
             notes = notes ?: current.notes,
             dueDate = dueDate ?: current.dueDate,
+            tags = tags?.let(::normalizeTags) ?: current.tags,
         )
     }
 
@@ -193,7 +225,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             saving.value = true
             message.value = null
-            val result = graph.repository.createTask(draft.title, draft.notes, due)
+            val result = graph.repository.createTask(draft.title, draft.notes, due, draft.tags)
             result.onSuccess {
                 refreshTodayWidget(getApplication())
                 section.value = if (due != null && !due.isAfter(LocalDate.now())) {
@@ -217,10 +249,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             saving.value = true
             message.value = null
-            val result = graph.repository.saveTask(current.id, current.title, current.notes, due)
+            val result = graph.repository.saveTask(current.id, current.title, current.notes, due, current.tags)
             result.onSuccess {
                 refreshTodayWidget(getApplication())
-                draft.value = draft.value?.copy(title = current.title.trim(), notes = current.notes.trim())
+                val fresh = graph.repository.findTask(current.id)
+                if (fresh == null) {
+                    showList()
+                } else {
+                    draft.value = fresh.toDraft()
+                    screen.value = Screen.Task
+                }
             }.onFailure { message.value = it.message }
             saving.value = false
         }
@@ -283,5 +321,7 @@ private fun OpenTask.toDraft() = TaskDraft(
     title = title,
     notes = notes,
     dueDate = dueDate?.toString().orEmpty(),
+    dueTime = dueTime,
     statusSlug = statusSlug,
+    tags = tags,
 )

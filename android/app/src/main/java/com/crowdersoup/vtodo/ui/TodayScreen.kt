@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,7 +32,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.crowdersoup.vtodo.R
 import com.crowdersoup.vtodo.today.dueLabel
-import com.crowdersoup.vtodo.today.openLabel
+import com.crowdersoup.vtodo.today.openDateLabel
 import java.time.LocalDate
 import java.util.Locale
 
@@ -106,12 +109,18 @@ private fun TodayList(state: AppUiState, today: LocalDate, viewModel: AppViewMod
     if (state.today.isEmpty()) {
         EmptyText(stringResource(R.string.nothing_due))
     } else {
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 96.dp),
+        ) {
             items(state.today, key = { it.id }) { task ->
                 CheckRow(
                     title = task.title,
                     subtitle = dueLabel(task, today, Locale.getDefault()),
                     overdue = task.dueDate < today,
+                    statusName = task.statusName,
+                    statusColor = task.statusColor,
+                    tags = task.tags,
                     enabled = task.id !in state.busy,
                     onComplete = { viewModel.complete(task.id) },
                     onOpen = { viewModel.showTask(task.id) },
@@ -126,12 +135,18 @@ private fun OpenList(state: AppUiState, today: LocalDate, viewModel: AppViewMode
     if (state.open.isEmpty()) {
         EmptyText(stringResource(R.string.nothing_open))
     } else {
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 96.dp),
+        ) {
             items(state.open, key = { it.id }) { task ->
                 CheckRow(
                     title = task.title,
-                    subtitle = openLabel(task, today, Locale.getDefault()),
+                    subtitle = openDateLabel(task, today, Locale.getDefault()),
                     overdue = task.dueDate != null && task.dueDate < today,
+                    statusName = task.statusName,
+                    statusColor = task.statusColor,
+                    tags = task.tags,
                     enabled = task.id !in state.busy,
                     onComplete = { viewModel.complete(task.id) },
                     onOpen = { viewModel.showTask(task.id) },
@@ -151,11 +166,15 @@ private fun EmptyText(text: String) {
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CheckRow(
     title: String,
-    subtitle: String,
+    subtitle: String?,
     overdue: Boolean,
+    statusName: String,
+    statusColor: String,
+    tags: List<String>,
     enabled: Boolean,
     onComplete: () -> Unit,
     onOpen: () -> Unit,
@@ -176,18 +195,29 @@ private fun CheckRow(
                 .weight(1f)
                 .clickable(onClick = onOpen)
                 .padding(vertical = 8.dp),
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(text = title, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (overdue) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (statusName.isNotBlank()) {
+                    StatusChip(name = statusName, colorHex = statusColor, selected = true)
+                }
+                tags.forEach { tag -> TagChip(tag) }
+            }
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (overdue) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
         }
     }
 }

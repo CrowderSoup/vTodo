@@ -14,6 +14,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.crowdersoup.vtodo.ui.AppViewModel
 import com.crowdersoup.vtodo.ui.Screen
 import com.crowdersoup.vtodo.ui.SignInScreen
+import com.crowdersoup.vtodo.ui.TaskDetailScreen
 import com.crowdersoup.vtodo.ui.TaskEditorScreen
 import com.crowdersoup.vtodo.ui.TaskListScreen
 import com.crowdersoup.vtodo.ui.VtodoTheme
@@ -32,6 +33,7 @@ class MainActivity : ComponentActivity() {
                     when {
                         !state.signedIn -> SignInScreen(state, viewModel)
                         state.screen == Screen.List -> TaskListScreen(state, viewModel)
+                        state.screen == Screen.Task -> TaskDetailScreen(state, viewModel)
                         else -> TaskEditorScreen(state, viewModel)
                     }
                 }
