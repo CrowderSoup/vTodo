@@ -7,6 +7,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
@@ -29,6 +31,7 @@ data class TaskDto(
     @SerialName("completed_at") val completedAt: String? = null,
     val order: Int = 0,
     val notes: String = "",
+    val tags: List<String> = emptyList(),
 )
 
 @Serializable
@@ -37,6 +40,7 @@ data class StatusDto(
     val name: String = "",
     val slug: String,
     val order: Int = 0,
+    val color: String = "",
     @SerialName("is_done") val isDone: Boolean = false,
 )
 
@@ -66,11 +70,12 @@ class VtodoApi(
         return decode(body)
     }
 
-    suspend fun createTask(session: Session, title: String, notes: String, dueDate: String?) {
+    suspend fun createTask(session: Session, title: String, notes: String, dueDate: String?, tags: List<String>) {
         val payload = buildJsonObject {
             put("title", title)
             put("notes", notes)
             if (dueDate != null) put("due_date", dueDate)
+            put("tags", buildJsonArray { tags.forEach { add(it) } })
         }
         call(
             request(session, "/api/v1/tasks/")
@@ -79,11 +84,19 @@ class VtodoApi(
         )
     }
 
-    suspend fun patchTask(session: Session, taskId: Long, title: String, notes: String, dueDate: String?) {
+    suspend fun patchTask(
+        session: Session,
+        taskId: Long,
+        title: String,
+        notes: String,
+        dueDate: String?,
+        tags: List<String>,
+    ) {
         val payload = buildJsonObject {
             put("title", title)
             put("notes", notes)
             if (dueDate == null) put("due_date", JsonNull) else put("due_date", dueDate)
+            put("tags", buildJsonArray { tags.forEach { add(it) } })
         }
         call(
             request(session, "/api/v1/tasks/$taskId/")

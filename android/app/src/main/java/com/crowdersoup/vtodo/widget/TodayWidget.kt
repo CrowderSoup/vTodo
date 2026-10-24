@@ -2,6 +2,8 @@ package com.crowdersoup.vtodo.widget
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,6 +46,10 @@ import com.crowdersoup.vtodo.today.TodayTask
 import com.crowdersoup.vtodo.today.dueLabel
 import java.time.LocalDate
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 val TaskIdKey = ActionParameters.Key<Long>("taskId")
 
@@ -57,18 +63,31 @@ class TodayWidget : GlanceAppWidget() {
     override val sizeMode: SizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val model = loadModel(context)
+        val app = context.applicationContext as? VtodoApp
+        if (app == null) {
+            provideContent { TodayWidgetBody(WidgetModel.SignedOut) }
+            return
+        }
+        // updateAll does not rerun provideGlance while this session is alive.
+        // The list has to be collected here, or checking a task off in the app
+        // recomposes the snapshot from when the session started.
+        val graph = app.graph
+        val initial = if (graph.sessionStore.current() != null) {
+            graph.repository.todaySnapshot()
+        } else {
+            emptyList()
+        }
         provideContent {
+            val session by graph.sessionStore.session.collectAsState()
+            val tasks by graph.repository.observeToday().collectAsState(initial)
+            val model = if (session == null) {
+                WidgetModel.SignedOut
+            } else {
+                WidgetModel.Ready(LocalDate.now(), tasks)
+            }
             TodayWidgetBody(model)
         }
     }
-}
-
-private suspend fun loadModel(context: Context): WidgetModel {
-    val app = context.applicationContext as? VtodoApp ?: return WidgetModel.SignedOut
-    if (app.graph.sessionStore.current() == null) return WidgetModel.SignedOut
-    val today = LocalDate.now()
-    return WidgetModel.Ready(today, app.graph.repository.todaySnapshot(today))
 }
 
 private sealed interface WidgetModel {
@@ -170,6 +189,17 @@ private fun TaskRow(task: TodayTask, today: LocalDate) {
                 maxLines = 1,
                 style = TextStyle(color = labelColor, fontSize = 12.sp),
             )
+            val meta = listOfNotNull(
+                task.statusName.takeIf { it.isNotBlank() },
+                task.tags.takeIf { it.isNotEmpty() }?.joinToString(", "),
+            ).joinToString(" · ")
+            if (meta.isNotEmpty()) {
+                Text(
+                    text = meta,
+                    maxLines = 1,
+                    style = TextStyle(color = widgetSoft, fontSize = 12.sp),
+                )
+            }
         }
     }
 }
@@ -191,6 +221,12 @@ class TodayWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = TodayWidget()
 }
 
+private val widgetUpdate = Mutex()
+
 suspend fun refreshTodayWidget(context: Context) {
-    TodayWidget().updateAll(context)
+    withContext(Dispatchers.Main.immediate) {
+        widgetUpdate.withLock {
+            TodayWidget().updateAll(context)
+        }
+    }
 }
