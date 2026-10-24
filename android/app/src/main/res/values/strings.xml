@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">vtodo</string>
+    <string name="today_widget_name">Today</string>
+    <string name="today_widget_description">Open tasks that are overdue or due today</string>
+    <string name="widget_sign_in">Sign in to vtodo</string>
+    <string name="widget_empty">Nothing due today</string>
+    <string name="widget_more">%1$d more</string>
+    <string name="sign_in_help">Paste the token from the website: Settings, then API token.</string>
+    <string name="server_url">Server URL</string>
+    <string name="api_token">API token</string>
+    <string name="sign_in">Sign in</string>
+    <string name="show_token">Show</string>
+    <string name="hide_token">Hide</string>
+    <string name="today">Today</string>
+    <string name="nothing_due">Nothing due today</string>
+    <string name="refresh">Refresh</string>
+    <string name="sign_out">Sign out</string>
+</resources>
