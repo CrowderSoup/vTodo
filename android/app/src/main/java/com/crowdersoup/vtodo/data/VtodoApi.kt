@@ -6,6 +6,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -25,11 +28,13 @@ data class TaskDto(
     @SerialName("is_archived") val isArchived: Boolean = false,
     @SerialName("completed_at") val completedAt: String? = null,
     val order: Int = 0,
+    val notes: String = "",
 )
 
 @Serializable
 data class StatusDto(
     val id: Long,
+    val name: String = "",
     val slug: String,
     val order: Int = 0,
     @SerialName("is_done") val isDone: Boolean = false,
@@ -59,6 +64,32 @@ class VtodoApi(
     suspend fun fetchStatuses(session: Session): List<StatusDto> {
         val body = call(request(session, "/api/v1/statuses/").get().build())
         return decode(body)
+    }
+
+    suspend fun createTask(session: Session, title: String, notes: String, dueDate: String?) {
+        val payload = buildJsonObject {
+            put("title", title)
+            put("notes", notes)
+            if (dueDate != null) put("due_date", dueDate)
+        }
+        call(
+            request(session, "/api/v1/tasks/")
+                .post(payload.toString().toRequestBody(jsonMedia))
+                .build(),
+        )
+    }
+
+    suspend fun patchTask(session: Session, taskId: Long, title: String, notes: String, dueDate: String?) {
+        val payload = buildJsonObject {
+            put("title", title)
+            put("notes", notes)
+            if (dueDate == null) put("due_date", JsonNull) else put("due_date", dueDate)
+        }
+        call(
+            request(session, "/api/v1/tasks/$taskId/")
+                .patch(payload.toString().toRequestBody(jsonMedia))
+                .build(),
+        )
     }
 
     suspend fun moveTask(session: Session, taskId: Long, newStatus: String) {

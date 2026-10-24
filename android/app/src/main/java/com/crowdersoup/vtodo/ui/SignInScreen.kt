@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.crowdersoup.vtodo.R
 
 @Composable
-fun SignInScreen(state: TodayUiState, viewModel: TodayViewModel) {
+fun SignInScreen(state: AppUiState, viewModel: AppViewModel) {
     var baseUrl by rememberSaveable { mutableStateOf("") }
     var token by rememberSaveable { mutableStateOf("") }
     var showToken by rememberSaveable { mutableStateOf(false) }

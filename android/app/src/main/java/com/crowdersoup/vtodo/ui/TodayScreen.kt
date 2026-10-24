@@ -1,17 +1,22 @@
 package com.crowdersoup.vtodo.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -23,37 +28,57 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.crowdersoup.vtodo.R
-import com.crowdersoup.vtodo.today.TodayTask
 import com.crowdersoup.vtodo.today.dueLabel
+import com.crowdersoup.vtodo.today.openLabel
 import java.time.LocalDate
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TodayScreen(state: TodayUiState, viewModel: TodayViewModel) {
+fun TaskListScreen(state: AppUiState, viewModel: AppViewModel) {
     val today = LocalDate.now()
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.today)) },
-                actions = {
-                    if (state.refreshing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .padding(end = 16.dp)
-                                .size(20.dp),
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        TextButton(onClick = viewModel::refresh) {
-                            Text(stringResource(R.string.refresh))
+            Column {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.app_name)) },
+                    actions = {
+                        if (state.refreshing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier
+                                    .padding(end = 16.dp)
+                                    .size(20.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            TextButton(onClick = viewModel::refresh) {
+                                Text(stringResource(R.string.refresh))
+                            }
                         }
-                    }
-                    TextButton(onClick = viewModel::signOut) {
-                        Text(stringResource(R.string.sign_out))
-                    }
-                },
-            )
+                        TextButton(onClick = viewModel::signOut) {
+                            Text(stringResource(R.string.sign_out))
+                        }
+                    },
+                )
+                Row(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
+                    FilterChip(
+                        selected = state.section == Section.Today,
+                        onClick = { viewModel.showSection(Section.Today) },
+                        label = { Text(stringResource(R.string.today)) },
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    FilterChip(
+                        selected = state.section == Section.Open,
+                        onClick = { viewModel.showSection(Section.Open) },
+                        label = { Text(stringResource(R.string.open_tasks)) },
+                    )
+                }
+            }
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(onClick = viewModel::startNewTask) {
+                Text(stringResource(R.string.add_task))
+            }
         },
     ) { padding ->
         Column(
@@ -68,37 +93,73 @@ fun TodayScreen(state: TodayUiState, viewModel: TodayViewModel) {
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
-            if (state.tasks.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.nothing_due),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
-                )
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(state.tasks, key = { it.id }) { task ->
-                        TaskRow(
-                            task = task,
-                            today = today,
-                            enabled = task.id !in state.completing,
-                            onComplete = { viewModel.complete(task.id) },
-                        )
-                    }
-                }
+            when (state.section) {
+                Section.Today -> TodayList(state, today, viewModel)
+                Section.Open -> OpenList(state, today, viewModel)
             }
         }
     }
 }
 
 @Composable
-private fun TaskRow(
-    task: TodayTask,
-    today: LocalDate,
+private fun TodayList(state: AppUiState, today: LocalDate, viewModel: AppViewModel) {
+    if (state.today.isEmpty()) {
+        EmptyText(stringResource(R.string.nothing_due))
+    } else {
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            items(state.today, key = { it.id }) { task ->
+                CheckRow(
+                    title = task.title,
+                    subtitle = dueLabel(task, today, Locale.getDefault()),
+                    overdue = task.dueDate < today,
+                    enabled = task.id !in state.busy,
+                    onComplete = { viewModel.complete(task.id) },
+                    onOpen = { viewModel.showTask(task.id) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OpenList(state: AppUiState, today: LocalDate, viewModel: AppViewModel) {
+    if (state.open.isEmpty()) {
+        EmptyText(stringResource(R.string.nothing_open))
+    } else {
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            items(state.open, key = { it.id }) { task ->
+                CheckRow(
+                    title = task.title,
+                    subtitle = openLabel(task, today, Locale.getDefault()),
+                    overdue = task.dueDate != null && task.dueDate < today,
+                    enabled = task.id !in state.busy,
+                    onComplete = { viewModel.complete(task.id) },
+                    onOpen = { viewModel.showTask(task.id) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyText(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
+    )
+}
+
+@Composable
+private fun CheckRow(
+    title: String,
+    subtitle: String,
+    overdue: Boolean,
     enabled: Boolean,
     onComplete: () -> Unit,
+    onOpen: () -> Unit,
 ) {
-    val overdue = task.dueDate < today
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -110,15 +171,21 @@ private fun TaskRow(
             onCheckedChange = { onComplete() },
             enabled = enabled,
         )
-        Column(verticalArrangement = Arrangement.Center) {
-            Text(text = task.title, style = MaterialTheme.typography.bodyLarge)
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onOpen)
+                .padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(text = title, style = MaterialTheme.typography.bodyLarge)
             Text(
-                text = dueLabel(task, today, Locale.getDefault()),
+                text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (overdue) {
                     MaterialTheme.colorScheme.error
                 } else {
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    MaterialTheme.colorScheme.onSurfaceVariant
                 },
             )
         }

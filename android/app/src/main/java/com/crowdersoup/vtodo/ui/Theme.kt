@@ -6,31 +6,28 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-
-private val Teal = Color(0xFF0F766E)
-private val Ink = Color(0xFF1D2630)
-private val Paper = Color(0xFFF2EDE6)
-private val Card = Color(0xFFFBF7F1)
-private val Danger = Color(0xFFBB4D3E)
+import com.crowdersoup.vtodo.brand.Brand
 
 private val LightColors = lightColorScheme(
-    primary = Teal,
+    primary = Color(Brand.ACCENT),
     onPrimary = Color.White,
-    background = Paper,
-    surface = Card,
-    onBackground = Ink,
-    onSurface = Ink,
-    error = Danger,
+    background = Color(Brand.BG),
+    surface = Color(Brand.BG_ELEVATED),
+    onBackground = Color(Brand.TEXT),
+    onSurface = Color(Brand.TEXT),
+    onSurfaceVariant = Color(Brand.TEXT_SOFT),
+    error = Color(Brand.DANGER),
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF38B2AC),
-    onPrimary = Color(0xFF11161D),
-    background = Color(0xFF11161D),
-    surface = Color(0xFF161C25),
-    onBackground = Color(0xFFEDF2F7),
-    onSurface = Color(0xFFEDF2F7),
-    error = Color(0xFFFC8181),
+    primary = Color(Brand.DARK_ACCENT),
+    onPrimary = Color(Brand.DARK_BG),
+    background = Color(Brand.DARK_BG),
+    surface = Color(Brand.DARK_BG_ELEVATED),
+    onBackground = Color(Brand.DARK_TEXT),
+    onSurface = Color(Brand.DARK_TEXT),
+    onSurfaceVariant = Color(Brand.DARK_TEXT_SOFT),
+    error = Color(Brand.DARK_DANGER),
 )
 
 @Composable
