@@ -40,6 +40,16 @@ class VtodoRepository(
         }
     }
 
+    fun observeToday(): Flow<List<TodayTask>> {
+        return combine(database.taskDao().observe(), database.statusDao().observe()) { tasks, statuses ->
+            TodayTasks.select(
+                tasks.map { it.toRecord() },
+                statuses.map { it.toRecord() },
+                LocalDate.now(),
+            )
+        }
+    }
+
     suspend fun todaySnapshot(today: LocalDate = LocalDate.now()): List<TodayTask> {
         val statuses = database.statusDao().all().map { it.toRecord() }
         return TodayTasks.select(database.taskDao().all().map { it.toRecord() }, statuses, today)
