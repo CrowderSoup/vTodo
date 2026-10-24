@@ -6,14 +6,27 @@ import com.crowdersoup.vtodo.today.OpenTasks
 import com.crowdersoup.vtodo.today.StatusRecord
 import com.crowdersoup.vtodo.today.TodayTask
 import com.crowdersoup.vtodo.today.TodayTasks
+import com.crowdersoup.vtodo.today.formatDueTime
+import com.crowdersoup.vtodo.today.normalizeRecurrenceFrom
 import com.crowdersoup.vtodo.today.normalizeTags
 import java.time.LocalDate
+import java.time.LocalTime
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 import kotlin.coroutines.cancellation.CancellationException
+
+data class TaskWrite(
+    val title: String,
+    val notes: String,
+    val dueDate: LocalDate?,
+    val dueTime: LocalTime?,
+    val tags: List<String>,
+    val recurrenceDays: Int?,
+    val recurrenceFrom: String,
+)
 
 data class TaskLists(
     val today: List<TodayTask> = emptyList(),
@@ -120,16 +133,14 @@ class VtodoRepository(
         }
     }
 
-    suspend fun createTask(title: String, notes: String, dueDate: LocalDate?, tags: List<String>): Result<Unit> {
-        val trimmed = title.trim()
-        if (trimmed.isEmpty()) {
-            return Result.failure(IllegalArgumentException("A title is required."))
-        }
+    suspend fun createTask(input: TaskWrite): Result<Unit> {
+        val body = input.toBody()
+            ?: return Result.failure(IllegalArgumentException("A title is required."))
         val session = sessionStore.current()
             ?: return Result.failure(IllegalStateException("Sign in first."))
         return try {
             mutex.withLock {
-                api.createTask(session, trimmed, notes.trim(), dueDate?.toString(), normalizeTags(tags))
+                api.createTask(session, body)
                 pull(session)
             }
             Result.success(Unit)
@@ -140,22 +151,30 @@ class VtodoRepository(
         }
     }
 
-    suspend fun saveTask(
-        taskId: Long,
-        title: String,
-        notes: String,
-        dueDate: LocalDate?,
-        tags: List<String>,
-    ): Result<Unit> {
-        val trimmed = title.trim()
-        if (trimmed.isEmpty()) {
-            return Result.failure(IllegalArgumentException("A title is required."))
-        }
+    suspend fun saveTask(taskId: Long, input: TaskWrite): Result<Unit> {
+        val body = input.toBody()
+            ?: return Result.failure(IllegalArgumentException("A title is required."))
         val session = sessionStore.current()
             ?: return Result.failure(IllegalStateException("Sign in first."))
         return try {
             mutex.withLock {
-                api.patchTask(session, taskId, trimmed, notes.trim(), dueDate?.toString(), normalizeTags(tags))
+                api.patchTask(session, taskId, body)
+                pull(session)
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteTask(taskId: Long): Result<Unit> {
+        val session = sessionStore.current()
+            ?: return Result.failure(IllegalStateException("Sign in first."))
+        return try {
+            mutex.withLock {
+                api.deleteTask(session, taskId)
                 pull(session)
             }
             Result.success(Unit)
@@ -212,6 +231,21 @@ class VtodoRepository(
                 database.statusDao().clear()
             }
         }
+    }
+
+    private fun TaskWrite.toBody(): TaskBody? {
+        val trimmed = title.trim()
+        if (trimmed.isEmpty()) return null
+        val time = if (dueDate == null) null else dueTime
+        return TaskBody(
+            title = trimmed,
+            notes = notes.trim(),
+            dueDate = dueDate?.toString(),
+            dueTime = time?.let(::formatDueTime),
+            tags = normalizeTags(tags),
+            recurrenceDays = recurrenceDays?.takeIf { it >= 1 },
+            recurrenceFrom = normalizeRecurrenceFrom(recurrenceFrom),
+        )
     }
 
     private suspend fun pull(session: Session) {

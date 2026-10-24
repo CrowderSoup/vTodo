@@ -32,6 +32,18 @@ data class TaskDto(
     val order: Int = 0,
     val notes: String = "",
     val tags: List<String> = emptyList(),
+    @SerialName("recurrence_days") val recurrenceDays: Int? = null,
+    @SerialName("recurrence_from") val recurrenceFrom: String = "completion",
+)
+
+data class TaskBody(
+    val title: String,
+    val notes: String,
+    val dueDate: String?,
+    val dueTime: String?,
+    val tags: List<String>,
+    val recurrenceDays: Int?,
+    val recurrenceFrom: String,
 )
 
 @Serializable
@@ -110,39 +122,24 @@ class VtodoApi(
         return token
     }
 
-    suspend fun createTask(session: Session, title: String, notes: String, dueDate: String?, tags: List<String>) {
-        val payload = buildJsonObject {
-            put("title", title)
-            put("notes", notes)
-            if (dueDate != null) put("due_date", dueDate)
-            put("tags", buildJsonArray { tags.forEach { add(it) } })
-        }
+    suspend fun createTask(session: Session, body: TaskBody) {
         call(
             request(session, "/api/v1/tasks/")
-                .post(payload.toString().toRequestBody(jsonMedia))
+                .post(taskPayload(body).toString().toRequestBody(jsonMedia))
                 .build(),
         )
     }
 
-    suspend fun patchTask(
-        session: Session,
-        taskId: Long,
-        title: String,
-        notes: String,
-        dueDate: String?,
-        tags: List<String>,
-    ) {
-        val payload = buildJsonObject {
-            put("title", title)
-            put("notes", notes)
-            if (dueDate == null) put("due_date", JsonNull) else put("due_date", dueDate)
-            put("tags", buildJsonArray { tags.forEach { add(it) } })
-        }
+    suspend fun patchTask(session: Session, taskId: Long, body: TaskBody) {
         call(
             request(session, "/api/v1/tasks/$taskId/")
-                .patch(payload.toString().toRequestBody(jsonMedia))
+                .patch(taskPayload(body).toString().toRequestBody(jsonMedia))
                 .build(),
         )
+    }
+
+    suspend fun deleteTask(session: Session, taskId: Long) {
+        call(request(session, "/api/v1/tasks/$taskId/").delete().build())
     }
 
     suspend fun moveTask(session: Session, taskId: Long, newStatus: String) {
@@ -198,6 +195,17 @@ class VtodoApi(
         } catch (_: SerializationException) {
             throw VtodoApiException(null, "The server sent a response the app didn't understand.")
         }
+    }
+
+    private fun taskPayload(body: TaskBody) = buildJsonObject {
+        put("title", body.title)
+        put("notes", body.notes)
+        if (body.dueDate == null) put("due_date", JsonNull) else put("due_date", body.dueDate)
+        val dueTime = if (body.dueDate == null) null else body.dueTime
+        if (dueTime == null) put("due_time", JsonNull) else put("due_time", dueTime)
+        put("tags", buildJsonArray { body.tags.forEach { add(it) } })
+        if (body.recurrenceDays == null) put("recurrence_days", JsonNull) else put("recurrence_days", body.recurrenceDays)
+        put("recurrence_from", body.recurrenceFrom)
     }
 
     private fun httpError(code: Int, body: String): String {

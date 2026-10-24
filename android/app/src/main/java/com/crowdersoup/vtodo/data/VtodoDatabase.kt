@@ -8,8 +8,10 @@ import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
+import com.crowdersoup.vtodo.today.RECURRENCE_FROM_COMPLETION
 import com.crowdersoup.vtodo.today.StatusRecord
 import com.crowdersoup.vtodo.today.TaskRecord
+import com.crowdersoup.vtodo.today.normalizeRecurrenceFrom
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -27,6 +29,8 @@ data class TaskEntity(
     val sortOrder: Int,
     val notes: String,
     val tags: String,
+    val recurrenceDays: Int? = null,
+    val recurrenceFrom: String? = null,
 )
 
 @Entity(tableName = "statuses")
@@ -50,6 +54,8 @@ fun TaskDto.toEntity() = TaskEntity(
     sortOrder = order,
     notes = notes,
     tags = tagsToJson(tags),
+    recurrenceDays = recurrenceDays,
+    recurrenceFrom = recurrenceFrom.ifBlank { RECURRENCE_FROM_COMPLETION },
 )
 
 fun TaskEntity.toRecord() = TaskRecord(
@@ -63,6 +69,8 @@ fun TaskEntity.toRecord() = TaskRecord(
     sortOrder = sortOrder,
     notes = notes,
     tags = tagsFromJson(tags),
+    recurrenceDays = recurrenceDays,
+    recurrenceFrom = normalizeRecurrenceFrom(recurrenceFrom.orEmpty()),
 )
 
 fun StatusDto.toEntity() = StatusEntity(
@@ -132,7 +140,7 @@ internal fun tagsFromJson(raw: String): List<String> {
 
 @Database(
     entities = [TaskEntity::class, StatusEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class VtodoDatabase : RoomDatabase() {

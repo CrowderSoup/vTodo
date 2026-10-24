@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -15,11 +16,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.crowdersoup.vtodo.R
 import com.crowdersoup.vtodo.today.dueChipLabel
+import com.crowdersoup.vtodo.today.recurrenceLabel
 import java.time.LocalDate
 import java.util.Locale
 
@@ -67,11 +73,22 @@ fun TaskDetailScreen(state: AppUiState, viewModel: AppViewModel) {
                 Text(text = note, color = MaterialTheme.colorScheme.error)
             }
             Text(text = draft.title, style = MaterialTheme.typography.headlineSmall)
-            if (due != null) {
-                MetaChip(
-                    text = dueChipLabel(due, draft.dueTime, today, Locale.getDefault()),
-                    danger = due < today,
-                )
+            val repeatDays = draft.recurrenceDays.toIntOrNull()?.takeIf { it >= 1 }
+            if (due != null || repeatDays != null) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (due != null) {
+                        MetaChip(
+                            text = dueChipLabel(due, draft.dueTime, today, Locale.getDefault()),
+                            danger = due < today,
+                        )
+                    }
+                    if (repeatDays != null) {
+                        MetaChip(text = recurrenceLabel(repeatDays))
+                    }
+                }
             }
             SectionLabel(stringResource(R.string.status))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -100,7 +117,48 @@ fun TaskDetailScreen(state: AppUiState, viewModel: AppViewModel) {
             } else {
                 NotesView(draft.notes)
             }
+            RemoveTaskControl(
+                enabled = draft.id !in state.busy && !state.saving,
+                onRemove = viewModel::deleteTask,
+            )
         }
+    }
+}
+
+@Composable
+internal fun RemoveTaskControl(enabled: Boolean, onRemove: () -> Unit) {
+    var confirm by rememberSaveable { mutableStateOf(false) }
+    TextButton(onClick = { confirm = true }, enabled = enabled) {
+        Text(
+            text = stringResource(R.string.remove_task),
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+    if (confirm) {
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text(stringResource(R.string.remove_task_title)) },
+            text = { Text(stringResource(R.string.remove_task_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirm = false
+                        onRemove()
+                    },
+                    enabled = enabled,
+                ) {
+                    Text(
+                        text = stringResource(R.string.remove),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirm = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
     }
 }
 

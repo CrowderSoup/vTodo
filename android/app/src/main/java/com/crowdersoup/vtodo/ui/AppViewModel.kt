@@ -8,11 +8,15 @@ import androidx.lifecycle.viewModelScope
 import com.crowdersoup.vtodo.MainActivity
 import com.crowdersoup.vtodo.VtodoApp
 import com.crowdersoup.vtodo.data.GoogleSignIn
+import com.crowdersoup.vtodo.data.TaskWrite
 import com.crowdersoup.vtodo.today.OpenTask
+import com.crowdersoup.vtodo.today.RECURRENCE_FROM_COMPLETION
 import com.crowdersoup.vtodo.today.StatusRecord
 import com.crowdersoup.vtodo.today.TodayTask
+import com.crowdersoup.vtodo.today.normalizeRecurrenceFrom
 import com.crowdersoup.vtodo.today.normalizeTags
 import com.crowdersoup.vtodo.today.parseDueInput
+import com.crowdersoup.vtodo.today.parseRecurrenceDays
 import com.crowdersoup.vtodo.widget.refreshTodayWidget
 import com.crowdersoup.vtodo.work.SyncScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,13 +45,18 @@ data class TaskDraft(
     val dueTime: LocalTime?,
     val statusSlug: String,
     val tags: List<String>,
+    val recurrenceDays: String = "",
+    val recurrenceFrom: String = RECURRENCE_FROM_COMPLETION,
 )
 
 data class NewTaskDraft(
     val title: String = "",
     val notes: String = "",
     val dueDate: String = "",
+    val dueTime: LocalTime? = null,
     val tags: List<String> = emptyList(),
+    val recurrenceDays: String = "",
+    val recurrenceFrom: String = RECURRENCE_FROM_COMPLETION,
 )
 
 data class AppUiState(
@@ -190,14 +199,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         title: String? = null,
         notes: String? = null,
         dueDate: String? = null,
+        dueTime: LocalTime? = null,
+        clearDueTime: Boolean = false,
         tags: List<String>? = null,
+        recurrenceDays: String? = null,
+        recurrenceFrom: String? = null,
     ) {
         val current = newTask.value
+        val nextDate = dueDate ?: current.dueDate
         newTask.value = current.copy(
             title = title ?: current.title,
             notes = notes ?: current.notes,
-            dueDate = dueDate ?: current.dueDate,
+            dueDate = nextDate,
+            dueTime = nextDueTime(nextDate, current.dueTime, dueTime, clearDueTime),
             tags = tags?.let(::normalizeTags) ?: current.tags,
+            recurrenceDays = recurrenceDays ?: current.recurrenceDays,
+            recurrenceFrom = recurrenceFrom?.let(::normalizeRecurrenceFrom) ?: current.recurrenceFrom,
         )
     }
 
@@ -230,31 +247,36 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         title: String? = null,
         notes: String? = null,
         dueDate: String? = null,
+        dueTime: LocalTime? = null,
+        clearDueTime: Boolean = false,
         tags: List<String>? = null,
+        recurrenceDays: String? = null,
+        recurrenceFrom: String? = null,
     ) {
         val current = draft.value ?: return
+        val nextDate = dueDate ?: current.dueDate
         draft.value = current.copy(
             title = title ?: current.title,
             notes = notes ?: current.notes,
-            dueDate = dueDate ?: current.dueDate,
+            dueDate = nextDate,
+            dueTime = nextDueTime(nextDate, current.dueTime, dueTime, clearDueTime),
             tags = tags?.let(::normalizeTags) ?: current.tags,
+            recurrenceDays = recurrenceDays ?: current.recurrenceDays,
+            recurrenceFrom = recurrenceFrom?.let(::normalizeRecurrenceFrom) ?: current.recurrenceFrom,
         )
     }
 
     fun saveNewTask() {
         if (saving.value) return
         val draft = newTask.value
-        val due = parseDueInput(draft.dueDate).getOrElse {
-            message.value = it.message
-            return
-        }
+        val schedule = scheduleFrom(draft.dueDate, draft.dueTime, draft.recurrenceDays, draft.recurrenceFrom) ?: return
         viewModelScope.launch {
             saving.value = true
             message.value = null
-            val result = graph.repository.createTask(draft.title, draft.notes, due, draft.tags)
+            val result = graph.repository.createTask(draft.toWrite(schedule))
             result.onSuccess {
                 refreshTodayWidget(getApplication())
-                section.value = if (due != null && !due.isAfter(LocalDate.now())) {
+                section.value = if (schedule.dueDate != null && !schedule.dueDate.isAfter(LocalDate.now())) {
                     Section.Today
                 } else {
                     Section.Open
@@ -268,14 +290,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun saveTask() {
         if (saving.value) return
         val current = draft.value ?: return
-        val due = parseDueInput(current.dueDate).getOrElse {
-            message.value = it.message
-            return
-        }
+        val schedule = scheduleFrom(current.dueDate, current.dueTime, current.recurrenceDays, current.recurrenceFrom) ?: return
         viewModelScope.launch {
             saving.value = true
             message.value = null
-            val result = graph.repository.saveTask(current.id, current.title, current.notes, due, current.tags)
+            val result = graph.repository.saveTask(current.id, current.toWrite(schedule))
             result.onSuccess {
                 refreshTodayWidget(getApplication())
                 val fresh = graph.repository.findTask(current.id)
@@ -285,6 +304,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     draft.value = fresh.toDraft()
                     screen.value = Screen.Task
                 }
+            }.onFailure { message.value = it.message }
+            saving.value = false
+        }
+    }
+
+    fun deleteTask() {
+        if (saving.value) return
+        val current = draft.value ?: return
+        viewModelScope.launch {
+            saving.value = true
+            message.value = null
+            val result = graph.repository.deleteTask(current.id)
+            result.onSuccess {
+                refreshTodayWidget(getApplication())
+                showList()
             }.onFailure { message.value = it.message }
             saving.value = false
         }
@@ -314,6 +348,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             result.onFailure { message.value = it.message ?: "Couldn't complete that task." }
             busy.value = busy.value - taskId
         }
+    }
+
+    private fun scheduleFrom(
+        dueText: String,
+        dueTime: LocalTime?,
+        recurrenceText: String,
+        recurrenceFrom: String,
+    ): Schedule? {
+        val due = parseDueInput(dueText).getOrElse {
+            message.value = it.message
+            return null
+        }
+        val days = parseRecurrenceDays(recurrenceText).getOrElse {
+            message.value = it.message
+            return null
+        }
+        return Schedule(
+            dueDate = due,
+            dueTime = if (due == null) null else dueTime,
+            recurrenceDays = days,
+            recurrenceFrom = normalizeRecurrenceFrom(recurrenceFrom),
+        )
     }
 
     fun signOut() {
@@ -350,4 +406,46 @@ private fun OpenTask.toDraft() = TaskDraft(
     dueTime = dueTime,
     statusSlug = statusSlug,
     tags = tags,
+    recurrenceDays = recurrenceDays?.toString().orEmpty(),
+    recurrenceFrom = normalizeRecurrenceFrom(recurrenceFrom),
+)
+
+private data class Schedule(
+    val dueDate: LocalDate?,
+    val dueTime: LocalTime?,
+    val recurrenceDays: Int?,
+    val recurrenceFrom: String,
+)
+
+private fun nextDueTime(
+    nextDate: String,
+    current: LocalTime?,
+    dueTime: LocalTime?,
+    clearDueTime: Boolean,
+): LocalTime? {
+    return when {
+        nextDate.isBlank() || clearDueTime -> null
+        dueTime != null -> dueTime
+        else -> current
+    }
+}
+
+private fun NewTaskDraft.toWrite(schedule: Schedule) = TaskWrite(
+    title = title,
+    notes = notes,
+    dueDate = schedule.dueDate,
+    dueTime = schedule.dueTime,
+    tags = tags,
+    recurrenceDays = schedule.recurrenceDays,
+    recurrenceFrom = schedule.recurrenceFrom,
+)
+
+private fun TaskDraft.toWrite(schedule: Schedule) = TaskWrite(
+    title = title,
+    notes = notes,
+    dueDate = schedule.dueDate,
+    dueTime = schedule.dueTime,
+    tags = tags,
+    recurrenceDays = schedule.recurrenceDays,
+    recurrenceFrom = schedule.recurrenceFrom,
 )

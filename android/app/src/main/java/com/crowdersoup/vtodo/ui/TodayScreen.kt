@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.crowdersoup.vtodo.R
 import com.crowdersoup.vtodo.today.dueLabel
 import com.crowdersoup.vtodo.today.openDateLabel
+import com.crowdersoup.vtodo.today.recurrenceLabel
 import java.time.LocalDate
 import java.util.Locale
 
@@ -121,6 +122,7 @@ private fun TodayList(state: AppUiState, today: LocalDate, viewModel: AppViewMod
                     statusName = task.statusName,
                     statusColor = task.statusColor,
                     tags = task.tags,
+                    recurrenceDays = task.recurrenceDays,
                     enabled = task.id !in state.busy,
                     onComplete = { viewModel.complete(task.id) },
                     onOpen = { viewModel.showTask(task.id) },
@@ -147,6 +149,7 @@ private fun OpenList(state: AppUiState, today: LocalDate, viewModel: AppViewMode
                     statusName = task.statusName,
                     statusColor = task.statusColor,
                     tags = task.tags,
+                    recurrenceDays = task.recurrenceDays,
                     enabled = task.id !in state.busy,
                     onComplete = { viewModel.complete(task.id) },
                     onOpen = { viewModel.showTask(task.id) },
@@ -175,6 +178,7 @@ private fun CheckRow(
     statusName: String,
     statusColor: String,
     tags: List<String>,
+    recurrenceDays: Int?,
     enabled: Boolean,
     onComplete: () -> Unit,
     onOpen: () -> Unit,
@@ -206,6 +210,7 @@ private fun CheckRow(
                     StatusChip(name = statusName, colorHex = statusColor, selected = true)
                 }
                 tags.forEach { tag -> TagChip(tag) }
+                recurrenceDays?.takeIf { it >= 1 }?.let { days -> MetaChip(recurrenceLabel(days)) }
             }
             if (!subtitle.isNullOrBlank()) {
                 Text(
