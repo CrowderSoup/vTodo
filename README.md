@@ -90,6 +90,26 @@ uv run pytest -m browser             # only the browser tests
 uv run pytest -m "not browser"       # everything else
 ```
 
+## Android
+
+`android/` is a Kotlin app for a home-screen widget. The website stays the source of truth. The app signs in with the API token from Settings → API token, stores it in the Android Keystore, and syncs tasks into a local database. The Today screen and the Today widget list open tasks that are overdue or due today. Checking one off calls `POST /api/v1/tasks/{id}/move/` with your first completed status, so recurrence still runs on the server.
+
+A debug build needs a JDK, the Android SDK, and a device or emulator:
+
+```bash
+cd android
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+Open the app once and sign in. Then long-press the home screen and add the vtodo Today widget. The widget refreshes when you open the app, when you check a task off, and about every 30 minutes. `http://` server URLs are allowed so a machine on your LAN works. A self-signed HTTPS certificate is not.
+
+Pushing a change under `android/` also runs the Android workflow. On a finished run, download `vtodo-debug.apk` from the artifacts. It is signed with the debug key in `android/app/debug.keystore` (password `android`), so a later build installs over the previous one:
+
+```bash
+adb install -r vtodo-debug.apk
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

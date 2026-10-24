@@ -47,3 +47,13 @@ htmlcov/
 
 # Kamal
 .kamal/secrets
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/*.iml
+android/**/*.iml
+android/.cxx/
