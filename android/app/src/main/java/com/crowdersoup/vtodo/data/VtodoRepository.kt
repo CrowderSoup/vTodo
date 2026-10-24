@@ -1,15 +1,24 @@
 package com.crowdersoup.vtodo.data
 
 import androidx.room.withTransaction
+import com.crowdersoup.vtodo.today.OpenTask
+import com.crowdersoup.vtodo.today.OpenTasks
+import com.crowdersoup.vtodo.today.StatusRecord
 import com.crowdersoup.vtodo.today.TodayTask
 import com.crowdersoup.vtodo.today.TodayTasks
+import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.Instant
-import java.time.LocalDate
 import kotlin.coroutines.cancellation.CancellationException
+
+data class TaskLists(
+    val today: List<TodayTask> = emptyList(),
+    val open: List<OpenTask> = emptyList(),
+    val statuses: List<StatusRecord> = emptyList(),
+)
 
 class VtodoRepository(
     private val database: VtodoDatabase,
@@ -18,12 +27,15 @@ class VtodoRepository(
 ) {
     private val mutex = Mutex()
 
-    fun observeToday(): Flow<List<TodayTask>> {
+    fun observeLists(): Flow<TaskLists> {
         return combine(database.taskDao().observe(), database.statusDao().observe()) { tasks, statuses ->
-            TodayTasks.select(
-                tasks.map { it.toRecord() },
-                statuses.filter { it.isDone }.map { it.slug }.toSet(),
-                LocalDate.now(),
+            val records = tasks.map { it.toRecord() }
+            val statusRecords = statuses.map { it.toRecord() }
+            val done = statusRecords.filter { it.isDone }.map { it.slug }.toSet()
+            TaskLists(
+                today = TodayTasks.select(records, done, LocalDate.now()),
+                open = OpenTasks.select(records, statusRecords),
+                statuses = statusRecords.sortedBy { it.sortOrder },
             )
         }
     }
@@ -31,6 +43,12 @@ class VtodoRepository(
     suspend fun todaySnapshot(today: LocalDate = LocalDate.now()): List<TodayTask> {
         val done = database.statusDao().all().filter { it.isDone }.map { it.slug }.toSet()
         return TodayTasks.select(database.taskDao().all().map { it.toRecord() }, done, today)
+    }
+
+    suspend fun findTask(id: Long): OpenTask? {
+        val entity = database.taskDao().get(id) ?: return null
+        if (entity.isArchived) return null
+        return OpenTasks.from(entity.toRecord(), database.statusDao().all().map { it.toRecord() })
     }
 
     suspend fun signIn(baseUrl: String, token: String): Result<Unit> {
@@ -68,27 +86,80 @@ class VtodoRepository(
         }
     }
 
-    suspend fun complete(taskId: Long): Result<Unit> {
+    suspend fun createTask(title: String, notes: String, dueDate: LocalDate?): Result<Unit> {
+        val trimmed = title.trim()
+        if (trimmed.isEmpty()) {
+            return Result.failure(IllegalArgumentException("A title is required."))
+        }
         val session = sessionStore.current()
             ?: return Result.failure(IllegalStateException("Sign in first."))
         return try {
             mutex.withLock {
-                val done = database.statusDao().all()
-                    .filter { it.isDone }
-                    .minByOrNull { it.sortOrder }
-                    ?: throw IllegalStateException("Add a completed status on the website first.")
-                val existing = database.taskDao().get(taskId)
-                if (existing != null && existing.completedAt.isNullOrBlank()) {
-                    database.taskDao().setCompleted(taskId, Instant.now().toString())
-                }
-                api.moveTask(session, taskId, done.slug)
+                api.createTask(session, trimmed, notes.trim(), dueDate?.toString())
                 pull(session)
             }
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            restore(taskId)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun saveTask(taskId: Long, title: String, notes: String, dueDate: LocalDate?): Result<Unit> {
+        val trimmed = title.trim()
+        if (trimmed.isEmpty()) {
+            return Result.failure(IllegalArgumentException("A title is required."))
+        }
+        val session = sessionStore.current()
+            ?: return Result.failure(IllegalStateException("Sign in first."))
+        return try {
+            mutex.withLock {
+                api.patchTask(session, taskId, trimmed, notes.trim(), dueDate?.toString())
+                pull(session)
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun complete(taskId: Long): Result<Unit> {
+        val done = database.statusDao().all()
+            .filter { it.isDone }
+            .minByOrNull { it.sortOrder }
+            ?: return Result.failure(IllegalStateException("Add a completed status on the website first."))
+        return move(taskId, done.slug)
+    }
+
+    suspend fun move(taskId: Long, statusSlug: String): Result<Unit> {
+        val session = sessionStore.current()
+            ?: return Result.failure(IllegalStateException("Sign in first."))
+        var previous: TaskEntity? = null
+        return try {
+            mutex.withLock {
+                val status = database.statusDao().all().firstOrNull { it.slug == statusSlug }
+                    ?: throw IllegalStateException("That status is not on this phone yet. Refresh and try again.")
+                previous = database.taskDao().get(taskId)
+                val existing = previous
+                if (existing != null) {
+                    val completedAt = if (status.isDone) {
+                        existing.completedAt ?: Instant.now().toString()
+                    } else {
+                        null
+                    }
+                    database.taskDao().updateStatus(taskId, status.slug, completedAt)
+                }
+                api.moveTask(session, taskId, status.slug)
+                pull(session)
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            restore(taskId, previous)
             Result.failure(e)
         }
     }
@@ -114,12 +185,18 @@ class VtodoRepository(
         }
     }
 
-    private suspend fun restore(taskId: Long) {
-        val session = sessionStore.current() ?: return
-        try {
-            mutex.withLock { pull(session) }
-        } catch (_: Exception) {
-            database.taskDao().setCompleted(taskId, null)
+    private suspend fun restore(taskId: Long, previous: TaskEntity?) {
+        val session = sessionStore.current()
+        if (session != null) {
+            try {
+                mutex.withLock { pull(session) }
+                return
+            } catch (_: Exception) {
+                // The next sync replaces the table from the server.
+            }
+        }
+        if (previous != null) {
+            database.taskDao().updateStatus(taskId, previous.status, previous.completedAt)
         }
     }
 }

@@ -2,6 +2,8 @@ package com.crowdersoup.vtodo
 
 import android.app.Application
 import androidx.room.Room
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.crowdersoup.vtodo.data.SessionStore
 import com.crowdersoup.vtodo.data.VtodoApi
 import com.crowdersoup.vtodo.data.VtodoDatabase
@@ -13,13 +15,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
+private val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tasks ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE statuses ADD COLUMN name TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 class AppGraph(context: Application) {
     val sessionStore = SessionStore(context)
     val database: VtodoDatabase = Room.databaseBuilder(
         context,
         VtodoDatabase::class.java,
         "vtodo.db",
-    ).build()
+    ).addMigrations(MIGRATION_1_2).build()
     val repository = VtodoRepository(database, VtodoApi(), sessionStore)
 }
 

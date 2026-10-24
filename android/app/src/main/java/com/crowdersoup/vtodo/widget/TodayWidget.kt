@@ -7,7 +7,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
-import androidx.glance.GlanceTheme
 import androidx.glance.LocalContext
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
@@ -15,13 +14,17 @@ import androidx.glance.action.clickable
 import androidx.glance.appwidget.CheckBox
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.appWidgetBackground
+import androidx.glance.appwidget.lazy.LazyColumn
+import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.updateAll
 import androidx.glance.background
+import androidx.glance.color.ColorProvider
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
@@ -33,26 +36,30 @@ import androidx.glance.layout.padding
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
 import com.crowdersoup.vtodo.MainActivity
 import com.crowdersoup.vtodo.R
 import com.crowdersoup.vtodo.VtodoApp
+import com.crowdersoup.vtodo.brand.Brand
 import com.crowdersoup.vtodo.today.TodayTask
 import com.crowdersoup.vtodo.today.dueLabel
 import java.time.LocalDate
 import java.util.Locale
 
-private const val MAX_ROWS = 8
-
 val TaskIdKey = ActionParameters.Key<Long>("taskId")
 
+private val widgetBackground = ColorProvider(Color(Brand.BG), Color(Brand.DARK_BG))
+private val widgetText = ColorProvider(Color(Brand.TEXT), Color(Brand.DARK_TEXT))
+private val widgetSoft = ColorProvider(Color(Brand.TEXT_SOFT), Color(Brand.DARK_TEXT_SOFT))
+private val widgetAccent = ColorProvider(Color(Brand.ACCENT), Color(Brand.DARK_ACCENT))
+private val widgetDanger = ColorProvider(Color(Brand.DANGER), Color(Brand.DARK_DANGER))
+
 class TodayWidget : GlanceAppWidget() {
+    override val sizeMode: SizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val model = loadModel(context)
         provideContent {
-            GlanceTheme {
-                TodayWidgetBody(model)
-            }
+            TodayWidgetBody(model)
         }
     }
 }
@@ -72,68 +79,74 @@ private sealed interface WidgetModel {
 @androidx.compose.runtime.Composable
 private fun TodayWidgetBody(model: WidgetModel) {
     val context = LocalContext.current
-    val openApp = actionStartActivity(Intent(context, MainActivity::class.java))
-    Column(
+    LazyColumn(
         modifier = GlanceModifier
             .fillMaxSize()
             .appWidgetBackground()
-            .background(GlanceTheme.colors.widgetBackground)
-            .padding(16.dp),
+            .background(widgetBackground),
     ) {
-        Text(
-            text = context.getString(R.string.today),
-            modifier = GlanceModifier.clickable(openApp),
-            style = TextStyle(
-                color = GlanceTheme.colors.onSurface,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-            ),
-        )
-        Spacer(modifier = GlanceModifier.height(8.dp))
+        item {
+            Text(
+                text = context.getString(R.string.today),
+                modifier = GlanceModifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)
+                    .clickable(actionStartActivity(openAppIntent(context))),
+                style = TextStyle(
+                    color = widgetText,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                ),
+            )
+        }
         when (model) {
-            WidgetModel.SignedOut -> {
+            WidgetModel.SignedOut -> item {
                 Text(
                     text = context.getString(R.string.widget_sign_in),
-                    modifier = GlanceModifier.clickable(openApp),
-                    style = TextStyle(color = GlanceTheme.colors.primary, fontSize = 14.sp),
+                    modifier = GlanceModifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clickable(actionStartActivity(openAppIntent(context))),
+                    style = TextStyle(color = widgetAccent, fontSize = 14.sp),
                 )
             }
             is WidgetModel.Ready -> {
                 if (model.tasks.isEmpty()) {
-                    Text(
-                        text = context.getString(R.string.widget_empty),
-                        modifier = GlanceModifier.clickable(openApp),
-                        style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 14.sp),
-                    )
-                } else {
-                    model.tasks.take(MAX_ROWS).forEach { task ->
-                        TaskRow(task, model.today)
-                    }
-                    val extra = model.tasks.size - MAX_ROWS
-                    if (extra > 0) {
-                        Spacer(modifier = GlanceModifier.height(4.dp))
+                    item {
                         Text(
-                            text = context.getString(R.string.widget_more, extra),
-                            style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp),
+                            text = context.getString(R.string.widget_empty),
+                            modifier = GlanceModifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp)
+                                .clickable(actionStartActivity(openAppIntent(context))),
+                            style = TextStyle(color = widgetSoft, fontSize = 14.sp),
                         )
                     }
+                } else {
+                    items(model.tasks, itemId = { it.id }) { task ->
+                        TaskRow(task, model.today)
+                    }
+                    item { Spacer(modifier = GlanceModifier.height(12.dp)) }
                 }
             }
         }
     }
 }
 
+private fun openAppIntent(context: Context, taskId: Long? = null): Intent {
+    return Intent(context, MainActivity::class.java).apply {
+        action = MainActivity.ACTION_OPEN
+        if (taskId != null) putExtra(MainActivity.EXTRA_TASK_ID, taskId)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+    }
+}
+
 @androidx.compose.runtime.Composable
 private fun TaskRow(task: TodayTask, today: LocalDate) {
     val context = LocalContext.current
-    val overdue = task.dueDate < today
-    val labelColor = if (overdue) {
-        ColorProvider(Color(0xFFBB4D3E))
-    } else {
-        GlanceTheme.colors.onSurfaceVariant
-    }
+    val labelColor = if (task.dueDate < today) widgetDanger else widgetSoft
     Row(
-        modifier = GlanceModifier.fillMaxWidth().padding(vertical = 2.dp),
+        modifier = GlanceModifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CheckBox(
@@ -145,12 +158,12 @@ private fun TaskRow(task: TodayTask, today: LocalDate) {
         Column(
             modifier = GlanceModifier
                 .defaultWeight()
-                .clickable(actionStartActivity(Intent(context, MainActivity::class.java))),
+                .clickable(actionStartActivity(openAppIntent(context, task.id))),
         ) {
             Text(
                 text = task.title,
                 maxLines = 2,
-                style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp),
+                style = TextStyle(color = widgetText, fontSize = 14.sp),
             )
             Text(
                 text = dueLabel(task, today, Locale.getDefault()),

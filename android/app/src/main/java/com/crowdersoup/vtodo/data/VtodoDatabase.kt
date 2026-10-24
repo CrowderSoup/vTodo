@@ -8,6 +8,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
+import com.crowdersoup.vtodo.today.StatusRecord
 import com.crowdersoup.vtodo.today.TaskRecord
 import kotlinx.coroutines.flow.Flow
 
@@ -21,12 +22,14 @@ data class TaskEntity(
     val isArchived: Boolean,
     val completedAt: String?,
     val sortOrder: Int,
+    val notes: String,
 )
 
 @Entity(tableName = "statuses")
 data class StatusEntity(
     @PrimaryKey val slug: String,
     val id: Long,
+    val name: String,
     val sortOrder: Int,
     val isDone: Boolean,
 )
@@ -40,6 +43,7 @@ fun TaskDto.toEntity() = TaskEntity(
     isArchived = isArchived,
     completedAt = completedAt,
     sortOrder = order,
+    notes = notes,
 )
 
 fun TaskEntity.toRecord() = TaskRecord(
@@ -51,12 +55,21 @@ fun TaskEntity.toRecord() = TaskRecord(
     isArchived = isArchived,
     completedAt = completedAt,
     sortOrder = sortOrder,
+    notes = notes,
 )
 
 fun StatusDto.toEntity() = StatusEntity(
     slug = slug,
     id = id,
+    name = name,
     sortOrder = order,
+    isDone = isDone,
+)
+
+fun StatusEntity.toRecord() = StatusRecord(
+    slug = slug,
+    name = name,
+    sortOrder = sortOrder,
     isDone = isDone,
 )
 
@@ -79,6 +92,9 @@ interface TaskDao {
 
     @Query("UPDATE tasks SET completedAt = :completedAt WHERE id = :id")
     suspend fun setCompleted(id: Long, completedAt: String?)
+
+    @Query("UPDATE tasks SET status = :status, completedAt = :completedAt WHERE id = :id")
+    suspend fun updateStatus(id: Long, status: String, completedAt: String?)
 }
 
 @Dao
@@ -98,7 +114,7 @@ interface StatusDao {
 
 @Database(
     entities = [TaskEntity::class, StatusEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class VtodoDatabase : RoomDatabase() {
