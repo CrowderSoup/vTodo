@@ -5,10 +5,12 @@
     <string name="today_widget_description">Open tasks that are overdue or due today</string>
     <string name="widget_sign_in">Sign in to vtodo</string>
     <string name="widget_empty">Nothing due today</string>
-    <string name="sign_in_help">Paste the token from the website: Settings, then API token.</string>
+    <string name="sign_in_help">Sign in with the Google account you use on the website. An API token still works if you need it.</string>
     <string name="server_url">Server URL</string>
     <string name="api_token">API token</string>
-    <string name="sign_in">Sign in</string>
+    <string name="sign_in_with_google">Sign in with Google</string>
+    <string name="or_paste_token">or paste an API token</string>
+    <string name="sign_in_with_token">Sign in with token</string>
     <string name="show_token">Show</string>
     <string name="hide_token">Hide</string>
     <string name="today">Today</string>

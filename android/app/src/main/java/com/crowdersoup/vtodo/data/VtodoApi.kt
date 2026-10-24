@@ -48,6 +48,15 @@ data class StatusDto(
 private data class MoveRequest(@SerialName("new_status") val newStatus: String)
 
 @Serializable
+private data class GoogleClientResponse(@SerialName("client_id") val clientId: String = "")
+
+@Serializable
+private data class GoogleExchangeRequest(@SerialName("id_token") val idToken: String)
+
+@Serializable
+private data class GoogleExchangeResponse(val token: String = "")
+
+@Serializable
 private data class ErrorBody(val detail: String? = null)
 
 class VtodoApi(
@@ -68,6 +77,37 @@ class VtodoApi(
     suspend fun fetchStatuses(session: Session): List<StatusDto> {
         val body = call(request(session, "/api/v1/statuses/").get().build())
         return decode(body)
+    }
+
+    suspend fun fetchGoogleClientId(baseUrl: String): String {
+        val body = try {
+            call(anonymous(baseUrl, "/api/v1/auth/google/").get().build())
+        } catch (e: VtodoApiException) {
+            throw googleSetupError(e)
+        }
+        val clientId = decode<GoogleClientResponse>(body).clientId
+        if (clientId.isBlank()) {
+            throw VtodoApiException(null, "Google sign-in is not configured on this server.")
+        }
+        return clientId
+    }
+
+    suspend fun exchangeGoogleIdToken(baseUrl: String, idToken: String): String {
+        val payload = json.encodeToString(GoogleExchangeRequest(idToken))
+        val body = try {
+            call(
+                anonymous(baseUrl, "/api/v1/auth/google/")
+                    .post(payload.toRequestBody(jsonMedia))
+                    .build(),
+            )
+        } catch (e: VtodoApiException) {
+            throw googleSetupError(e)
+        }
+        val token = decode<GoogleExchangeResponse>(body).token
+        if (token.isBlank()) {
+            throw VtodoApiException(null, "The server didn't return an API token.")
+        }
+        return token
     }
 
     suspend fun createTask(session: Session, title: String, notes: String, dueDate: String?, tags: List<String>) {
@@ -115,11 +155,25 @@ class VtodoApi(
     }
 
     private fun request(session: Session, path: String): Request.Builder {
-        return Request.Builder()
-            .url(session.baseUrl + path)
+        return anonymous(session.baseUrl, path)
             .header("Authorization", "Token ${session.token}")
+    }
+
+    private fun anonymous(baseUrl: String, path: String): Request.Builder {
+        return Request.Builder()
+            .url(baseUrl + path)
             .header("Accept", "application/json")
             .header("User-Agent", "vtodo-android")
+    }
+
+    private fun googleSetupError(error: VtodoApiException): VtodoApiException {
+        if (error.httpCode == 404) {
+            return VtodoApiException(
+                404,
+                "This server does not support Google sign-in yet. Update it, or paste an API token.",
+            )
+        }
+        return error
     }
 
     private suspend fun call(request: Request): String = withContext(Dispatchers.IO) {

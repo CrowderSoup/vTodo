@@ -83,6 +83,30 @@ class VtodoRepository(
         }
     }
 
+    suspend fun signInWithGoogle(
+        baseUrl: String,
+        requestIdToken: suspend (serverClientId: String) -> String,
+    ): Result<Unit> {
+        val normalized = try {
+            normalizeBaseUrl(baseUrl)
+        } catch (e: IllegalArgumentException) {
+            return Result.failure(e)
+        }
+        return try {
+            val clientId = api.fetchGoogleClientId(normalized)
+            val idToken = requestIdToken(clientId)
+            val token = api.exchangeGoogleIdToken(normalized, idToken)
+            val session = Session(normalized, token)
+            api.fetchStatuses(session)
+            sessionStore.save(session)
+            sync()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun sync(): Result<Unit> {
         val session = sessionStore.current()
             ?: return Result.failure(IllegalStateException("Sign in first."))
