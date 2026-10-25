@@ -7,6 +7,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -125,15 +127,15 @@ class VtodoApi(
     suspend fun createTask(session: Session, body: TaskBody) {
         call(
             request(session, "/api/v1/tasks/")
-                .post(taskPayload(body).toString().toRequestBody(jsonMedia))
+                .post(taskPayload(body, null).toString().toRequestBody(jsonMedia))
                 .build(),
         )
     }
 
-    suspend fun patchTask(session: Session, taskId: Long, body: TaskBody) {
+    suspend fun patchTask(session: Session, taskId: Long, changes: JsonObject) {
         call(
             request(session, "/api/v1/tasks/$taskId/")
-                .patch(taskPayload(body).toString().toRequestBody(jsonMedia))
+                .patch(changes.toString().toRequestBody(jsonMedia))
                 .build(),
         )
     }
@@ -197,17 +199,6 @@ class VtodoApi(
         }
     }
 
-    private fun taskPayload(body: TaskBody) = buildJsonObject {
-        put("title", body.title)
-        put("notes", body.notes)
-        if (body.dueDate == null) put("due_date", JsonNull) else put("due_date", body.dueDate)
-        val dueTime = if (body.dueDate == null) null else body.dueTime
-        if (dueTime == null) put("due_time", JsonNull) else put("due_time", dueTime)
-        put("tags", buildJsonArray { body.tags.forEach { add(it) } })
-        if (body.recurrenceDays == null) put("recurrence_days", JsonNull) else put("recurrence_days", body.recurrenceDays)
-        put("recurrence_from", body.recurrenceFrom)
-    }
-
     private fun httpError(code: Int, body: String): String {
         val detail = runCatching { json.decodeFromString<ErrorBody>(body).detail }
             .getOrNull()
@@ -218,4 +209,24 @@ class VtodoApi(
             else -> "The server returned $code."
         }
     }
+}
+
+/**
+ * The JSON for a task write. With [before], only the fields that differ from
+ * it are included, so a PATCH from an edit started on an older copy of the
+ * task leaves alone whatever someone changed on the website since.
+ */
+internal fun taskPayload(after: TaskBody, before: TaskBody?) = buildJsonObject {
+    fun changed(pick: (TaskBody) -> Any?) = before == null || pick(before) != pick(after)
+    val dueTime = if (after.dueDate == null) null else after.dueTime
+    val beforeTime = before?.let { if (it.dueDate == null) null else it.dueTime }
+    if (changed { it.title }) put("title", after.title)
+    if (changed { it.notes }) put("notes", after.notes)
+    if (changed { it.dueDate }) put("due_date", after.dueDate?.let { JsonPrimitive(it) } ?: JsonNull)
+    if (before == null || beforeTime != dueTime) put("due_time", dueTime?.let { JsonPrimitive(it) } ?: JsonNull)
+    if (changed { it.tags }) put("tags", buildJsonArray { after.tags.forEach { add(it) } })
+    if (changed { it.recurrenceDays }) {
+        put("recurrence_days", after.recurrenceDays?.let { JsonPrimitive(it) } ?: JsonNull)
+    }
+    if (changed { it.recurrenceFrom }) put("recurrence_from", after.recurrenceFrom)
 }
