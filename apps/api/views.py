@@ -24,7 +24,7 @@ from apps.accounts.google_accounts import (
     sign_in_with_google_id_token,
 )
 from apps.tasks.models import Task, TaskComment, TaskStatus
-from apps.tasks.selectors import InvalidStatusError, move_task, visible_tasks_qs
+from apps.tasks.selectors import InvalidStatusError, default_status_slug, move_task, visible_tasks_qs
 
 from .serializers import TaskCommentSerializer, TaskSerializer, TaskStatusSerializer
 
@@ -85,7 +85,10 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         order = Task.objects.filter(user=self.request.user).count()
-        serializer.save(user=self.request.user, order=order)
+        extra = {}
+        if "status" not in serializer.validated_data:
+            extra["status"] = default_status_slug(self.request.user)
+        serializer.save(user=self.request.user, order=order, **extra)
 
     def perform_update(self, serializer):
         # A status change has to go through move_task so completing a task

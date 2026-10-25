@@ -260,3 +260,45 @@ def test_status_list_scoped_to_user(api_client_for):
     slugs = {s["slug"] for s in response.data}
     assert "review" in slugs
     assert "others-status" not in slugs
+
+
+@pytest.mark.django_db
+def test_task_create_without_status_uses_users_default_status(api_client_for):
+    from apps.tasks.models import TaskStatus
+
+    user = User.objects.create_user()
+    user.default_status = TaskStatus.objects.get(user=user, slug="in_progress")
+    user.save(update_fields=["default_status"])
+    client = api_client_for(user)
+
+    response = client.post(reverse("task-list"), {"title": "From the phone"}, format="json")
+
+    assert response.status_code == 201
+    assert response.data["status"] == "in_progress"
+
+
+@pytest.mark.django_db
+def test_task_create_without_status_or_default_uses_first_status(api_client_for):
+    from apps.tasks.models import TaskStatus
+
+    user = User.objects.create_user()
+    TaskStatus.objects.filter(user=user).delete()
+    TaskStatus.objects.create(user=user, name="Inbox", slug="inbox", order=0)
+    TaskStatus.objects.create(user=user, name="Shipped", slug="shipped", order=1, is_done=True)
+    client = api_client_for(user)
+
+    response = client.post(reverse("task-list"), {"title": "No todo column"}, format="json")
+
+    assert response.status_code == 201
+    assert response.data["status"] == "inbox"
+
+
+@pytest.mark.django_db
+def test_task_create_keeps_an_explicit_status(api_client_for):
+    user = User.objects.create_user()
+    client = api_client_for(user)
+
+    response = client.post(reverse("task-list"), {"title": "Explicit", "status": "done"}, format="json")
+
+    assert response.status_code == 201
+    assert response.data["status"] == "done"
