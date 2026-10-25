@@ -5,10 +5,12 @@ import com.crowdersoup.vtodo.today.StatusRecord
 import com.crowdersoup.vtodo.today.TaskRecord
 import com.crowdersoup.vtodo.today.TodayTask
 import com.crowdersoup.vtodo.today.TodayTasks
+import com.crowdersoup.vtodo.today.addTags
 import com.crowdersoup.vtodo.today.dueLabel
 import com.crowdersoup.vtodo.today.formatDueTime
 import com.crowdersoup.vtodo.today.normalizeRecurrenceFrom
 import com.crowdersoup.vtodo.today.normalizeTags
+import com.crowdersoup.vtodo.today.tagSuggestions
 import com.crowdersoup.vtodo.today.openDateLabel
 import com.crowdersoup.vtodo.today.parseDueInput
 import com.crowdersoup.vtodo.today.parseRecurrenceDays
@@ -90,6 +92,28 @@ class TodayTasksTest {
         assertEquals(listOf("home", "errands", "a", "b"), normalizeTags(listOf(" home ", "", "errands", "home", "a, b")))
         assertEquals(0xFF336699L, statusColorArgb(" #336699 "))
         assertEquals(null, statusColorArgb("blue"))
+    }
+
+    @Test
+    fun tagSuggestionsStayShortAndFollowWhatWasTyped() {
+        val known = listOf("home", "errands", "Health", "hobby", "h1", "h2", "h3", "h4", "h5", "h6")
+
+        assertEquals(
+            listOf("home", "errands", "Health", "hobby", "h1", "h2", "h3", "h4"),
+            tagSuggestions(known, emptyList(), ""),
+        )
+        assertEquals(
+            listOf("home", "hobby", "h1", "h2", "h3", "h4", "h5", "h6"),
+            tagSuggestions(known, listOf("Health"), "h"),
+        )
+        assertEquals(listOf("Health"), tagSuggestions(known, emptyList(), "HEALTH"))
+        assertEquals(emptyList<String>(), tagSuggestions(known, listOf("home"), "zzz"))
+    }
+
+    @Test
+    fun addTagsSkipsBlanksAndCaseDuplicates() {
+        assertEquals(listOf("home", "errands"), addTags(listOf("home"), " errands, home, Home "))
+        assertEquals(listOf("home"), addTags(listOf("home"), " "))
     }
 
     @Test

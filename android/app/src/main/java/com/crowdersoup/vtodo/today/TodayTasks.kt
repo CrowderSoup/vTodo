@@ -214,3 +214,34 @@ fun normalizeTags(tags: List<String>): List<String> {
     }
     return seen.toList()
 }
+
+fun addTags(current: List<String>, raw: String): List<String> {
+    val additions = normalizeTags(listOf(raw))
+    if (additions.isEmpty()) return current
+    val taken = current.mapTo(HashSet()) { it.lowercase() }
+    val next = current.toMutableList()
+    additions.forEach { tag ->
+        if (taken.add(tag.lowercase())) next.add(tag)
+    }
+    return next
+}
+
+fun tagSuggestions(
+    known: List<String>,
+    selected: List<String>,
+    query: String,
+    limit: Int = 8,
+): List<String> {
+    val taken = selected.mapTo(HashSet()) { it.trim().lowercase() }
+    val needle = query.trim().lowercase()
+    val seen = HashSet<String>()
+    val matches = ArrayList<String>(limit)
+    for (tag in known) {
+        val lower = tag.lowercase()
+        if (lower in taken || !seen.add(lower)) continue
+        if (needle.isNotEmpty() && needle !in lower) continue
+        matches.add(tag)
+        if (matches.size == limit) break
+    }
+    return matches
+}

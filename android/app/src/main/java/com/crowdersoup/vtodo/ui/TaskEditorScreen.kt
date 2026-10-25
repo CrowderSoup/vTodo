@@ -19,12 +19,15 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -37,6 +40,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -45,7 +49,9 @@ import androidx.compose.ui.unit.dp
 import com.crowdersoup.vtodo.R
 import com.crowdersoup.vtodo.today.RECURRENCE_FROM_COMPLETION
 import com.crowdersoup.vtodo.today.RECURRENCE_FROM_DUE_DATE
+import com.crowdersoup.vtodo.today.addTags
 import com.crowdersoup.vtodo.today.normalizeTags
+import com.crowdersoup.vtodo.today.tagSuggestions
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -168,7 +174,7 @@ fun TaskEditorScreen(state: AppUiState, viewModel: AppViewModel) {
             )
             Button(
                 onClick = {
-                    val next = normalizeTags(tags + pendingTag.split(','))
+                    val next = addTags(tags, pendingTag)
                     pendingTag = ""
                     if (creating) {
                         viewModel.updateNewTask(tags = next)
@@ -195,7 +201,7 @@ fun TaskEditorScreen(state: AppUiState, viewModel: AppViewModel) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun TagEditor(
     tags: List<String>,
@@ -205,10 +211,12 @@ private fun TagEditor(
     onTags: (List<String>) -> Unit,
 ) {
     fun commit(raw: String) {
-        val next = normalizeTags(tags + raw.split(','))
+        val next = addTags(tags, raw)
         if (next != tags) onTags(next)
         onPending("")
     }
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val suggestions = tagSuggestions(known, tags, pending)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SectionLabel(stringResource(R.string.tags))
         if (tags.isNotEmpty()) {
@@ -226,25 +234,38 @@ private fun TagEditor(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        OutlinedTextField(
-            value = pending,
-            onValueChange = { value ->
-                if (value.endsWith(",") || value.endsWith("\n")) commit(value.dropLast(1)) else onPending(value)
-            },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.add_tag)) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { commit(pending) }),
-        )
-        val suggestions = known.filter { it !in tags }
-        if (suggestions.isNotEmpty()) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+        ExposedDropdownMenuBox(
+            expanded = expanded && suggestions.isNotEmpty(),
+            onExpandedChange = { expanded = it },
+        ) {
+            OutlinedTextField(
+                value = pending,
+                onValueChange = { value ->
+                    expanded = true
+                    if (value.endsWith(",") || value.endsWith("\n")) commit(value.dropLast(1)) else onPending(value)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
+                    .onFocusChanged { expanded = it.isFocused },
+                label = { Text(stringResource(R.string.add_tag)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = {
+                    commit(pending)
+                    expanded = false
+                }),
+            )
+            ExposedDropdownMenu(
+                expanded = expanded && suggestions.isNotEmpty(),
+                onDismissRequest = { expanded = false },
             ) {
                 suggestions.forEach { tag ->
-                    SuggestionChip(onClick = { onTags(normalizeTags(tags + tag)) }, label = { Text(tag) })
+                    DropdownMenuItem(
+                        text = { Text(tag) },
+                        onClick = { commit(tag) },
+                        contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
+                    )
                 }
             }
         }
