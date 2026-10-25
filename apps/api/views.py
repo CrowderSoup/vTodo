@@ -11,6 +11,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.google_accounts import (
@@ -190,6 +191,14 @@ class GoogleSignInView(APIView):
 
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_scope = "google_sign_in"
+
+    def get_throttles(self):
+        # The GET only reads a setting. The POST makes an outbound call to
+        # Google and can create an account, so that is what gets limited.
+        if self.request.method == "POST":
+            return [ScopedRateThrottle()]
+        return []
 
     @extend_schema(
         responses={200: {"type": "object", "properties": {"client_id": {"type": "string"}}}},

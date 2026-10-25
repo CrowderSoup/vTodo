@@ -1,12 +1,22 @@
 from datetime import timedelta
 
 import pytest
+from django.core.cache import cache
 from django.utils import timezone
 from oauth2_provider.models import get_access_token_model, get_application_model
 from rest_framework.test import APIClient
 
 Application = get_application_model()
 AccessToken = get_access_token_model()
+
+
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    # Throttle counters and the Google cert cache live in the cache, which
+    # the test settings keep in memory for the whole run.
+    cache.clear()
+    yield
+    cache.clear()
 
 
 @pytest.fixture

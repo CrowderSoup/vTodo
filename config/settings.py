@@ -103,6 +103,14 @@ REST_FRAMEWORK = {
         "apps.api.permissions.OAuthTokenHasTasksScope",
     ],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Only the anonymous Google sign-in exchange is throttled (see
+    # apps.api.views.GoogleSignInView). kamal-proxy is the one proxy in front
+    # of the app, so the client is the last X-Forwarded-For hop; without this
+    # DRF keys on the whole header, which the client controls.
+    "NUM_PROXIES": env.int("DRF_NUM_PROXIES", default=1),
+    "DEFAULT_THROTTLE_RATES": {
+        "google_sign_in": env("GOOGLE_SIGN_IN_RATE", default="20/hour"),
+    },
 }
 
 SPECTACULAR_SETTINGS = {
