@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -251,7 +252,7 @@ class VtodoApi(
 
     private inline fun <reified T> decodeElement(element: JsonElement): T {
         try {
-            return json.decodeFromJsonElement(element)
+            return json.decodeFromJsonElement(serializer<T>(), element)
         } catch (_: SerializationException) {
             throw VtodoApiException(null, "The server sent a response the app didn't understand.")
         } catch (_: IllegalArgumentException) {
