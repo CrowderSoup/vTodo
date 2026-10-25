@@ -106,7 +106,7 @@ cd android
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Open the app once, enter the server URL, and sign in with Google. Pasting an API token still works. Then long-press the home screen and add the vtodo Today widget. The widget refreshes when you open the app, when you check a task off, and about every 30 minutes. `http://` server URLs are allowed so a machine on your LAN works. A self-signed HTTPS certificate is not.
+Open the app once, enter the server URL, and sign in with Google. Pasting an API token still works. Then long-press the home screen and add the vtodo Today widget. The widget refreshes when you open the app, when you check a task off, and about every 30 minutes. `http://` server URLs only work for a machine on your local network (a private or Tailscale address, `localhost`, a name without a dot, or a `.local`, `.lan`, `.home.arpa`, or `.internal` name), because the API token goes in every request. A server on the internet needs `https://`. A self-signed HTTPS certificate is not.
 
 Google sign-in needs an Android OAuth client next to the web client, with package name `com.crowdersoup.vtodo` and the SHA-1 of the key that signed the build. The server you type in has to be running this version, because the phone asks it for the Google client id and then trades the ID token for an API token.
 

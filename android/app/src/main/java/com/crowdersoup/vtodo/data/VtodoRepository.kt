@@ -40,6 +40,8 @@ class VtodoRepository(
     private val sessionStore: SessionStore,
     // Shown on the website under Settings → API → Signed-in devices.
     private val deviceName: String = "",
+    // Queues a background sync for when the phone is back online.
+    private val requestSync: () -> Unit = {},
 ) {
     private val mutex = Mutex()
 
@@ -132,7 +134,7 @@ class VtodoRepository(
         return attempt {
             withSession { session ->
                 api.createTask(session, body)
-                pull(session)
+                refreshAfterWrite(session)
             }
         }
     }
@@ -149,7 +151,7 @@ class VtodoRepository(
         return attempt {
             withSession { session ->
                 if (changes.isNotEmpty()) api.patchTask(session, taskId, changes)
-                pull(session)
+                refreshAfterWrite(session)
             }
         }
     }
@@ -157,7 +159,7 @@ class VtodoRepository(
     suspend fun deleteTask(taskId: Long): Result<Unit> = attempt {
         withSession { session ->
             api.deleteTask(session, taskId)
-            pull(session)
+            refreshAfterWrite(session)
         }
     }
 
@@ -186,7 +188,7 @@ class VtodoRepository(
                     database.taskDao().updateStatus(taskId, status.slug, completedAt)
                 }
                 api.moveTask(session, taskId, status.slug)
-                pull(session)
+                refreshAfterWrite(session)
             }
         }
         if (result.isFailure) restore(taskId, previous)
@@ -224,10 +226,25 @@ class VtodoRepository(
             block(session)
         } catch (e: VtodoApiException) {
             if (e.httpCode == 401 && sessionStore.current() == session) {
-                clearLocal()
+                clearLocal(SIGNED_OUT_BY_SERVER)
                 throw VtodoApiException(401, SIGNED_OUT_BY_SERVER)
             }
             throw e
+        }
+    }
+
+    /**
+     * The write already reached the server. If reading the lists back fails
+     * (the connection dropped in between), reporting the write as failed
+     * would undo a move the server kept, or get a new task created twice on
+     * retry. The phone's copy catches up on the queued sync instead.
+     */
+    private suspend fun refreshAfterWrite(session: Session) {
+        try {
+            pull(session)
+        } catch (e: VtodoApiException) {
+            if (e.httpCode == 401) throw e
+            requestSync()
         }
     }
 
@@ -242,8 +259,8 @@ class VtodoRepository(
     }
 
     /** Callers hold [mutex]. */
-    private suspend fun clearLocal() {
-        sessionStore.clear()
+    private suspend fun clearLocal(reason: String? = null) {
+        sessionStore.clear(reason)
         database.withTransaction {
             database.taskDao().clear()
             database.statusDao().clear()

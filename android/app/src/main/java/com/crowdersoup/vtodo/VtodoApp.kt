@@ -44,7 +44,13 @@ class AppGraph(context: Application) {
         VtodoDatabase::class.java,
         "vtodo.db",
     ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
-    val repository = VtodoRepository(database, VtodoApi(), sessionStore, deviceName())
+    val repository = VtodoRepository(
+        database,
+        VtodoApi(),
+        sessionStore,
+        deviceName(),
+        requestSync = { SyncScheduler.enqueueSoon(context) },
+    )
 }
 
 private fun deviceName(): String {
