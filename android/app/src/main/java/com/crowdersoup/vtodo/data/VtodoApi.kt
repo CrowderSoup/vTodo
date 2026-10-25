@@ -6,9 +6,13 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -86,14 +90,40 @@ class VtodoApi(
     private val json = Json { ignoreUnknownKeys = true }
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
 
-    suspend fun fetchTasks(session: Session): List<TaskDto> {
-        val body = call(request(session, "/api/v1/tasks/").get().build())
-        return decode(body)
-    }
+    /** Only open tasks: the app never shows archived or completed ones. */
+    suspend fun fetchTasks(session: Session): List<TaskDto> = fetchList(session, "/api/v1/tasks/?open=true")
 
-    suspend fun fetchStatuses(session: Session): List<StatusDto> {
-        val body = call(request(session, "/api/v1/statuses/").get().build())
-        return decode(body)
+    suspend fun fetchStatuses(session: Session): List<StatusDto> = fetchList(session, "/api/v1/statuses/")
+
+    /**
+     * Reads a list endpoint whether the server returns a plain array (today)
+     * or DRF's paginated {"results": [...], "next": url} shape, so turning on
+     * pagination on the server doesn't break the app.
+     */
+    private suspend inline fun <reified T> fetchList(session: Session, path: String): List<T> {
+        val items = ArrayList<T>()
+        var url: String? = session.baseUrl + path
+        var pages = 0
+        while (url != null) {
+            if (++pages > MAX_PAGES) {
+                throw VtodoApiException(null, "The server sent more pages than the app expected.")
+            }
+            val page = decode<JsonElement>(call(authorized(session, url).get().build()))
+            when (page) {
+                is JsonArray -> {
+                    items += decodeElement<List<T>>(page)
+                    url = null
+                }
+                is JsonObject -> {
+                    val results = page["results"]
+                        ?: throw VtodoApiException(null, "The server sent a response the app didn't understand.")
+                    items += decodeElement<List<T>>(results)
+                    url = nextPageUrl(session.baseUrl, page["next"])
+                }
+                else -> throw VtodoApiException(null, "The server sent a response the app didn't understand.")
+            }
+        }
+        return items
     }
 
     suspend fun fetchGoogleClientId(baseUrl: String): String {
@@ -167,7 +197,14 @@ class VtodoApi(
     }
 
     private fun request(session: Session, path: String): Request.Builder {
-        return anonymous(session.baseUrl, path)
+        return authorized(session, session.baseUrl + path)
+    }
+
+    private fun authorized(session: Session, url: String): Request.Builder {
+        return Request.Builder()
+            .url(url)
+            .header("Accept", "application/json")
+            .header("User-Agent", "vtodo-android")
             .header("Authorization", "Token ${session.token}")
     }
 
@@ -212,6 +249,16 @@ class VtodoApi(
         }
     }
 
+    private inline fun <reified T> decodeElement(element: JsonElement): T {
+        try {
+            return json.decodeFromJsonElement(element)
+        } catch (_: SerializationException) {
+            throw VtodoApiException(null, "The server sent a response the app didn't understand.")
+        } catch (_: IllegalArgumentException) {
+            throw VtodoApiException(null, "The server sent a response the app didn't understand.")
+        }
+    }
+
     private fun httpError(code: Int, body: String): String {
         val detail = runCatching { json.decodeFromString<ErrorBody>(body).detail }
             .getOrNull()
@@ -242,4 +289,20 @@ internal fun taskPayload(after: TaskBody, before: TaskBody?) = buildJsonObject {
         put("recurrence_days", after.recurrenceDays?.let { JsonPrimitive(it) } ?: JsonNull)
     }
     if (changed { it.recurrenceFrom }) put("recurrence_from", after.recurrenceFrom)
+}
+
+private const val MAX_PAGES = 100
+
+/**
+ * The next page to fetch, or null. A next link is followed only when it
+ * points back at the signed-in server, because the request carries the
+ * API token.
+ */
+internal fun nextPageUrl(baseUrl: String, next: JsonElement?): String? {
+    if (next == null || next is JsonNull) return null
+    val url = next.jsonPrimitive.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
+    if (url != baseUrl && !url.startsWith("$baseUrl/")) {
+        throw VtodoApiException(null, "The server pointed the next page at a different address.")
+    }
+    return url
 }

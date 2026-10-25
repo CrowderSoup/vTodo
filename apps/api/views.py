@@ -3,7 +3,7 @@ from urllib.parse import urlsplit
 from django.conf import settings
 from django.db import transaction
 from django.urls import reverse
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication, TokenHasScope
 from oauth2_provider.oauth2_validators import validate_resource_as_url_prefix
 from rest_framework import mixins, status, viewsets
@@ -25,7 +25,13 @@ from apps.accounts.google_accounts import (
     sign_in_with_google_id_token,
 )
 from apps.tasks.models import Task, TaskComment, TaskStatus
-from apps.tasks.selectors import InvalidStatusError, default_status_slug, move_task, visible_tasks_qs
+from apps.tasks.selectors import (
+    InvalidStatusError,
+    default_status_slug,
+    move_task,
+    visible_statuses_qs,
+    visible_tasks_qs,
+)
 
 from .models import DeviceToken
 from .serializers import TaskCommentSerializer, TaskSerializer, TaskStatusSerializer
@@ -66,12 +72,29 @@ class TaskStatusViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@extend_schema_view(
+    list=extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "open",
+                bool,
+                description=(
+                    "Only tasks still to do: not archived, not completed, and not in a "
+                    "done status. The Android app syncs just these."
+                ),
+            ),
+        ],
+    ),
+)
 class TaskViewSet(viewsets.ModelViewSet):
     serializer_class = TaskSerializer
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         qs = visible_tasks_qs(self.request.user)
+        if self.request.query_params.get("open") in ("1", "true"):
+            done_slugs = visible_statuses_qs(self.request.user).filter(is_done=True).values("slug")
+            qs = qs.filter(is_archived=False, completed_at__isnull=True).exclude(status__in=done_slugs)
         status_slug = self.request.query_params.get("status")
         if status_slug:
             qs = qs.filter(status=status_slug)
