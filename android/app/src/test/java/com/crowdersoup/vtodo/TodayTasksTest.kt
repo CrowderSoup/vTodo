@@ -5,10 +5,16 @@ import com.crowdersoup.vtodo.today.StatusRecord
 import com.crowdersoup.vtodo.today.TaskRecord
 import com.crowdersoup.vtodo.today.TodayTask
 import com.crowdersoup.vtodo.today.TodayTasks
+import com.crowdersoup.vtodo.today.addTags
 import com.crowdersoup.vtodo.today.dueLabel
+import com.crowdersoup.vtodo.today.formatDueTime
+import com.crowdersoup.vtodo.today.normalizeRecurrenceFrom
 import com.crowdersoup.vtodo.today.normalizeTags
+import com.crowdersoup.vtodo.today.tagSuggestions
 import com.crowdersoup.vtodo.today.openDateLabel
 import com.crowdersoup.vtodo.today.parseDueInput
+import com.crowdersoup.vtodo.today.parseRecurrenceDays
+import com.crowdersoup.vtodo.today.recurrenceLabel
 import com.crowdersoup.vtodo.today.statusColorArgb
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -89,10 +95,80 @@ class TodayTasksTest {
     }
 
     @Test
+    fun tagSuggestionsStayShortAndFollowWhatWasTyped() {
+        val known = listOf("home", "errands", "Health", "hobby", "h1", "h2", "h3", "h4", "h5", "h6")
+
+        assertEquals(
+            listOf("home", "errands", "Health", "hobby", "h1", "h2", "h3", "h4"),
+            tagSuggestions(known, emptyList(), ""),
+        )
+        assertEquals(
+            listOf("home", "hobby", "h1", "h2", "h3", "h4", "h5", "h6"),
+            tagSuggestions(known, listOf("Health"), "h"),
+        )
+        assertEquals(listOf("Health"), tagSuggestions(known, emptyList(), "HEALTH"))
+        assertEquals(emptyList<String>(), tagSuggestions(known, listOf("home"), "zzz"))
+    }
+
+    @Test
+    fun addTagsSkipsBlanksAndCaseDuplicates() {
+        assertEquals(listOf("home", "errands"), addTags(listOf("home"), " errands, home, Home "))
+        assertEquals(listOf("home"), addTags(listOf("home"), " "))
+    }
+
+    @Test
     fun parseDueInputAcceptsBlankAndIsoDates() {
         assertEquals(null, parseDueInput("  ").getOrThrow())
         assertEquals(LocalDate.of(2026, 10, 24), parseDueInput("2026-10-24").getOrThrow())
         assertEquals(true, parseDueInput("Oct 24").isFailure)
+    }
+
+    @Test
+    fun recurrenceLabelUsesDayOrDays() {
+        assertEquals("Repeats every 1 day", recurrenceLabel(1))
+        assertEquals("Repeats every 7 days", recurrenceLabel(7))
+    }
+
+    @Test
+    fun parseRecurrenceDaysAcceptsBlankAndWholeDays() {
+        assertEquals(null, parseRecurrenceDays(" ").getOrThrow())
+        assertEquals(7, parseRecurrenceDays(" 7 ").getOrThrow())
+        assertEquals(32_767, parseRecurrenceDays("32767").getOrThrow())
+        assertEquals(true, parseRecurrenceDays("0").isFailure)
+        assertEquals(true, parseRecurrenceDays("weekly").isFailure)
+        assertEquals(true, parseRecurrenceDays("32768").isFailure)
+    }
+
+    @Test
+    fun formatDueTimeUsesHourAndMinute() {
+        assertEquals("09:30", formatDueTime(LocalTime.of(9, 30, 15)))
+        assertEquals("00:05", formatDueTime(LocalTime.of(0, 5)))
+    }
+
+    @Test
+    fun normalizeRecurrenceFromKeepsTheTwoServerValues() {
+        assertEquals("due_date", normalizeRecurrenceFrom("due_date"))
+        assertEquals("completion", normalizeRecurrenceFrom("completion"))
+        assertEquals("completion", normalizeRecurrenceFrom("next_tuesday"))
+    }
+
+    @Test
+    fun selectKeepsRecurrenceOnOpenAndTodayTasks() {
+        val task = record(
+            1,
+            "Weekly",
+            dueDate = "2026-10-23",
+            recurrenceDays = 7,
+            recurrenceFrom = "due_date",
+        )
+        val statuses = listOf(StatusRecord("todo", "To Do", 0, false))
+
+        val todayTask = TodayTasks.select(listOf(task), statuses, today).single()
+        val openTask = OpenTasks.select(listOf(task), statuses).single()
+
+        assertEquals(7, todayTask.recurrenceDays)
+        assertEquals(7, openTask.recurrenceDays)
+        assertEquals("due_date", openTask.recurrenceFrom)
     }
 
     private fun record(
@@ -105,5 +181,19 @@ class TodayTasksTest {
         completedAt: String? = null,
         sortOrder: Int = 0,
         tags: List<String> = emptyList(),
-    ) = TaskRecord(id, title, status, dueDate, dueTime, isArchived, completedAt, sortOrder, tags = tags)
+        recurrenceDays: Int? = null,
+        recurrenceFrom: String = "completion",
+    ) = TaskRecord(
+        id,
+        title,
+        status,
+        dueDate,
+        dueTime,
+        isArchived,
+        completedAt,
+        sortOrder,
+        tags = tags,
+        recurrenceDays = recurrenceDays,
+        recurrenceFrom = recurrenceFrom,
+    )
 }

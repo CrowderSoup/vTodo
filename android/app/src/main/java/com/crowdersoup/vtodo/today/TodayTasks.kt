@@ -5,6 +5,9 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+const val RECURRENCE_FROM_COMPLETION = "completion"
+const val RECURRENCE_FROM_DUE_DATE = "due_date"
+
 data class TaskRecord(
     val id: Long,
     val title: String,
@@ -16,6 +19,8 @@ data class TaskRecord(
     val sortOrder: Int,
     val notes: String = "",
     val tags: List<String> = emptyList(),
+    val recurrenceDays: Int? = null,
+    val recurrenceFrom: String = RECURRENCE_FROM_COMPLETION,
 )
 
 data class StatusRecord(
@@ -37,6 +42,8 @@ data class OpenTask(
     val sortOrder: Int,
     val statusColor: String = "",
     val tags: List<String> = emptyList(),
+    val recurrenceDays: Int? = null,
+    val recurrenceFrom: String = RECURRENCE_FROM_COMPLETION,
 )
 
 data class TodayTask(
@@ -48,6 +55,7 @@ data class TodayTask(
     val statusName: String = "",
     val statusColor: String = "",
     val tags: List<String> = emptyList(),
+    val recurrenceDays: Int? = null,
 )
 
 object TodayTasks {
@@ -87,6 +95,7 @@ object TodayTasks {
             statusName = status?.name?.takeIf { it.isNotBlank() } ?: task.status,
             statusColor = status?.color.orEmpty(),
             tags = task.tags,
+            recurrenceDays = task.recurrenceDays?.takeIf { it >= 1 },
         )
     }
 }
@@ -116,6 +125,8 @@ object OpenTasks {
             sortOrder = task.sortOrder,
             statusColor = status?.color.orEmpty(),
             tags = task.tags,
+            recurrenceDays = task.recurrenceDays?.takeIf { it >= 1 },
+            recurrenceFrom = normalizeRecurrenceFrom(task.recurrenceFrom),
         )
     }
 
@@ -168,6 +179,31 @@ fun statusColorArgb(hex: String): Long? {
     return match.groupValues[1].toLong(16) or 0xFF000000L
 }
 
+fun normalizeRecurrenceFrom(value: String): String {
+    return if (value == RECURRENCE_FROM_DUE_DATE) RECURRENCE_FROM_DUE_DATE else RECURRENCE_FROM_COMPLETION
+}
+
+fun parseRecurrenceDays(text: String): Result<Int?> {
+    val trimmed = text.trim()
+    if (trimmed.isEmpty()) return Result.success(null)
+    val days = trimmed.toIntOrNull()
+    if (days == null || days !in 1..32_767) {
+        return Result.failure(IllegalArgumentException("Use a number of days, like 7."))
+    }
+    return Result.success(days)
+}
+
+fun formatDueTime(time: LocalTime): String {
+    val hour = time.hour.toString().padStart(2, '0')
+    val minute = time.minute.toString().padStart(2, '0')
+    return "$hour:$minute"
+}
+
+fun recurrenceLabel(days: Int): String {
+    val unit = if (days == 1) "day" else "days"
+    return "Repeats every $days $unit"
+}
+
 fun normalizeTags(tags: List<String>): List<String> {
     val seen = LinkedHashSet<String>()
     tags.forEach { tag ->
@@ -177,4 +213,35 @@ fun normalizeTags(tags: List<String>): List<String> {
         }
     }
     return seen.toList()
+}
+
+fun addTags(current: List<String>, raw: String): List<String> {
+    val additions = normalizeTags(listOf(raw))
+    if (additions.isEmpty()) return current
+    val taken = current.mapTo(HashSet()) { it.lowercase() }
+    val next = current.toMutableList()
+    additions.forEach { tag ->
+        if (taken.add(tag.lowercase())) next.add(tag)
+    }
+    return next
+}
+
+fun tagSuggestions(
+    known: List<String>,
+    selected: List<String>,
+    query: String,
+    limit: Int = 8,
+): List<String> {
+    val taken = selected.mapTo(HashSet()) { it.trim().lowercase() }
+    val needle = query.trim().lowercase()
+    val seen = HashSet<String>()
+    val matches = ArrayList<String>(limit)
+    for (tag in known) {
+        val lower = tag.lowercase()
+        if (lower in taken || !seen.add(lower)) continue
+        if (needle.isNotEmpty() && needle !in lower) continue
+        matches.add(tag)
+        if (matches.size == limit) break
+    }
+    return matches
 }
