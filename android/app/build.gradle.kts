@@ -12,6 +12,9 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+fun releaseSecret(name: String): String? =
+    providers.gradleProperty(name).orElse(providers.environmentVariable(name)).orNull?.takeIf { it.isNotBlank() }
+
 android {
     namespace = "com.crowdersoup.vtodo"
     compileSdk = 37
@@ -31,11 +34,23 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        // The committed debug key is public, so nothing built with it should be
+        // handed out. Release builds are signed with a key that lives only in
+        // CI secrets or ~/.gradle/gradle.properties (see README, Android).
+        if (releaseSecret("VTODO_RELEASE_KEYSTORE") != null) {
+            create("release") {
+                storeFile = file(releaseSecret("VTODO_RELEASE_KEYSTORE")!!)
+                storePassword = releaseSecret("VTODO_RELEASE_KEYSTORE_PASSWORD")
+                keyAlias = releaseSecret("VTODO_RELEASE_KEY_ALIAS")
+                keyPassword = releaseSecret("VTODO_RELEASE_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
