@@ -38,6 +38,8 @@ class VtodoRepository(
     private val database: VtodoDatabase,
     private val api: VtodoApi,
     private val sessionStore: SessionStore,
+    // Shown on the website under Settings → API → Signed-in devices.
+    private val deviceName: String = "",
 ) {
     private val mutex = Mutex()
 
@@ -108,7 +110,7 @@ class VtodoRepository(
         return try {
             val clientId = api.fetchGoogleClientId(normalized)
             val idToken = requestIdToken(clientId)
-            val token = api.exchangeGoogleIdToken(normalized, idToken)
+            val token = api.exchangeGoogleIdToken(normalized, idToken, deviceName)
             val session = Session(normalized, token)
             api.fetchStatuses(session)
             sessionStore.save(session)
@@ -120,34 +122,18 @@ class VtodoRepository(
         }
     }
 
-    suspend fun sync(): Result<Unit> {
-        val session = sessionStore.current()
-            ?: return Result.failure(IllegalStateException("Sign in first."))
-        return try {
-            mutex.withLock { pull(session) }
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+    suspend fun sync(): Result<Unit> = attempt {
+        withSession { pull(it) }
     }
 
     suspend fun createTask(input: TaskWrite): Result<Unit> {
         val body = input.toBody()
             ?: return Result.failure(IllegalArgumentException("A title is required."))
-        val session = sessionStore.current()
-            ?: return Result.failure(IllegalStateException("Sign in first."))
-        return try {
-            mutex.withLock {
+        return attempt {
+            withSession { session ->
                 api.createTask(session, body)
                 pull(session)
             }
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
@@ -159,35 +145,19 @@ class VtodoRepository(
     suspend fun saveTask(taskId: Long, input: TaskWrite, baseline: TaskWrite): Result<Unit> {
         val body = input.toBody()
             ?: return Result.failure(IllegalArgumentException("A title is required."))
-        val session = sessionStore.current()
-            ?: return Result.failure(IllegalStateException("Sign in first."))
         val changes = taskPayload(body, baseline.toBody())
-        return try {
-            mutex.withLock {
+        return attempt {
+            withSession { session ->
                 if (changes.isNotEmpty()) api.patchTask(session, taskId, changes)
                 pull(session)
             }
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
-    suspend fun deleteTask(taskId: Long): Result<Unit> {
-        val session = sessionStore.current()
-            ?: return Result.failure(IllegalStateException("Sign in first."))
-        return try {
-            mutex.withLock {
-                api.deleteTask(session, taskId)
-                pull(session)
-            }
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Result.failure(e)
+    suspend fun deleteTask(taskId: Long): Result<Unit> = attempt {
+        withSession { session ->
+            api.deleteTask(session, taskId)
+            pull(session)
         }
     }
 
@@ -200,11 +170,9 @@ class VtodoRepository(
     }
 
     suspend fun move(taskId: Long, statusSlug: String): Result<Unit> {
-        val session = sessionStore.current()
-            ?: return Result.failure(IllegalStateException("Sign in first."))
         var previous: TaskEntity? = null
-        return try {
-            mutex.withLock {
+        val result = attempt {
+            withSession { session ->
                 val status = database.statusDao().all().firstOrNull { it.slug == statusSlug }
                     ?: throw IllegalStateException("That status is not on this phone yet. Refresh and try again.")
                 previous = database.taskDao().get(taskId)
@@ -220,22 +188,65 @@ class VtodoRepository(
                 api.moveTask(session, taskId, status.slug)
                 pull(session)
             }
-            Result.success(Unit)
+        }
+        if (result.isFailure) restore(taskId, previous)
+        return result
+    }
+
+    /**
+     * Clears the phone right away, then asks the server to revoke this
+     * phone's token. If that request fails (offline), the token stays valid
+     * until it is removed under Settings → API → Signed-in devices.
+     */
+    suspend fun signOut() {
+        val session = mutex.withLock {
+            sessionStore.current().also { clearLocal() }
+        } ?: return
+        try {
+            api.signOut(session)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Best effort; see above.
+        }
+    }
+
+    /**
+     * Runs [block] with the signed-in session, holding the same lock as
+     * [signOut]. Reading the session inside the lock means work queued behind
+     * a sign-out sees no session, instead of pulling the old account's tasks
+     * back into the cleared database. A 401 means the server no longer
+     * accepts this phone's token, so the phone signs itself out.
+     */
+    private suspend fun <T> withSession(block: suspend (Session) -> T): T = mutex.withLock {
+        val session = sessionStore.current() ?: throw IllegalStateException("Sign in first.")
+        try {
+            block(session)
+        } catch (e: VtodoApiException) {
+            if (e.httpCode == 401 && sessionStore.current() == session) {
+                clearLocal()
+                throw VtodoApiException(401, SIGNED_OUT_BY_SERVER)
+            }
+            throw e
+        }
+    }
+
+    private suspend fun <T> attempt(block: suspend () -> T): Result<T> {
+        return try {
+            Result.success(block())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            restore(taskId, previous)
             Result.failure(e)
         }
     }
 
-    suspend fun signOut() {
-        mutex.withLock {
-            sessionStore.clear()
-            database.withTransaction {
-                database.taskDao().clear()
-                database.statusDao().clear()
-            }
+    /** Callers hold [mutex]. */
+    private suspend fun clearLocal() {
+        sessionStore.clear()
+        database.withTransaction {
+            database.taskDao().clear()
+            database.statusDao().clear()
         }
     }
 
@@ -266,17 +277,15 @@ class VtodoRepository(
     }
 
     private suspend fun restore(taskId: Long, previous: TaskEntity?) {
-        val session = sessionStore.current()
-        if (session != null) {
-            try {
-                mutex.withLock { pull(session) }
-                return
-            } catch (_: Exception) {
-                // The next sync replaces the table from the server.
-            }
-        }
-        if (previous != null) {
+        if (sync().isSuccess) return
+        // Offline: put the row back by hand. The next sync replaces the table.
+        if (previous != null && sessionStore.current() != null) {
             database.taskDao().updateStatus(taskId, previous.status, previous.completedAt)
         }
+    }
+
+    private companion object {
+        const val SIGNED_OUT_BY_SERVER =
+            "The server signed this phone out. It may have been removed under Settings, API. Sign in again."
     }
 }

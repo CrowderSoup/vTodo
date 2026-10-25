@@ -118,6 +118,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         AppUiState(signedIn = graph.sessionStore.current() != null),
     )
 
+    init {
+        // The repository signs the phone out by itself when the server rejects
+        // the token, so the open task can belong to the old session.
+        viewModelScope.launch {
+            graph.sessionStore.session.collect { session ->
+                if (session == null) {
+                    screen.value = Screen.List
+                    draft.value = null
+                }
+            }
+        }
+    }
+
     fun signIn(baseUrl: String, token: String) {
         if (refreshing.value) return
         viewModelScope.launch {
