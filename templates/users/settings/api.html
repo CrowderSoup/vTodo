@@ -27,5 +27,18 @@
          hx-trigger="load">
     </div>
   </section>
+
+  <section class="settings-card settings-card--wide surface-panel">
+    <div>
+      <h2 class="card-title">Signed-in devices</h2>
+      <p class="card-subtitle">
+        Phones signed in to the Android app with Google. Each has its own token, so signing one out leaves the API token above and the other devices alone.
+      </p>
+    </div>
+
+    <div id="device-list">
+      {% include "users/_device_tokens.html" %}
+    </div>
+  </section>
 </div>
 {% endblock %}

@@ -18,4 +18,5 @@ urlpatterns = [
     path("saved-views/<int:pk>/delete/", views.SavedViewDeleteView.as_view(), name="saved-view-delete"),
     path("api-token/", views.ApiTokenView.as_view(), name="api-token"),
     path("api-token/regenerate/", views.ApiTokenRegenerateView.as_view(), name="api-token-regenerate"),
+    path("devices/<int:pk>/revoke/", views.DeviceTokenRevokeView.as_view(), name="device-revoke"),
 ]

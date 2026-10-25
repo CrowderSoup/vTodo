@@ -26,6 +26,7 @@ from apps.accounts.google_accounts import (
 from apps.tasks.models import Task, TaskComment, TaskStatus
 from apps.tasks.selectors import InvalidStatusError, default_status_slug, move_task, visible_tasks_qs
 
+from .models import DeviceToken
 from .serializers import TaskCommentSerializer, TaskSerializer, TaskStatusSerializer
 
 
@@ -203,13 +204,22 @@ class GoogleSignInView(APIView):
         return Response({"client_id": client_id})
 
     @extend_schema(
-        request={"application/json": {"type": "object", "properties": {"id_token": {"type": "string"}}}},
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {"id_token": {"type": "string"}, "device_name": {"type": "string"}},
+            }
+        },
         responses={200: {"type": "object", "properties": {"token": {"type": "string"}}}},
     )
     def post(self, request):
-        raw = request.data.get("id_token") if hasattr(request.data, "get") else None
+        data = request.data if hasattr(request.data, "get") else {}
+        raw = data.get("id_token")
+        device_name = data.get("device_name")
+        if not isinstance(device_name, str):
+            device_name = ""
         try:
-            token = sign_in_with_google_id_token(raw)
+            token = sign_in_with_google_id_token(raw, device_name)
         except GoogleSignInNotConfigured as exc:
             return Response({"detail": exc.message}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except GoogleUnavailable as exc:
@@ -221,6 +231,19 @@ class GoogleSignInView(APIView):
         except GoogleSignInError as exc:
             return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"token": token})
+
+
+class SignOutView(APIView):
+    """Revoke the device token this request was made with. The Android app
+    calls it on sign-out. A request made with the Settings → API token is a
+    no-op: that token is shared with other clients and is only replaced from
+    Settings."""
+
+    @extend_schema(request=None, responses={204: None})
+    def post(self, request):
+        if isinstance(request.auth, DeviceToken):
+            request.auth.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class WhoAmIView(APIView):
