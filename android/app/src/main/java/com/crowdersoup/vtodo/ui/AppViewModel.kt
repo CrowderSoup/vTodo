@@ -90,6 +90,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val message = MutableStateFlow<String?>(null)
     private val busy = MutableStateFlow<Set<Long>>(emptySet())
 
+    // Survives rotation with this ViewModel, and is gone after process death.
+    private var launchIntentConsumed = false
+
     val state: StateFlow<AppUiState> = combine(
         combine(graph.sessionStore.session, graph.sessionStore.signedOutReason) { session, reason ->
             session to reason
@@ -239,7 +242,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    fun shouldApplyLaunchIntent(restoredInstance: Boolean): Boolean =
+        !launchIntentConsumed || !restoredInstance
+
     fun openFromIntent(intent: Intent?) {
+        launchIntentConsumed = true
         if (intent?.action != MainActivity.ACTION_OPEN) return
         if (!intent.hasExtra(MainActivity.EXTRA_TASK_ID)) {
             showList()
