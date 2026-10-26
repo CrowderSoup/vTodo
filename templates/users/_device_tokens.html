@@ -13,7 +13,7 @@
           hx-post="{% url 'users:device-revoke' device.pk %}"
           hx-target="#device-list"
           hx-swap="innerHTML"
-          hx-confirm="Sign out &ldquo;{{ device.name|default:'Unnamed device'|escapejs }}&rdquo;? It will need to sign in again."
+          hx-confirm="Sign out &ldquo;{{ device.name|default:'Unnamed device' }}&rdquo;? It will need to sign in again."
           title="Sign out this device">×</button>
 </div>
 {% empty %}
