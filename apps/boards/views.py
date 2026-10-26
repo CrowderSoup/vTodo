@@ -6,13 +6,16 @@ from datetime import timedelta
 from urllib.parse import parse_qs, urlparse
 
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 
-from apps.tasks.models import Task, TaskComment, TaskStatus
+from apps.tasks import activity
+from apps.tasks.models import Task, TaskActivity, TaskComment, TaskStatus
 from apps.tasks.selectors import (
     InvalidStatusError,
     board_tasks_qs,
@@ -265,6 +268,7 @@ def _task_panel_context(user, task):
     context.update({
         "notes_html": _render_markdown(task.notes) if task.notes else "",
         "comments": _render_comments(task),
+        "activity": _render_activity(task),
     })
     return context
 
@@ -574,7 +578,11 @@ class BoardArchiveDoneView(LoginRequiredMixin, View):
 
     def post(self, request):
         board = _board_from_post(request)
-        board_tasks_qs(board).filter(is_archived=False, completed_at__isnull=False).update(is_archived=True)
+        to_archive = board_tasks_qs(board).filter(is_archived=False, completed_at__isnull=False)
+        with transaction.atomic():
+            archived = list(to_archive)
+            to_archive.update(is_archived=True)
+            activity.record_bulk_archived(archived, actor=request.user, source=TaskActivity.SOURCE_WEB)
         return _render_filter_response(request, request.user, board, request.session)
 
 
@@ -650,6 +658,13 @@ class TaskReorderView(LoginRequiredMixin, View):
         return HttpResponse(status=204)
 
 
+def _posted_due_date(request):
+    """The posted due_date as a date (or None). Assigning the raw string would
+    leave task.due_date a str, so the history diff would see an unchanged date
+    as changed. Raises ValidationError for a date that doesn't parse."""
+    return Task._meta.get_field("due_date").to_python(request.POST.get("due_date") or None)
+
+
 class TaskCreateView(LoginRequiredMixin, View):
     def post(self, request):
         statuses, _, _ = _status_context_for(request.user)
@@ -659,7 +674,9 @@ class TaskCreateView(LoginRequiredMixin, View):
         if not title:
             return HttpResponse(status=422)
 
-        task = Task.objects.create(user=request.user, title=title, status=status)
+        with transaction.atomic():
+            task = Task.objects.create(user=request.user, title=title, status=status)
+            activity.record_created(task, actor=request.user, source=TaskActivity.SOURCE_WEB)
         return render(request, "partials/task_card.html", _task_render_context(request.user, task))
 
 
@@ -668,7 +685,10 @@ class TaskUpdateView(LoginRequiredMixin, View):
         task = get_task_or_404(request.user, pk)
         title = request.POST.get("title", "").strip()
         notes = request.POST.get("notes", "")
-        due_date = request.POST.get("due_date") or None
+        try:
+            due_date = _posted_due_date(request)
+        except ValidationError:
+            return HttpResponse(status=422)
 
         tags_raw = request.POST.get("tags", "")
         tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
@@ -679,6 +699,7 @@ class TaskUpdateView(LoginRequiredMixin, View):
         if recurrence_from not in (Task.RECURRENCE_FROM_COMPLETION, Task.RECURRENCE_FROM_DUE_DATE):
             recurrence_from = Task.RECURRENCE_FROM_COMPLETION
 
+        before = activity.snapshot(task)
         if title:
             task.title = title
         task.notes = notes
@@ -686,7 +707,9 @@ class TaskUpdateView(LoginRequiredMixin, View):
         task.tags = tags
         task.recurrence_days = recurrence_days
         task.recurrence_from = recurrence_from
-        task.save(update_fields=["title", "notes", "due_date", "tags", "recurrence_days", "recurrence_from", "updated_at"])
+        with transaction.atomic():
+            task.save(update_fields=["title", "notes", "due_date", "tags", "recurrence_days", "recurrence_from", "updated_at"])
+            activity.record_changes(task, before, actor=request.user, source=TaskActivity.SOURCE_WEB)
 
         return render(request, "partials/task_card.html", _task_render_context(request.user, task))
 
@@ -738,7 +761,9 @@ class TaskDeleteView(LoginRequiredMixin, View):
         is_calendar, year, month = _calendar_params_from_request(request)
         if is_calendar:
             deleted_pk = task.pk
-            task.delete()
+            with transaction.atomic():
+                activity.record_deleted(task, actor=request.user, source=TaskActivity.SOURCE_WEB)
+                task.delete()
             from .views_calendar import _build_calendar_context
 
             context = _build_calendar_context(request.user, board, year, month, request.session)
@@ -747,7 +772,9 @@ class TaskDeleteView(LoginRequiredMixin, View):
 
         before = _build_board_context(request.user, board, request.session)
         before_ids = _lane_dom_ids_containing(before["lanes"], [task.pk])
-        task.delete()
+        with transaction.atomic():
+            activity.record_deleted(task, actor=request.user, source=TaskActivity.SOURCE_WEB)
+            task.delete()
         after = _build_board_context(request.user, board, request.session)
         _with_affected_lanes(after, before_ids)
         return render(request, "boards/_lane_updates.html", after)
@@ -824,16 +851,18 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
         if recurrence_from not in (Task.RECURRENCE_FROM_COMPLETION, Task.RECURRENCE_FROM_DUE_DATE):
             recurrence_from = Task.RECURRENCE_FROM_COMPLETION
 
-        task = Task.objects.create(
-            user=request.user,
-            title=form_values["title"],
-            notes=form_values["notes"],
-            status=context["selected_status"],
-            due_date=form_values["due_date"] or None,
-            tags=tags,
-            recurrence_days=recurrence_days,
-            recurrence_from=recurrence_from,
-        )
+        with transaction.atomic():
+            task = Task.objects.create(
+                user=request.user,
+                title=form_values["title"],
+                notes=form_values["notes"],
+                status=context["selected_status"],
+                due_date=form_values["due_date"] or None,
+                tags=tags,
+                recurrence_days=recurrence_days,
+                recurrence_from=recurrence_from,
+            )
+            activity.record_created(task, actor=request.user, source=TaskActivity.SOURCE_WEB)
 
         return _render_task_panel_with_list_update(request, request.user, task, board, request.session)
 
@@ -859,7 +888,10 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
         task = get_task_or_404(request.user, pk)
         title = request.POST.get("title", "").strip()
         notes = request.POST.get("notes", "")
-        due_date = request.POST.get("due_date") or None
+        try:
+            due_date = _posted_due_date(request)
+        except ValidationError:
+            return HttpResponse(status=422)
         tags_raw = request.POST.get("tags", "")
         tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
 
@@ -876,6 +908,7 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
             before = _build_board_context(request.user, board, request.session)
             before_ids = _lane_dom_ids_containing(before["lanes"], [task.pk])
 
+        before = activity.snapshot(task)
         if title:
             task.title = title
         task.notes = notes
@@ -883,7 +916,9 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
         task.tags = tags
         task.recurrence_days = recurrence_days
         task.recurrence_from = recurrence_from
-        task.save(update_fields=["title", "notes", "due_date", "tags", "recurrence_days", "recurrence_from", "updated_at"])
+        with transaction.atomic():
+            task.save(update_fields=["title", "notes", "due_date", "tags", "recurrence_days", "recurrence_from", "updated_at"])
+            activity.record_changes(task, before, actor=request.user, source=TaskActivity.SOURCE_WEB)
 
         context = _task_panel_context(request.user, task)
         if is_calendar:
@@ -970,10 +1005,19 @@ def _render_markdown(text):
     )
 
 
+def _render_activity(task):
+    """Newest first, actors prefetched; the panel shows the latest 50."""
+    return list(
+        TaskActivity.objects.filter(user_id=task.user_id, task_pk=task.pk)
+        .select_related("actor")
+        .order_by("-created_at", "-pk")[:50]
+    )
+
+
 def _render_comments(task):
     return [
         {"comment": c, "body_html": _render_markdown(c.body)}
-        for c in task.comments.all()
+        for c in task.comments.select_related("author")
     ]
 
 
@@ -982,7 +1026,11 @@ class TaskCommentCreateView(LoginRequiredMixin, View):
         task = get_task_or_404(request.user, pk)
         body = request.POST.get("body", "").strip()
         if body:
-            TaskComment.objects.create(task=task, body=body)
+            with transaction.atomic():
+                comment = TaskComment.objects.create(task=task, body=body, author=request.user)
+                activity.record_comment(
+                    comment, TaskActivity.COMMENTED, actor=request.user, source=TaskActivity.SOURCE_WEB
+                )
         return render(request, "partials/task_comments.html", {
             "task": task,
             "comments": _render_comments(task),
@@ -993,7 +1041,11 @@ class TaskCommentDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk, comment_pk):
         task = get_task_or_404(request.user, pk)
         comment = get_object_or_404(TaskComment, pk=comment_pk, task=task)
-        comment.delete()
+        with transaction.atomic():
+            activity.record_comment(
+                comment, TaskActivity.COMMENT_DELETED, actor=request.user, source=TaskActivity.SOURCE_WEB
+            )
+            comment.delete()
         return render(request, "partials/task_comments.html", {
             "task": task,
             "comments": _render_comments(task),
