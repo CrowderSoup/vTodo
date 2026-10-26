@@ -75,6 +75,8 @@ data class AppUiState(
     val saving: Boolean = false,
     val message: String? = null,
     val busy: Set<Long> = emptySet(),
+    // Why the server signed this phone out, for the sign-in screen.
+    val signedOutReason: String? = null,
 )
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
@@ -92,7 +94,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var launchIntentConsumed = false
 
     val state: StateFlow<AppUiState> = combine(
-        graph.sessionStore.session,
+        combine(graph.sessionStore.session, graph.sessionStore.signedOutReason) { session, reason ->
+            session to reason
+        },
         graph.repository.observeLists(),
         combine(section, screen, draft, newTask) { section, screen, draft, newTask ->
             Chrome(section, screen, draft, newTask)
@@ -100,9 +104,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         combine(refreshing, saving, message, busy) { refreshing, saving, message, busy ->
             Activity(refreshing, saving, message, busy)
         },
-    ) { session, lists, chrome, activity ->
+    ) { (session, signedOutReason), lists, chrome, activity ->
         AppUiState(
             signedIn = session != null,
+            signedOutReason = signedOutReason,
             section = chrome.section,
             today = lists.today,
             open = lists.open,

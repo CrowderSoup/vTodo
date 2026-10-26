@@ -71,7 +71,7 @@ fun SignInScreen(state: AppUiState, viewModel: AppViewModel) {
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
         )
-        state.message?.let { note ->
+        (state.message ?: state.signedOutReason)?.let { note ->
             Spacer(modifier = Modifier.height(12.dp))
             Text(text = note, color = MaterialTheme.colorScheme.error)
         }

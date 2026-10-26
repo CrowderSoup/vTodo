@@ -5,9 +5,11 @@ app's ID-token exchange both end up here, so a person who already signed in
 on one gets the same user on the other.
 """
 
+import re
 import uuid
 
 from django.conf import settings
+from django.core.cache import cache
 from google.auth.exceptions import GoogleAuthError, TransportError
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
@@ -17,6 +19,40 @@ from apps.siteadmin.selectors import consume_signup_slot
 from apps.users.models import User
 
 _GOOGLE_ISSUERS = {"accounts.google.com", "https://accounts.google.com"}
+# What google-auth's verify_oauth2_token fetches. If it ever changes, the
+# cache below just stops matching and every verify fetches again.
+_GOOGLE_CERTS_URL = "https://www.googleapis.com/oauth2/v1/certs"
+_CERTS_CACHE_KEY = "google_id_token_certs"
+_MAX_AGE = re.compile(r"max-age=(\d+)")
+
+
+class _CachedResponse:
+    def __init__(self, status, headers, data):
+        self.status = status
+        self.headers = headers
+        self.data = data
+
+
+class _CertCachingRequest:
+    """A google-auth transport that caches Google's signing certificates for
+    as long as Google's Cache-Control allows. google-auth fetches them on
+    every verify otherwise, which puts an outbound request on every sign-in."""
+
+    def __init__(self):
+        self._inner = google_requests.Request()
+
+    def __call__(self, url, method="GET", **kwargs):
+        if method != "GET" or url != _GOOGLE_CERTS_URL:
+            return self._inner(url, method=method, **kwargs)
+        cached = cache.get(_CERTS_CACHE_KEY)
+        if cached is not None:
+            return _CachedResponse(200, {}, cached)
+        response = self._inner(url, method=method, **kwargs)
+        if response.status == 200:
+            match = _MAX_AGE.search(response.headers.get("cache-control", ""))
+            if match:
+                cache.set(_CERTS_CACHE_KEY, response.data, int(match.group(1)))
+        return response
 
 
 class GoogleSignInError(Exception):
@@ -66,7 +102,7 @@ def verify_google_id_token(raw_token: str) -> dict:
     try:
         claims = id_token.verify_oauth2_token(
             raw_token.strip(),
-            google_requests.Request(),
+            _CertCachingRequest(),
             client_id,
         )
     except TransportError as exc:

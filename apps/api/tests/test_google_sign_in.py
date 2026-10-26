@@ -211,3 +211,46 @@ def test_post_reports_when_google_is_not_configured(settings):
 
     assert response.status_code == 503
     assert not User.objects.exists()
+
+
+@pytest.mark.django_db
+def test_post_is_throttled_per_client(google_client_id, accept_token, monkeypatch):
+    from rest_framework.throttling import ScopedRateThrottle
+
+    # DRF reads the rates once, at import, so patch the class instead of settings.
+    monkeypatch.setattr(ScopedRateThrottle, "THROTTLE_RATES", {"google_sign_in": "2/hour"})
+    accept_token(_claims())
+    client = APIClient()
+
+    codes = [
+        client.post(reverse("google-sign-in"), {"id_token": "good-token"}, format="json").status_code
+        for _ in range(3)
+    ]
+    other = APIClient(REMOTE_ADDR="10.0.0.9").post(
+        reverse("google-sign-in"), {"id_token": "good-token"}, format="json"
+    )
+
+    assert codes == [200, 200, 429]
+    assert other.status_code == 200
+    assert client.get(reverse("google-sign-in")).status_code == 200
+
+
+def test_google_certs_are_cached_for_max_age(monkeypatch):
+    from apps.accounts import google_accounts
+
+    calls = []
+
+    class FakeInner:
+        def __call__(self, url, method="GET", **kwargs):
+            calls.append(url)
+            return google_accounts._CachedResponse(200, {"cache-control": "public, max-age=600"}, b"{}")
+
+    monkeypatch.setattr(google_accounts.google_requests, "Request", FakeInner)
+    request = google_accounts._CertCachingRequest()
+
+    first = request(google_accounts._GOOGLE_CERTS_URL)
+    second = google_accounts._CertCachingRequest()(google_accounts._GOOGLE_CERTS_URL)
+    request("https://example.com/other")
+
+    assert first.data == second.data == b"{}"
+    assert calls == [google_accounts._GOOGLE_CERTS_URL, "https://example.com/other"]
