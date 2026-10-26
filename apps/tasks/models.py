@@ -20,6 +20,13 @@ class TaskStatus(models.Model):
         on_delete=models.CASCADE,
         related_name="task_statuses",
     )
+    # Same scope as `user` for now: the owner's personal workspace. Shared
+    # workspaces will use this instead of adding another owner column.
+    workspace = models.ForeignKey(
+        "workspaces.Workspace",
+        on_delete=models.CASCADE,
+        related_name="statuses",
+    )
     name = models.CharField(max_length=100)
     slug = models.SlugField(max_length=50)
     order = models.PositiveSmallIntegerField(default=0)
@@ -47,6 +54,11 @@ class TaskStatus(models.Model):
 class Task(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="tasks",
+    )
+    workspace = models.ForeignKey(
+        "workspaces.Workspace",
         on_delete=models.CASCADE,
         related_name="tasks",
     )
@@ -210,6 +222,11 @@ class TaskActivity(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="task_activity",
+    )
+    workspace = models.ForeignKey(
+        "workspaces.Workspace",
+        on_delete=models.CASCADE,
+        related_name="activity",
     )
     task = models.ForeignKey(
         Task,

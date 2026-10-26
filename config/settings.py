@@ -58,6 +58,7 @@ if not DEBUG:
 INSTALLED_APPS = [
     # Local apps — users first because AUTH_USER_MODEL depends on it
     "apps.users.apps.UsersConfig",
+    "apps.workspaces.apps.WorkspacesConfig",
     "apps.accounts.apps.AccountsConfig",
     "apps.emailauth.apps.EmailAuthConfig",
     "apps.teams.apps.TeamsConfig",

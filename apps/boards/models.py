@@ -10,6 +10,11 @@ class Board(models.Model):
         on_delete=models.CASCADE,
         related_name="board",
     )
+    workspace = models.OneToOneField(
+        "workspaces.Workspace",
+        on_delete=models.CASCADE,
+        related_name="board",
+    )
     name = models.CharField(max_length=255, default="My Board")
     created_at = models.DateTimeField(auto_now_add=True)
 
