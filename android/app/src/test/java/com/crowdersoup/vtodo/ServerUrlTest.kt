@@ -39,7 +39,8 @@ class ServerUrlTest {
         listOf(
             "localhost", "127.0.0.1", "10.0.2.2", "172.16.4.1", "172.31.255.255", "192.168.1.5",
             "169.254.1.1", "100.101.102.103", "nas", "nas.local", "pi.lan", "box.home.arpa",
-            "app.internal", "[::1]", "[fd12:3456::1]", "[fe80::1]",
+            "app.internal", "[::1]", "0:0:0:0:0:0:0:1", "[fd12:3456::1]", "[fe80::1]",
+            "[::ffff:192.168.1.1]",
         ).forEach { host -> assertTrue(host, isLocalNetworkHost(host)) }
     }
 
@@ -47,7 +48,7 @@ class ServerUrlTest {
     fun treatsPublicAddressesAsInternet() {
         listOf(
             "vtodo.example.com", "8.8.8.8", "172.32.0.1", "192.169.0.1", "100.128.0.1",
-            "[2001:db8::1]", "local.example.com",
+            "[2001:db8::1]", "fc::1", "fd::1", "fe8::1", "fe9::1", "[::ffff:8.8.8.8]", "local.example.com",
         ).forEach { host -> assertFalse(host, isLocalNetworkHost(host)) }
     }
 }
