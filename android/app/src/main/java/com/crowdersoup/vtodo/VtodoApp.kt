@@ -1,6 +1,7 @@
 package com.crowdersoup.vtodo
 
 import android.app.Application
+import android.os.Build
 import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
@@ -43,7 +44,13 @@ class AppGraph(context: Application) {
         VtodoDatabase::class.java,
         "vtodo.db",
     ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
-    val repository = VtodoRepository(database, VtodoApi(), sessionStore)
+    val repository = VtodoRepository(database, VtodoApi(), sessionStore, deviceName())
+}
+
+private fun deviceName(): String {
+    val maker = Build.MANUFACTURER.orEmpty().replaceFirstChar { it.uppercase() }
+    val model = Build.MODEL.orEmpty()
+    return if (model.startsWith(maker, ignoreCase = true)) model else "$maker $model".trim()
 }
 
 class VtodoApp : Application() {

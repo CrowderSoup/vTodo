@@ -90,7 +90,9 @@ SITE_ID = 1
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.TokenAuthentication",
+        # Settings → API token, plus the per-device tokens the Android app
+        # gets from Google sign-in (apps.api.models.DeviceToken).
+        "apps.api.authentication.ApiTokenAuthentication",
         # Remote MCP clients' OAuth tokens, forwarded by mcp_server. Listed
         # before SessionAuthentication so a 401 still advertises a scheme.
         "oauth2_provider.contrib.rest_framework.OAuth2Authentication",

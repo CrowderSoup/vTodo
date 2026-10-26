@@ -125,8 +125,14 @@ class SettingsCalendarView(LoginRequiredMixin, View):
 
 class SettingsApiView(LoginRequiredMixin, View):
     def get(self, request):
-        context = {"active_tab": "api"}
+        context = {"active_tab": "api", "devices": request.user.device_tokens.all()}
         return render(request, "users/settings/api.html", context)
+
+
+class DeviceTokenRevokeView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        request.user.device_tokens.filter(pk=pk).delete()
+        return render(request, "users/_device_tokens.html", {"devices": request.user.device_tokens.all()})
 
 
 class TaskStatusCreateView(LoginRequiredMixin, View):

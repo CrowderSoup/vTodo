@@ -3,6 +3,7 @@ from django.urls import reverse
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
+from apps.api.models import DeviceToken, hash_device_token
 from apps.emailauth.models import EmailIdentity
 from apps.siteadmin.models import SiteInvite, SiteSettings
 from apps.users.models import User
@@ -58,26 +59,34 @@ def test_get_reports_when_google_is_not_configured(settings):
 
 
 @pytest.mark.django_db
-def test_post_creates_account_and_api_token(google_client_id, accept_token):
+def test_post_creates_account_and_device_token(google_client_id, accept_token):
     accept_token(_claims())
 
-    response = APIClient().post(reverse("google-sign-in"), {"id_token": "good-token"}, format="json")
+    response = APIClient().post(
+        reverse("google-sign-in"),
+        {"id_token": "good-token", "device_name": "Pixel 9"},
+        format="json",
+    )
 
     assert response.status_code == 200
     identity = EmailIdentity.objects.get(email="ada@example.com")
     assert identity.verified is True
     assert identity.user.display_name == "Ada Lovelace"
     assert identity.user.avatar_url == "https://example.com/ada.jpg"
-    token = Token.objects.get(user=identity.user)
-    assert response.data == {"token": token.key}
+    key = response.data["token"]
+    device = DeviceToken.objects.get(user=identity.user)
+    assert device.name == "Pixel 9"
+    assert device.key_hash == hash_device_token(key)
+    assert key not in device.key_hash
+    assert not Token.objects.filter(user=identity.user).exists()
 
     client = APIClient()
-    client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+    client.credentials(HTTP_AUTHORIZATION=f"Token {key}")
     assert client.get(reverse("task-list")).status_code == 200
 
 
 @pytest.mark.django_db
-def test_post_reuses_existing_account_and_token(google_client_id, accept_token):
+def test_post_reuses_existing_account_with_a_new_device_token(google_client_id, accept_token):
     user = User.objects.create_user(display_name="Kept")
     EmailIdentity.objects.create(user=user, email="Ada@Example.com", verified=False)
     existing, _ = Token.objects.get_or_create(user=user)
@@ -86,8 +95,9 @@ def test_post_reuses_existing_account_and_token(google_client_id, accept_token):
     response = APIClient().post(reverse("google-sign-in"), {"id_token": "good-token"}, format="json")
 
     assert response.status_code == 200
-    assert response.data["token"] == existing.key
-    assert Token.objects.filter(user=user).count() == 1
+    assert response.data["token"] != existing.key
+    assert Token.objects.get(user=user).key == existing.key
+    assert DeviceToken.objects.filter(user=user).count() == 1
     assert EmailIdentity.objects.filter(user=user).count() == 1
     identity = EmailIdentity.objects.get(user=user)
     assert identity.verified is True
@@ -109,7 +119,7 @@ def test_post_rejects_a_token_google_would_reject(google_client_id, monkeypatch)
 
     assert response.status_code == 401
     assert not EmailIdentity.objects.exists()
-    assert not Token.objects.exists()
+    assert not DeviceToken.objects.exists()
 
 
 @pytest.mark.django_db
@@ -190,7 +200,7 @@ def test_post_refuses_a_disabled_account(google_client_id, accept_token):
 
     assert response.status_code == 403
     assert response.data["detail"] == "This account is disabled."
-    assert not Token.objects.filter(user=user).exists()
+    assert not DeviceToken.objects.filter(user=user).exists()
 
 
 @pytest.mark.django_db
@@ -201,5 +211,3 @@ def test_post_reports_when_google_is_not_configured(settings):
 
     assert response.status_code == 503
     assert not User.objects.exists()
-
-

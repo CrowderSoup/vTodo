@@ -121,6 +121,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         AppUiState(signedIn = graph.sessionStore.current() != null),
     )
 
+    init {
+        // The repository signs the phone out by itself when the server rejects
+        // the token, so the open task can belong to the old session.
+        viewModelScope.launch {
+            graph.sessionStore.session.collect { session ->
+                if (session == null) {
+                    screen.value = Screen.List
+                    draft.value = null
+                }
+            }
+        }
+    }
+
     fun signIn(baseUrl: String, token: String) {
         if (refreshing.value) return
         viewModelScope.launch {
@@ -240,9 +253,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun showTask(id: Long) {
-        if (graph.sessionStore.current() == null) return
+        val session = graph.sessionStore.current() ?: return
         viewModelScope.launch {
             val task = graph.repository.findTask(id)
+            // A sign-out can land while the lookup is suspended. Writing the
+            // task back would reopen the previous account on the next sign-in.
+            if (graph.sessionStore.current() != session) return@launch
             if (task == null) {
                 message.value = "That task isn't on this phone yet. Refresh and try again."
                 return@launch
@@ -300,14 +316,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun saveTask() {
         if (saving.value) return
         val current = draft.value ?: return
+        val session = graph.sessionStore.current() ?: return
         val schedule = scheduleFrom(current.dueDate, current.dueTime, current.recurrenceDays, current.recurrenceFrom) ?: return
         viewModelScope.launch {
             saving.value = true
             message.value = null
             val result = graph.repository.saveTask(current.id, current.toWrite(schedule), current.baseline)
+            if (graph.sessionStore.current() != session) {
+                result.onFailure { message.value = it.message }
+                saving.value = false
+                return@launch
+            }
             result.onSuccess {
                 refreshTodayWidget(getApplication())
                 val fresh = graph.repository.findTask(current.id)
+                if (graph.sessionStore.current() != session) return@onSuccess
                 if (fresh == null) {
                     showList()
                 } else {

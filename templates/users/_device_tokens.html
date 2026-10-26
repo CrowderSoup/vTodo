@@ -1,0 +1,23 @@
+{% for device in devices %}
+<div class="config-row">
+  <div class="config-main">
+    <div class="config-title">
+      <span>{{ device.name|default:"Unnamed device" }}</span>
+    </div>
+    <p class="field-help">
+      Signed in {{ device.created_at|date:"M j, Y" }}
+      · {% if device.last_used_at %}last used {{ device.last_used_at|timesince }} ago{% else %}not used yet{% endif %}
+    </p>
+  </div>
+  <button class="btn-danger btn-icon"
+          hx-post="{% url 'users:device-revoke' device.pk %}"
+          hx-target="#device-list"
+          hx-swap="innerHTML"
+          hx-confirm="Sign out &ldquo;{{ device.name|default:'Unnamed device' }}&rdquo;? It will need to sign in again."
+          title="Sign out this device">×</button>
+</div>
+{% empty %}
+<div class="settings-empty-state">
+  <p class="field-help">No devices are signed in with Google.</p>
+</div>
+{% endfor %}

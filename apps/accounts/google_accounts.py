@@ -130,13 +130,15 @@ def sync_google_profile(user, extra_data):
         user.save(update_fields=update_fields)
 
 
-def sign_in_with_google_id_token(raw_token: str) -> str:
-    """Verify the ID token and return the account's DRF API token.
+def sign_in_with_google_id_token(raw_token: str, device_name: str = "") -> str:
+    """Verify the ID token and return a new API token for this device.
 
-    This is the same token shown on Settings → API token. It is not an
-    OAuth access token and it is not minted through django-oauth-toolkit.
+    Each sign-in gets its own DeviceToken, so the phone can revoke it on
+    sign-out and Settings can revoke a lost phone without touching the
+    Settings → API token. It is not an OAuth access token and it is not
+    minted through django-oauth-toolkit.
     """
-    from rest_framework.authtoken.models import Token
+    from apps.api.models import DeviceToken
 
     claims = verify_google_id_token(raw_token)
     verified = claims.get("email_verified")
@@ -151,5 +153,5 @@ def sign_in_with_google_id_token(raw_token: str) -> str:
     )
     if not user.is_active:
         raise AccountDisabled("This account is disabled.")
-    token, _ = Token.objects.get_or_create(user=user)
-    return token.key
+    _, key = DeviceToken.issue(user, device_name.strip())
+    return key

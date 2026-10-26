@@ -65,7 +65,10 @@ private data class MoveRequest(@SerialName("new_status") val newStatus: String)
 private data class GoogleClientResponse(@SerialName("client_id") val clientId: String = "")
 
 @Serializable
-private data class GoogleExchangeRequest(@SerialName("id_token") val idToken: String)
+private data class GoogleExchangeRequest(
+    @SerialName("id_token") val idToken: String,
+    @SerialName("device_name") val deviceName: String,
+)
 
 @Serializable
 private data class GoogleExchangeResponse(val token: String = "")
@@ -106,8 +109,8 @@ class VtodoApi(
         return clientId
     }
 
-    suspend fun exchangeGoogleIdToken(baseUrl: String, idToken: String): String {
-        val payload = json.encodeToString(GoogleExchangeRequest(idToken))
+    suspend fun exchangeGoogleIdToken(baseUrl: String, idToken: String, deviceName: String): String {
+        val payload = json.encodeToString(GoogleExchangeRequest(idToken, deviceName))
         val body = try {
             call(
                 anonymous(baseUrl, "/api/v1/auth/google/")
@@ -122,6 +125,16 @@ class VtodoApi(
             throw VtodoApiException(null, "The server didn't return an API token.")
         }
         return token
+    }
+
+    /** Revokes this phone's token. A pasted Settings token is left alone by the server. */
+    suspend fun signOut(session: Session) {
+        call(
+            request(session, "/api/v1/auth/sign-out/")
+                .post("".toRequestBody(jsonMedia))
+                .build(),
+            client.newBuilder().callTimeout(5, TimeUnit.SECONDS).build(),
+        )
     }
 
     suspend fun createTask(session: Session, body: TaskBody) {
@@ -175,9 +188,9 @@ class VtodoApi(
         return error
     }
 
-    private suspend fun call(request: Request): String = withContext(Dispatchers.IO) {
+    private suspend fun call(request: Request, using: OkHttpClient = client): String = withContext(Dispatchers.IO) {
         try {
-            client.newCall(request).execute().use { response ->
+            using.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
                     throw VtodoApiException(response.code, httpError(response.code, body))
