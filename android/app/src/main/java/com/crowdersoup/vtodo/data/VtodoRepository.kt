@@ -109,17 +109,22 @@ class VtodoRepository(
         } catch (e: IllegalArgumentException) {
             return Result.failure(e)
         }
+        var issued: Session? = null
         return try {
             val clientId = api.fetchGoogleClientId(normalized)
             val idToken = requestIdToken(clientId)
             val token = api.exchangeGoogleIdToken(normalized, idToken, deviceName)
             val session = Session(normalized, token)
+            issued = session
             api.fetchStatuses(session)
             sessionStore.save(session)
+            issued = null
             sync()
         } catch (e: CancellationException) {
+            issued?.let { discardUnusedToken(it) }
             throw e
         } catch (e: Exception) {
+            issued?.let { discardUnusedToken(it) }
             Result.failure(e)
         }
     }
@@ -255,6 +260,17 @@ class VtodoRepository(
             throw e
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    /** The server already stored this token, and this phone is not keeping it. */
+    private suspend fun discardUnusedToken(session: Session) {
+        try {
+            api.signOut(session)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // The row stays until it is revoked from Settings.
         }
     }
 
