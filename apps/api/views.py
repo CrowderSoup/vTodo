@@ -219,12 +219,12 @@ def validate_api_resource_token(request_uri: str, audiences: list[str]) -> bool:
 
 
 class GoogleSignInView(APIView):
-    """Exchange a Google ID token for the account's DRF API token.
+    """Exchange a Google ID token for a new device token.
 
     The Android app uses this so a person can sign in with Google instead of
-    pasting the token from Settings. The token it returns is that same DRF
-    token. This is not the MCP OAuth server (django-oauth-toolkit stays for
-    remote MCP clients only).
+    pasting the token from Settings. Each sign-in gets its own token. That
+    token is not the Settings → API token, and this is not the MCP OAuth
+    server (django-oauth-toolkit stays for remote MCP clients only).
     """
 
     authentication_classes = []
