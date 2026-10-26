@@ -50,6 +50,52 @@ def test_updates_record_changed_fields_only(logged_in, url_name):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("url_name", ["boards:task-update", "boards:task-panel-update"])
+def test_resaving_a_dated_task_records_nothing(logged_in, url_name):
+    client, user = logged_in
+    task = Task.objects.create(user=user, title="Same", status="todo", due_date=date(2026, 12, 1))
+    client.post(reverse(url_name, args=[task.pk]), {
+        "title": "Same", "notes": "", "due_date": "2026-12-01", "tags": "",
+        "recurrence_from": Task.RECURRENCE_FROM_COMPLETION,
+    })
+    assert _actions(task.pk) == []
+
+
+@pytest.mark.django_db
+def test_update_is_rolled_back_when_logging_fails(logged_in, monkeypatch):
+    from apps.tasks import activity
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("log write failed")
+
+    monkeypatch.setattr(activity, "record_changes", boom)
+    client, user = logged_in
+    task = Task.objects.create(user=user, title="Old", status="todo")
+    with pytest.raises(RuntimeError):
+        client.post(reverse("boards:task-panel-update", args=[task.pk]), {
+            "title": "New", "notes": "", "due_date": "", "tags": "",
+            "recurrence_from": Task.RECURRENCE_FROM_COMPLETION,
+        })
+    task.refresh_from_db()
+    assert task.title == "Old"
+
+
+@pytest.mark.django_db
+def test_delete_is_rolled_back_when_logging_fails(logged_in, monkeypatch):
+    from apps.tasks import activity
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("log write failed")
+
+    monkeypatch.setattr(activity, "record_deleted", boom)
+    client, user = logged_in
+    task = Task.objects.create(user=user, title="Kept", status="todo")
+    with pytest.raises(RuntimeError):
+        client.post(reverse("boards:task-delete", args=[task.pk]))
+    assert Task.objects.filter(pk=task.pk).exists()
+
+
+@pytest.mark.django_db
 def test_move_view_records_status(logged_in):
     client, user = logged_in
     task = Task.objects.create(user=user, title="T", status="todo")

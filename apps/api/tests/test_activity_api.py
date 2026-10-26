@@ -136,6 +136,47 @@ def test_activity_endpoint_is_scoped_to_owner(api_client_for):
 
 
 @pytest.mark.django_db
+def test_activity_endpoint_lists_history_of_a_deleted_task(api_client_for):
+    user = User.objects.create_user()
+    client = api_client_for(user)
+    task_id = client.post(reverse("task-list"), {"title": "Gone"}, format="json").data["id"]
+    client.delete(reverse("task-detail", args=[task_id]))
+
+    response = client.get(reverse("task-activity", args=[task_id]))
+
+    assert response.status_code == 200
+    assert [e["action"] for e in response.data] == ["created", "deleted"]
+
+
+@pytest.mark.django_db
+def test_activity_of_a_deleted_task_is_scoped_to_owner(api_client_for):
+    owner = User.objects.create_user()
+    other = User.objects.create_user()
+    owner_client = api_client_for(owner)
+    task_id = owner_client.post(reverse("task-list"), {"title": "Gone"}, format="json").data["id"]
+    owner_client.delete(reverse("task-detail", args=[task_id]))
+
+    response = api_client_for(other).get(reverse("task-activity", args=[task_id]))
+
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_activity_endpoint_lists_nothing_for_a_task_without_history(api_client_for):
+    user = User.objects.create_user()
+    task = Task.objects.create(user=user, title="T")
+    response = api_client_for(user).get(reverse("task-activity", args=[task.pk]))
+    assert (response.status_code, response.data) == (200, [])
+
+
+@pytest.mark.django_db
+def test_activity_endpoint_404s_for_a_non_numeric_id(api_client_for):
+    user = User.objects.create_user()
+    response = api_client_for(user).get(reverse("task-activity", args=["abc"]))
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
 def test_activity_endpoint_is_read_only(api_client_for):
     user = User.objects.create_user()
     task = Task.objects.create(user=user, title="T")

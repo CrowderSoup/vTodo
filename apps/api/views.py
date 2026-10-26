@@ -8,7 +8,7 @@ from oauth2_provider.contrib.rest_framework import OAuth2Authentication, TokenHa
 from oauth2_provider.oauth2_validators import validate_resource_as_url_prefix
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -87,8 +87,9 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         order = Task.objects.filter(user=self.request.user).count()
-        task = serializer.save(user=self.request.user, order=order)
-        activity.record_created(task, actor=self.request.user, source=source_for_request(self.request))
+        with transaction.atomic():
+            task = serializer.save(user=self.request.user, order=order)
+            activity.record_created(task, actor=self.request.user, source=source_for_request(self.request))
 
     def perform_update(self, serializer):
         # A status change has to go through move_task so completing a task
@@ -108,8 +109,9 @@ class TaskViewSet(viewsets.ModelViewSet):
                     raise ValidationError({"status": [str(e)]})
 
     def perform_destroy(self, instance):
-        activity.record_deleted(instance, actor=self.request.user, source=source_for_request(self.request))
-        instance.delete()
+        with transaction.atomic():
+            activity.record_deleted(instance, actor=self.request.user, source=source_for_request(self.request))
+            instance.delete()
 
     @extend_schema(
         request={"application/json": {"type": "object", "properties": {"order": {"type": "array", "items": {"type": "integer"}}}}},
@@ -154,18 +156,26 @@ class TaskViewSet(viewsets.ModelViewSet):
             return Response(TaskCommentSerializer(task.comments.all(), many=True).data)
         serializer = TaskCommentSerializer(data={**request.data, "task": task.pk})
         serializer.is_valid(raise_exception=True)
-        comment = serializer.save(author=request.user)
-        activity.record_comment(
-            comment, TaskActivity.COMMENTED, actor=request.user, source=source_for_request(request)
-        )
+        with transaction.atomic():
+            comment = serializer.save(author=request.user)
+            activity.record_comment(
+                comment, TaskActivity.COMMENTED, actor=request.user, source=source_for_request(request)
+            )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @extend_schema(responses={200: TaskActivitySerializer(many=True)})
     @action(detail=True, methods=["get"], url_path="activity", url_name="activity")
     def activity_log(self, request, pk=None):
-        """Read-only change history for a task, oldest first."""
-        task = self.get_object()
-        rows = TaskActivity.objects.filter(user_id=task.user_id, task_pk=task.pk).select_related("actor")
+        """Read-only change history for a task, oldest first. Still answers
+        after the task is deleted: rows are looked up by the requester and
+        task_pk, not through the task."""
+        try:
+            task_pk = int(pk)
+        except (TypeError, ValueError):
+            raise NotFound()
+        rows = TaskActivity.objects.filter(user=request.user, task_pk=task_pk).select_related("actor")
+        if not rows.exists() and not visible_tasks_qs(request.user).filter(pk=task_pk).exists():
+            raise NotFound()
         return Response(TaskActivitySerializer(rows, many=True).data)
 
 
@@ -176,11 +186,12 @@ class TaskCommentViewSet(viewsets.GenericViewSet, mixins.DestroyModelMixin):
         return TaskComment.objects.filter(task__in=visible_tasks_qs(self.request.user))
 
     def perform_destroy(self, instance):
-        activity.record_comment(
-            instance, TaskActivity.COMMENT_DELETED,
-            actor=self.request.user, source=source_for_request(self.request),
-        )
-        instance.delete()
+        with transaction.atomic():
+            activity.record_comment(
+                instance, TaskActivity.COMMENT_DELETED,
+                actor=self.request.user, source=source_for_request(self.request),
+            )
+            instance.delete()
 
 
 def validate_api_resource_token(request_uri: str, audiences: list[str]) -> bool:

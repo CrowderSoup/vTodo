@@ -89,6 +89,19 @@ def test_activity_is_append_only():
 
 
 @pytest.mark.django_db
+def test_activity_queryset_blocks_bulk_update_and_delete():
+    user = User.objects.create_user()
+    task = Task.objects.create(user=user, title="T")
+    activity.record_created(task, actor=user, source="web")
+    rows = TaskActivity.objects.filter(task_pk=task.pk)
+    with pytest.raises(ValueError):
+        rows.update(new_value="tampered")
+    with pytest.raises(ValueError):
+        rows.delete()
+    assert rows.get().new_value == "T"
+
+
+@pytest.mark.django_db
 def test_history_survives_task_deletion():
     user = User.objects.create_user()
     task = Task.objects.create(user=user, title="Gone soon")
@@ -125,6 +138,20 @@ def test_move_task_records_status_change_with_source():
     assert (row.action, row.field, row.old_value, row.new_value, row.source) == (
         "moved", "status", "todo", "in_progress", "mcp",
     )
+
+
+@pytest.mark.django_db
+def test_move_task_is_rolled_back_when_logging_fails(monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("log write failed")
+
+    monkeypatch.setattr(activity, "record", boom)
+    user = User.objects.create_user()
+    task = Task.objects.create(user=user, title="T", status="todo")
+    with pytest.raises(RuntimeError):
+        move_task(user, task, "done")
+    task.refresh_from_db()
+    assert (task.status, task.completed_at) == ("todo", None)
 
 
 @pytest.mark.django_db

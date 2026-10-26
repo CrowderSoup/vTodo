@@ -151,6 +151,19 @@ class TaskComment(models.Model):
         return f"Comment on {self.task_id} @ {self.created_at}"
 
 
+class TaskActivityQuerySet(models.QuerySet):
+    """Blocks bulk edits and deletes so TaskActivity.objects can't rewrite the
+    log. Nulling `task` is the one update allowed: it is how on_delete=SET_NULL
+    is applied when a task is deleted. Deletion cascades (owner deleted) go
+    through the collector, not QuerySet.delete(), so they still work."""
+
+    def update(self, **kwargs):
+        if kwargs.keys() == {"task"} and kwargs["task"] is None:
+            return super().update(**kwargs)
+        raise ValueError("TaskActivity is append-only.")
+
+    def delete(self):
+        raise ValueError("TaskActivity is append-only.")
 
 
 class TaskActivity(models.Model):
@@ -205,7 +218,7 @@ class TaskActivity(models.Model):
         blank=True,
         related_name="activity",
     )
-    task_pk = models.PositiveIntegerField(db_index=True)
+    task_pk = models.PositiveBigIntegerField()
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -218,7 +231,9 @@ class TaskActivity(models.Model):
     field = models.CharField(max_length=32, blank=True, default="")
     old_value = models.CharField(max_length=255, blank=True, default="")
     new_value = models.CharField(max_length=255, blank=True, default="")
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = TaskActivityQuerySet.as_manager()
 
     class Meta:
         ordering = ["created_at", "pk"]

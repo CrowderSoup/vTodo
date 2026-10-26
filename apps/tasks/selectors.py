@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
@@ -68,26 +69,29 @@ def move_task(user, task, new_status_slug, *, source="web"):
         task.completed_at = None
         task.previous_status = ""
 
-    task.save(update_fields=update_fields)
-
     from apps.tasks import activity
     from apps.tasks.models import TaskActivity
 
-    if previous_status != new_status_slug:
-        activity.record(
-            task, TaskActivity.MOVED, actor=user, source=source,
-            field="status", old=previous_status, new=new_status_slug,
-        )
+    # The move, the spawned recurrence and their history rows land together or
+    # not at all.
+    with transaction.atomic():
+        task.save(update_fields=update_fields)
 
-    task.spawned_recurrence = None
-    if is_done and not was_already_done:
-        task.spawned_recurrence = task.spawn_recurrence(
-            completion_date=timezone.localdate(task.completed_at)
-        )
-        if task.spawned_recurrence is not None:
-            activity.record_created(
-                task.spawned_recurrence, actor=None, source=TaskActivity.SOURCE_SYSTEM
+        if previous_status != new_status_slug:
+            activity.record(
+                task, TaskActivity.MOVED, actor=user, source=source,
+                field="status", old=previous_status, new=new_status_slug,
             )
+
+        task.spawned_recurrence = None
+        if is_done and not was_already_done:
+            task.spawned_recurrence = task.spawn_recurrence(
+                completion_date=timezone.localdate(task.completed_at)
+            )
+            if task.spawned_recurrence is not None:
+                activity.record_created(
+                    task.spawned_recurrence, actor=None, source=TaskActivity.SOURCE_SYSTEM
+                )
 
     return task
 
@@ -102,6 +106,7 @@ def reschedule_task(user, task, new_due_date, *, source="web"):
     task.due_date = new_due_date
     if new_due_date is None:
         task.due_time = None
-    task.save(update_fields=["due_date", "due_time", "updated_at"])
-    activity.record_changes(task, before, actor=user, source=source)
+    with transaction.atomic():
+        task.save(update_fields=["due_date", "due_time", "updated_at"])
+        activity.record_changes(task, before, actor=user, source=source)
     return task
