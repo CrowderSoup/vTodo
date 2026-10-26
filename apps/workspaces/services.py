@@ -1,8 +1,6 @@
-"""Creating the one personal workspace every user has.
+"""Personal workspaces for every user, and shared workspaces people join."""
 
-Shared workspaces are a later step. This module only makes sure the personal
-one exists and that tasks, statuses, boards, and history rows point at it.
-"""
+from django.core.exceptions import ValidationError
 
 from apps.workspaces.models import Membership, Workspace
 
@@ -81,3 +79,81 @@ def backfill_workspace_rows(row_model, workspace_model):
         raise RuntimeError(
             "No personal workspace for user id(s): " + ", ".join(str(pk) for pk in missing)
         )
+
+
+class MemberError(Exception):
+    """A shared-workspace membership change that should be shown to the user."""
+
+
+def create_shared_workspace(*, user, name):
+    """A shared workspace, with the creator as owner and its own board and statuses."""
+    name = (name or "").strip()
+    if not name:
+        raise ValidationError("Give the workspace a name.")
+    if len(name) > 255:
+        raise ValidationError("That name is too long.")
+
+    workspace = Workspace.objects.create(
+        name=name, kind=Workspace.KIND_SHARED, owner=None
+    )
+    Membership.objects.create(
+        workspace=workspace, user=user, role=Membership.ROLE_OWNER
+    )
+    from apps.boards.models import Board
+
+    Board.objects.create(user=user, workspace=workspace, name=name)
+    from apps.tasks.services import provision_statuses
+
+    provision_statuses(user=user, workspace=workspace)
+    return workspace
+
+
+def add_workspace_member(*, workspace, email, role):
+    """Add the person who signs in with this email, or change their role."""
+    if workspace.kind != Workspace.KIND_SHARED:
+        raise MemberError("People can only be added to a shared workspace.")
+    if role not in (Membership.ROLE_OWNER, Membership.ROLE_MEMBER, Membership.ROLE_VIEWER):
+        raise MemberError("Pick a role.")
+
+    from apps.emailauth.models import EmailIdentity
+
+    identity = (
+        EmailIdentity.objects.filter(email__iexact=(email or "").strip(), verified=True)
+        .select_related("user")
+        .first()
+    )
+    if identity is None:
+        raise MemberError("No one with that email has signed in yet.")
+
+    membership, created = Membership.objects.get_or_create(
+        workspace=workspace,
+        user=identity.user,
+        defaults={"role": role},
+    )
+    if not created and membership.role != role:
+        set_member_role(membership=membership, role=role)
+    return membership
+
+
+def set_member_role(*, membership, role):
+    if role not in (Membership.ROLE_OWNER, Membership.ROLE_MEMBER, Membership.ROLE_VIEWER):
+        raise MemberError("Pick a role.")
+    if membership.role == Membership.ROLE_OWNER and role != Membership.ROLE_OWNER:
+        other_owners = membership.workspace.memberships.filter(
+            role=Membership.ROLE_OWNER
+        ).exclude(pk=membership.pk)
+        if not other_owners.exists():
+            raise MemberError("A workspace needs an owner.")
+    membership.role = role
+    membership.save(update_fields=["role"])
+    return membership
+
+
+def remove_workspace_member(*, membership):
+    if membership.role == Membership.ROLE_OWNER:
+        other_owners = membership.workspace.memberships.filter(
+            role=Membership.ROLE_OWNER
+        ).exclude(pk=membership.pk)
+        if not other_owners.exists():
+            raise MemberError("A workspace needs an owner.")
+    membership.delete()

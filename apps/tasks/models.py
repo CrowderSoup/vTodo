@@ -20,8 +20,6 @@ class TaskStatus(models.Model):
         on_delete=models.CASCADE,
         related_name="task_statuses",
     )
-    # Same scope as `user` for now: the owner's personal workspace. Shared
-    # workspaces will use this instead of adding another owner column.
     workspace = models.ForeignKey(
         "workspaces.Workspace",
         on_delete=models.CASCADE,
@@ -37,8 +35,8 @@ class TaskStatus(models.Model):
         ordering = ["order"]
         constraints = [
             models.UniqueConstraint(
-                fields=["user", "slug"],
-                name="taskstatus_unique_user_slug",
+                fields=["workspace", "slug"],
+                name="taskstatus_unique_workspace_slug",
             ),
         ]
 
@@ -105,14 +103,14 @@ class Task(models.Model):
         """Create the next recurrence of this task in backlog. Returns the new task or None.
 
         Also returns None when an open occurrence of this series already exists
-        (same owner, title, and schedule; not completed and not archived).
+        (same workspace, title, and schedule; not completed and not archived).
         Completing an older copy must not leave two open copies side by side.
         """
         if not self.recurrence_days:
             return None
 
         open_sibling = Task.objects.filter(
-            user_id=self.user_id,
+            workspace_id=self.workspace_id,
             title=self.title,
             recurrence_days=self.recurrence_days,
             recurrence_from=self.recurrence_from,
@@ -131,6 +129,7 @@ class Task(models.Model):
 
         return Task.objects.create(
             user=self.user,
+            workspace_id=self.workspace_id,
             title=self.title,
             notes=self.notes,
             status="backlog",

@@ -82,7 +82,9 @@
 
     {% if active_filter.tags or active_filter.exclude_tags or active_filter.due or active_filter.q or active_filter.hidden_lanes %}
     <div class="board-filter-actions">
+      {% if can_admin_workspace %}
       <button class="btn-ghost btn-small" type="button" data-open-modal="save-filter-modal">Save view</button>
+      {% endif %}
 
       <form hx-post="{% url 'boards:board-filter' %}"
             hx-target="#task-list-content"

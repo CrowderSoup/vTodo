@@ -55,6 +55,7 @@
   </div>
   {% endif %}
 
+  {% if can_write_workspace %}
   <div class="task-card-actions">
     <div class="task-action-row">
       {% if not task.completed_at %}
@@ -79,4 +80,5 @@
       {% endif %}
     </div>
   </div>
+  {% endif %}
 </article>

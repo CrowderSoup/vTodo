@@ -10,5 +10,6 @@ def create_default_board(sender, instance, created, **kwargs):
 
     # Local import to avoid circular imports at module load time
     from apps.boards.models import Board
+    from apps.workspaces.services import ensure_personal_workspace
 
-    Board.objects.create(user=instance)
+    Board.objects.create(user=instance, workspace=ensure_personal_workspace(instance))

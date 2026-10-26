@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}New workspace — vtodo{% endblock %}
+
+{% block content %}
+<section class="page-shell page-shell--narrow">
+  <header class="page-hero page-hero--settings surface-panel">
+    <div class="hero-copy">
+      <span class="eyebrow">Workspace</span>
+      <h1 class="page-title">New shared workspace</h1>
+      <p class="page-subtitle">A shared workspace has its own board, statuses, and people. Your personal board stays separate.</p>
+    </div>
+  </header>
+
+  <form method="post" class="settings-card surface-panel">
+    {% csrf_token %}
+    <div class="form-field">
+      <label class="field-label" for="workspace-name">Name</label>
+      <input id="workspace-name" type="text" name="name" value="{{ name }}" maxlength="255" required autofocus>
+    </div>
+    {% if error %}
+    <p class="field-help" role="alert">{{ error }}</p>
+    {% endif %}
+    <div class="settings-actions">
+      <button type="submit" class="btn-primary">Create workspace</button>
+      <a class="btn-ghost" href="{% url 'boards:board' %}">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

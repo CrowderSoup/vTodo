@@ -24,11 +24,13 @@
       {% endwith %}
     </div>
   </div>
+  {% if can_admin_workspace %}
   <button class="btn-danger btn-icon"
           hx-post="{% url 'users:saved-view-delete' sf.pk %}"
           hx-target="#saved-views-list"
           hx-swap="innerHTML"
           hx-confirm="Delete saved view &ldquo;{{ sf.name|escapejs }}&rdquo;?">×</button>
+  {% endif %}
 </div>
 {% empty %}
 <div class="settings-empty-state">

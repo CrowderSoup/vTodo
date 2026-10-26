@@ -30,6 +30,15 @@ class Workspace(models.Model):
         related_name="personal_workspace_owned",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # New tasks in this workspace start here. Separate from the account-level
+    # default so a shared workspace does not change someone's personal board.
+    default_status = models.ForeignKey(
+        "tasks.TaskStatus",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="default_for_workspaces",
+    )
 
     class Meta:
         constraints = [
@@ -82,6 +91,12 @@ class Membership(models.Model):
 
     def __str__(self):
         return f"{self.user} @ {self.workspace} ({self.role})"
+
+    def can_write(self):
+        return self.role in (self.ROLE_OWNER, self.ROLE_MEMBER)
+
+    def can_admin(self):
+        return self.role == self.ROLE_OWNER
 
     def save(self, *args, **kwargs):
         workspace = self.workspace

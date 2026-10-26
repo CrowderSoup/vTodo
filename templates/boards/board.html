@@ -9,6 +9,7 @@
     {% include "boards/_columns.html" %}
   </div>
 
+  {% if can_write_workspace %}
   <button class="board-fab"
           type="button"
           title="Add task"
@@ -20,5 +21,6 @@
     <span class="board-fab-mark">+</span>
     <span class="board-fab-label">New task</span>
   </button>
+  {% endif %}
 </section>
 {% endblock %}

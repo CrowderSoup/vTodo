@@ -9,5 +9,6 @@ def create_default_task_statuses(sender, instance, created, **kwargs):
         return
 
     from apps.tasks.services import provision_statuses
+    from apps.workspaces.services import ensure_personal_workspace
 
-    provision_statuses(user=instance)
+    provision_statuses(user=instance, workspace=ensure_personal_workspace(instance))

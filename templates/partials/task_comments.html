@@ -4,11 +4,13 @@
   <div class="surface-card comment-card">
     <div class="comment-meta">
       <span>{{ entry.comment.created_at|date:"N j, Y g:i a" }}</span>
+      {% if can_write_workspace %}
       <button class="btn-ghost btn-small"
               hx-post="{% url 'boards:task-comment-delete' task.pk entry.comment.pk %}"
               hx-target="#task-comments"
               hx-swap="innerHTML"
               hx-confirm="Delete this comment?">Delete</button>
+      {% endif %}
     </div>
     <div class="task-panel-notes">{{ entry.body_html|safe }}</div>
   </div>

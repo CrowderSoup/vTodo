@@ -6,14 +6,13 @@ from django.urls import reverse
 from django.views import View
 
 
-def _hero_stats(user):
-    from apps.tasks.models import TaskStatus
+def _hero_stats(workspace):
     from apps.boards.models import Board
+    from apps.tasks.models import TaskStatus
 
-    statuses_count = TaskStatus.objects.filter(user=user).count()
+    statuses_count = TaskStatus.objects.filter(workspace=workspace).count()
     try:
-        board = Board.objects.get(user=user)
-        columns_count = board.columns.count()
+        columns_count = workspace.board.columns.count()
     except Board.DoesNotExist:
         columns_count = 0
 
@@ -29,36 +28,59 @@ def _available_timezones():
     return sorted(available_timezones())
 
 
+def _default_status_id(user, workspace):
+    if workspace.default_status_id:
+        return workspace.default_status_id
+    from apps.workspaces.models import Workspace
+
+    if workspace.kind == Workspace.KIND_PERSONAL and workspace.owner_id == user.pk:
+        return user.default_status_id
+    return None
+
+
 class SettingsGeneralView(LoginRequiredMixin, View):
     def get(self, request):
         from apps.tasks.models import TaskStatus
         from apps.users.selectors import primary_email
+        from apps.workspaces.access import active_workspace
 
-        statuses = TaskStatus.objects.filter(user=request.user)
+        workspace = active_workspace(request)
+        statuses = TaskStatus.objects.filter(workspace=workspace)
 
         context = {
             "statuses": statuses,
-            "default_status_id": request.user.default_status_id,
+            "default_status_id": _default_status_id(request.user, workspace),
             "timezones": _available_timezones(),
             "signed_in_email": primary_email(request.user),
             "active_tab": "general",
         }
-        context.update(_hero_stats(request.user))
+        context.update(_hero_stats(workspace))
         return render(request, "users/settings/general.html", context)
 
     def post(self, request):
         from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
         from apps.tasks.models import TaskStatus
+        from apps.workspaces.access import active_workspace
+        from apps.workspaces.models import Workspace
 
         user = request.user
+        workspace = active_workspace(request)
         user.display_name = request.POST.get("display_name", "").strip()
 
-        default_status = None
-        default_status_id = request.POST.get("default_status", "").strip()
-        if default_status_id.isdigit():
-            default_status = TaskStatus.objects.filter(user=user, pk=int(default_status_id)).first()
-        user.default_status = default_status
+        update_fields = ["display_name", "timezone"]
+        if request.workspace_membership.can_admin() and "default_status" in request.POST:
+            default_status = None
+            default_status_id = request.POST.get("default_status", "").strip()
+            if default_status_id.isdigit():
+                default_status = TaskStatus.objects.filter(
+                    workspace=workspace, pk=int(default_status_id)
+                ).first()
+            workspace.default_status = default_status
+            workspace.save(update_fields=["default_status"])
+            if workspace.kind == Workspace.KIND_PERSONAL and workspace.owner_id == user.pk:
+                user.default_status = default_status
+                update_fields.append("default_status")
 
         tzname = request.POST.get("timezone", "").strip()
         if tzname:
@@ -69,16 +91,18 @@ class SettingsGeneralView(LoginRequiredMixin, View):
                 return redirect(reverse("users:settings"))
             user.timezone = tzname
 
-        user.save(update_fields=["display_name", "default_status", "timezone"])
+        user.save(update_fields=update_fields)
         messages.success(request, "Settings saved.")
         return redirect(reverse("users:settings"))
 
 
 def _saved_filters_with_labels(board):
     from apps.boards.views import _parse_lane_key
-    from apps.tasks.selectors import visible_statuses_qs
+    from apps.tasks.models import TaskStatus
 
-    statuses_by_pk = {s.pk: s.name for s in visible_statuses_qs(board.user)}
+    statuses_by_pk = {
+        s.pk: s.name for s in TaskStatus.objects.filter(workspace_id=board.workspace_id)
+    }
     columns_by_pk = {column.pk: column.label for column in board.columns.all()}
     saved_filters = list(board.saved_filters.all())
     for sf in saved_filters:
@@ -93,11 +117,35 @@ def _saved_filters_with_labels(board):
     return saved_filters
 
 
+def _member_rows(workspace):
+    memberships = (
+        workspace.memberships.select_related("user")
+        .prefetch_related("user__email_identities")
+        .order_by("joined_at")
+    )
+    rows = []
+    for membership in memberships:
+        verified = sorted(
+            (item for item in membership.user.email_identities.all() if item.verified),
+            key=lambda item: item.created_at,
+        )
+        identity = verified[0] if verified else None
+        email = identity.email if identity else ""
+        rows.append({
+            "membership": membership,
+            "email": email,
+            "name": membership.user.display_name or email or membership.user.username,
+        })
+    return rows
+
+
 class SettingsBoardView(LoginRequiredMixin, View):
     def get(self, request):
         from apps.boards.selectors import resolve_board
         from apps.tasks.selectors import visible_statuses_qs
+        from apps.workspaces.access import active_workspace
 
+        workspace = active_workspace(request)
         board = resolve_board(request.user)
         statuses = list(visible_statuses_qs(request.user).order_by("order"))
         columns = list(board.columns.all())
@@ -108,7 +156,8 @@ class SettingsBoardView(LoginRequiredMixin, View):
             "board": board,
             "columns": columns,
             "saved_filters": saved_filters,
-            "default_status_id": request.user.default_status_id,
+            "default_status_id": _default_status_id(request.user, workspace),
+            "members": _member_rows(workspace),
             "active_tab": "board",
         }
         return render(request, "users/settings/board.html", context)
@@ -135,44 +184,54 @@ class DeviceTokenRevokeView(LoginRequiredMixin, View):
         return render(request, "users/_device_tokens.html", {"devices": request.user.device_tokens.all()})
 
 
+def _status_list_context(request):
+    from apps.tasks.selectors import visible_statuses_qs
+    from apps.workspaces.access import active_workspace
+
+    workspace = active_workspace(request)
+    return {
+        "statuses": list(visible_statuses_qs(request.user).order_by("order")),
+        "default_status_id": _default_status_id(request.user, workspace),
+    }
+
+
 class TaskStatusCreateView(LoginRequiredMixin, View):
     def post(self, request):
         from django.http import HttpResponse
         from django.utils.text import slugify
 
         from apps.tasks.models import TaskStatus
-        from apps.tasks.selectors import visible_statuses_qs
+        from apps.workspaces.access import active_workspace, ensure_can_admin
 
+        ensure_can_admin(request)
         name = request.POST.get("name", "").strip()
         is_done = request.POST.get("is_done") == "on"
         if not name:
             return HttpResponse(status=422)
 
+        workspace = active_workspace(request)
         slug = slugify(name)
-        order = TaskStatus.objects.filter(user=request.user).count()
+        order = TaskStatus.objects.filter(workspace=workspace).count()
         TaskStatus.objects.get_or_create(
-            user=request.user, slug=slug, defaults={"name": name, "is_done": is_done, "order": order}
+            workspace=workspace,
+            slug=slug,
+            defaults={"user": request.user, "name": name, "is_done": is_done, "order": order},
         )
 
-        return render(request, "users/_status_list.html", {
-            "statuses": list(visible_statuses_qs(request.user).order_by("order")),
-            "default_status_id": request.user.default_status_id,
-        })
+        return render(request, "users/_status_list.html", _status_list_context(request))
 
 
 class TaskStatusDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
         from apps.tasks.models import TaskStatus
-        from apps.tasks.selectors import visible_statuses_qs
+        from apps.workspaces.access import active_workspace, ensure_can_admin
 
-        status = get_object_or_404(TaskStatus, user=request.user, pk=pk)
+        ensure_can_admin(request)
+        status = get_object_or_404(TaskStatus, workspace=active_workspace(request), pk=pk)
 
         status.delete()
         request.user.refresh_from_db(fields=["default_status"])
-        return render(request, "users/_status_list.html", {
-            "statuses": list(visible_statuses_qs(request.user).order_by("order")),
-            "default_status_id": request.user.default_status_id,
-        })
+        return render(request, "users/_status_list.html", _status_list_context(request))
 
 
 class TaskStatusColorUpdateView(LoginRequiredMixin, View):
@@ -180,9 +239,10 @@ class TaskStatusColorUpdateView(LoginRequiredMixin, View):
         import re
 
         from apps.tasks.models import TaskStatus
-        from apps.tasks.selectors import visible_statuses_qs
+        from apps.workspaces.access import active_workspace, ensure_can_admin
 
-        status = get_object_or_404(TaskStatus, user=request.user, pk=pk)
+        ensure_can_admin(request)
+        status = get_object_or_404(TaskStatus, workspace=active_workspace(request), pk=pk)
 
         color = request.POST.get("color", "").strip()
         if color and not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
@@ -191,17 +251,16 @@ class TaskStatusColorUpdateView(LoginRequiredMixin, View):
         status.color = color
         status.save(update_fields=["color"])
 
-        return render(request, "users/_status_list.html", {
-            "statuses": list(visible_statuses_qs(request.user).order_by("order")),
-            "default_status_id": request.user.default_status_id,
-        })
+        return render(request, "users/_status_list.html", _status_list_context(request))
 
 
 class ColumnCreateView(LoginRequiredMixin, View):
     def post(self, request):
         from apps.boards.models import Column
         from apps.boards.selectors import resolve_board
+        from apps.workspaces.access import ensure_can_admin
 
+        ensure_can_admin(request)
         label = request.POST.get("label", "").strip()
         if not label:
             return HttpResponse(status=422)
@@ -241,9 +300,14 @@ class ColumnDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
         from apps.boards.models import Column
         from apps.boards.selectors import user_can_access_board
+        from apps.workspaces.access import active_workspace, ensure_can_admin
 
+        ensure_can_admin(request)
         column = get_object_or_404(Column.objects.select_related("board"), pk=pk)
-        if not user_can_access_board(request.user, column.board):
+        if (
+            not user_can_access_board(request.user, column.board)
+            or column.board.workspace_id != active_workspace(request).pk
+        ):
             raise Http404()
         board = column.board
         column.delete()
@@ -255,9 +319,14 @@ class SavedViewDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
         from apps.boards.models import SavedFilter
         from apps.boards.selectors import user_can_access_board
+        from apps.workspaces.access import active_workspace, ensure_can_admin
 
+        ensure_can_admin(request)
         saved_filter = get_object_or_404(SavedFilter.objects.select_related("board"), pk=pk)
-        if not user_can_access_board(request.user, saved_filter.board):
+        if (
+            not user_can_access_board(request.user, saved_filter.board)
+            or saved_filter.board.workspace_id != active_workspace(request).pk
+        ):
             raise Http404()
         board = saved_filter.board
         saved_filter.delete()

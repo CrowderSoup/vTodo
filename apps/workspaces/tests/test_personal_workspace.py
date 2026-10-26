@@ -18,7 +18,7 @@ def test_new_user_gets_one_personal_workspace():
     assert workspace.kind == Workspace.KIND_PERSONAL
     assert workspace.name == "Personal"
     assert Membership.objects.get(workspace=workspace, user=user).role == Membership.ROLE_OWNER
-    assert user.board.workspace_id == workspace.pk
+    assert workspace.board.user_id == user.pk
     assert set(user.task_statuses.values_list("workspace_id", flat=True)) == {workspace.pk}
     assert ensure_personal_workspace(user).pk == workspace.pk
     assert Workspace.objects.filter(owner=user).count() == 1
@@ -30,7 +30,8 @@ def test_new_task_and_its_history_use_the_personal_workspace():
     task = Task.objects.create(user=user, title="T")
     activity.record_created(task, actor=user, source=TaskActivity.SOURCE_WEB)
 
-    assert task.workspace_id == user.board.workspace_id
+    workspace = Workspace.objects.get(owner=user)
+    assert task.workspace_id == workspace.pk
     row = TaskActivity.objects.get(task_pk=task.pk)
     assert row.workspace_id == task.workspace_id
 
