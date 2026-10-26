@@ -338,6 +338,18 @@ def delete_comment(comment_id: int) -> str:
         return _err(e)
 
 
+@mcp.tool()
+def list_activity(task_id: int) -> str:
+    """List a task's change history, oldest first: who (actor), where from
+    (source: web, api, mcp, system), what (action, field) and the old/new
+    values. Note text and comment bodies are not included, only that they
+    changed."""
+    try:
+        return _ok(_current_client().list_activity(task_id))
+    except VtodoAPIError as e:
+        return _err(e)
+
+
 # ── Status tools ───────────────────────────────────────────────────────────────
 
 
