@@ -302,3 +302,40 @@ def test_task_create_keeps_an_explicit_status(api_client_for):
 
     assert response.status_code == 201
     assert response.data["status"] == "done"
+
+
+@pytest.mark.django_db
+def test_task_list_open_returns_only_tasks_still_to_do(api_client_for):
+    from django.utils import timezone
+
+    user = User.objects.create_user()
+    other = User.objects.create_user()
+    todo = Task.objects.create(user=user, title="Todo", status="todo")
+    backlog = Task.objects.create(user=user, title="Backlog", status="backlog")
+    Task.objects.create(user=user, title="Archived", status="todo", is_archived=True)
+    Task.objects.create(user=user, title="Completed", status="todo", completed_at=timezone.now())
+    Task.objects.create(user=user, title="In done, never moved", status="done")
+    Task.objects.create(user=other, title="Theirs", status="todo")
+    client = api_client_for(user)
+
+    open_ids = {t["id"] for t in client.get(reverse("task-list"), {"open": "true"}).data}
+    all_ids = {t["id"] for t in client.get(reverse("task-list")).data}
+
+    assert open_ids == {todo.pk, backlog.pk}
+    assert len(all_ids) == 5
+
+
+@pytest.mark.django_db
+def test_task_list_open_uses_the_users_own_done_statuses(api_client_for):
+    from apps.tasks.models import TaskStatus
+
+    user = User.objects.create_user()
+    other = User.objects.create_user()
+    TaskStatus.objects.create(user=other, name="Todo means done here", slug="shipped", is_done=True)
+    TaskStatus.objects.create(user=user, name="Shipped", slug="shipped", is_done=False)
+    mine = Task.objects.create(user=user, title="Not done for me", status="shipped")
+    client = api_client_for(user)
+
+    open_ids = {t["id"] for t in client.get(reverse("task-list"), {"open": "1"}).data}
+
+    assert open_ids == {mine.pk}
