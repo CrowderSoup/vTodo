@@ -18,7 +18,8 @@ class VtodoClient:
         a remote caller's OAuth access token forwarded by sse mode."""
         self._base = base_url.rstrip("/") + "/api/v1"
         self._session = requests.Session()
-        self._session.headers.update({"Authorization": f"{scheme} {token}"})
+        # X-Vtodo-Client labels this traffic as MCP in the task activity log.
+        self._session.headers.update({"Authorization": f"{scheme} {token}", "X-Vtodo-Client": "mcp"})
 
     def _raise(self, response: requests.Response) -> None:
         try:
@@ -161,3 +162,10 @@ class VtodoClient:
     def delete_comment(self, comment_id: int) -> None:
         r = self._session.delete(f"{self._base}/comments/{comment_id}/")
         self._raise(r)
+
+    # ── Activity ───────────────────────────────────────────────────────────
+
+    def list_activity(self, task_id: int) -> list[dict]:
+        r = self._session.get(f"{self._base}/tasks/{task_id}/activity/")
+        self._raise(r)
+        return r.json()

@@ -1,0 +1,17 @@
+<ul class="activity-list" id="task-activity">
+  {% for entry in activity %}
+  <li class="activity-item">
+    <span class="activity-text">
+      <strong>{% if entry.actor %}{{ entry.actor.display_name|default:entry.actor.username }}{% else %}vTodo{% endif %}</strong>
+      {% if entry.action == "moved" %}moved this from <em>{{ entry.old_value }}</em> to <em>{{ entry.new_value }}</em>
+      {% elif entry.action == "updated" and entry.field == "notes" %}edited the notes
+      {% elif entry.action == "updated" %}changed {{ entry.field_label }}{% if entry.old_value %} from <em>{{ entry.old_value }}</em>{% endif %} to <em>{{ entry.new_value|default:"nothing" }}</em>
+      {% elif entry.action == "created" %}created this task
+      {% elif entry.action == "commented" %}commented
+      {% elif entry.action == "comment_deleted" %}deleted a comment
+      {% else %}{{ entry.get_action_display|lower }} this task{% endif %}
+    </span>
+    <span class="field-help activity-meta">{{ entry.created_at|date:"N j, Y g:i a" }}{% if entry.source != "web" %} · via {{ entry.get_source_display }}{% endif %}</span>
+  </li>
+  {% endfor %}
+</ul>
