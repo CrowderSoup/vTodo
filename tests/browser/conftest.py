@@ -10,7 +10,13 @@ The page loads htmx from unpkg, but tests must run with no network. The
 browser context serves htmx from a copy in vendor/ and aborts every other
 request that isn't to the live server (stylesheets, EasyMDE). Static files
 come straight from the source tree, so a stale `collectstatic` output in
-staticfiles/ can't shadow them."""
+staticfiles/ can't shadow them.
+
+Playwright's sync API runs an event loop on this thread for as long as it is
+started. pytest-playwright keeps that going until the end of the session, and
+asyncio.run() then fails, which breaks the MCP OAuth tests when a browser
+test has already run. The page fixture below starts and stops Playwright
+itself so the loop does not outlive the test."""
 import os
 from pathlib import Path
 from urllib.parse import urlparse
@@ -49,31 +55,53 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip)
 
 
-@pytest.fixture
-def browser_context_args(browser_context_args, live_server):
-    return {**browser_context_args, "base_url": live_server.url}
+def _launch_kwargs(config):
+    """The pytest-playwright flags these tests still honor. The plugin fixture
+    isn't used; see the page fixture."""
+    kwargs = {}
+    if config.getoption("--headed"):
+        kwargs["headless"] = False
+    slowmo = config.getoption("--slowmo")
+    if slowmo:
+        kwargs["slow_mo"] = slowmo
+    channel = config.getoption("--browser-channel")
+    if channel:
+        kwargs["channel"] = channel
+    return kwargs
 
 
-@pytest.fixture
-def page(page, live_server):
-    def handle(route):
-        url = route.request.url
-        path = urlparse(url).path
-        if url.startswith(live_server.url) and path.startswith(settings.STATIC_URL):
-            found = finders.find(path.removeprefix(settings.STATIC_URL))
-            if found:
-                route.fulfill(path=found)
-            else:
-                route.fulfill(status=404)
-        elif url.startswith(live_server.url):
-            route.continue_()
-        elif url.startswith(HTMX_URL):
-            route.fulfill(path=HTMX_PATH, content_type="application/javascript")
+def _route(route, live_server):
+    url = route.request.url
+    path = urlparse(url).path
+    if url.startswith(live_server.url) and path.startswith(settings.STATIC_URL):
+        found = finders.find(path.removeprefix(settings.STATIC_URL))
+        if found:
+            route.fulfill(path=found)
         else:
-            route.abort()
+            route.fulfill(status=404)
+    elif url.startswith(live_server.url):
+        route.continue_()
+    elif url.startswith(HTMX_URL):
+        route.fulfill(path=HTMX_PATH, content_type="application/javascript")
+    else:
+        route.abort()
 
-    page.context.route("**/*", handle)
-    return page
+
+@pytest.fixture
+def page(live_server, browser_name, request):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser_type = getattr(playwright, browser_name)
+        browser = browser_type.launch(**_launch_kwargs(request.config))
+        context = browser.new_context(base_url=live_server.url)
+        try:
+            page = context.new_page()
+            page.context.route("**/*", lambda route: _route(route, live_server))
+            yield page
+        finally:
+            context.close()
+            browser.close()
 
 
 @pytest.fixture
