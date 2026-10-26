@@ -52,6 +52,15 @@ def test_notes_changes_never_store_the_text():
 
 
 @pytest.mark.django_db
+def test_notes_line_ending_change_alone_records_nothing():
+    user = User.objects.create_user()
+    task = Task.objects.create(user=user, title="T", notes="one\ntwo")
+    before = activity.snapshot(task)
+    task.notes = "one\r\ntwo"
+    assert activity.record_changes(task, before, actor=user, source="web") == []
+
+
+@pytest.mark.django_db
 def test_long_values_are_truncated_to_column_size():
     user = User.objects.create_user()
     task = Task.objects.create(user=user, title="x")

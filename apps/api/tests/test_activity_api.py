@@ -177,6 +177,14 @@ def test_activity_endpoint_404s_for_a_non_numeric_id(api_client_for):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("task_id", [str(2**63), str(10**30), "-1"])
+def test_activity_endpoint_404s_for_an_out_of_range_id(api_client_for, task_id):
+    user = User.objects.create_user()
+    response = api_client_for(user).get(reverse("task-activity", args=[task_id]))
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
 def test_activity_endpoint_is_read_only(api_client_for):
     user = User.objects.create_user()
     task = Task.objects.create(user=user, title="T")

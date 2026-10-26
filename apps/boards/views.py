@@ -6,6 +6,7 @@ from datetime import timedelta
 from urllib.parse import parse_qs, urlparse
 
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
@@ -660,7 +661,7 @@ class TaskReorderView(LoginRequiredMixin, View):
 def _posted_due_date(request):
     """The posted due_date as a date (or None). Assigning the raw string would
     leave task.due_date a str, so the history diff would see an unchanged date
-    as changed."""
+    as changed. Raises ValidationError for a date that doesn't parse."""
     return Task._meta.get_field("due_date").to_python(request.POST.get("due_date") or None)
 
 
@@ -684,7 +685,10 @@ class TaskUpdateView(LoginRequiredMixin, View):
         task = get_task_or_404(request.user, pk)
         title = request.POST.get("title", "").strip()
         notes = request.POST.get("notes", "")
-        due_date = _posted_due_date(request)
+        try:
+            due_date = _posted_due_date(request)
+        except ValidationError:
+            return HttpResponse(status=422)
 
         tags_raw = request.POST.get("tags", "")
         tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
@@ -884,7 +888,10 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
         task = get_task_or_404(request.user, pk)
         title = request.POST.get("title", "").strip()
         notes = request.POST.get("notes", "")
-        due_date = _posted_due_date(request)
+        try:
+            due_date = _posted_due_date(request)
+        except ValidationError:
+            return HttpResponse(status=422)
         tags_raw = request.POST.get("tags", "")
         tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
 

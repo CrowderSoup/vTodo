@@ -81,6 +81,10 @@ def record_changes(task, before, *, actor, source):
         old, new = before.get(f), getattr(task, f)
         if f == "tags":
             old, new = list(old or []), list(new or [])
+        elif f == "notes":
+            # Browsers submit textareas with \r\n; notes written via the API or
+            # MCP usually have \n. A line-ending change alone isn't an edit.
+            old, new = (old or "").replace("\r\n", "\n"), (new or "").replace("\r\n", "\n")
         if old == new:
             continue
         if f in _VALUELESS_FIELDS:

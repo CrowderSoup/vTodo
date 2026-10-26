@@ -62,6 +62,21 @@ def test_resaving_a_dated_task_records_nothing(logged_in, url_name):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("url_name", ["boards:task-update", "boards:task-panel-update"])
+def test_update_with_an_invalid_due_date_is_rejected(logged_in, url_name):
+    client, user = logged_in
+    task = Task.objects.create(user=user, title="Old", status="todo")
+    response = client.post(reverse(url_name, args=[task.pk]), {
+        "title": "New", "notes": "", "due_date": "2026-13-01", "tags": "",
+        "recurrence_from": Task.RECURRENCE_FROM_COMPLETION,
+    })
+    assert response.status_code == 422
+    task.refresh_from_db()
+    assert task.title == "Old"
+    assert _actions(task.pk) == []
+
+
+@pytest.mark.django_db
 def test_update_is_rolled_back_when_logging_fails(logged_in, monkeypatch):
     from apps.tasks import activity
 
