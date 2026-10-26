@@ -84,6 +84,13 @@
     </form>
   </section>
 
+  {% if activity %}
+  <section class="task-panel-section">
+    <span class="section-title">Activity</span>
+    {% include "partials/task_activity.html" %}
+  </section>
+  {% endif %}
+
 </div>
 
 <div class="task-panel-footer">

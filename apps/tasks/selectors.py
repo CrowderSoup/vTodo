@@ -40,7 +40,7 @@ def resolve_status_for_task(task):
     return TaskStatus.objects.filter(user_id=task.user_id, slug=task.status).first()
 
 
-def move_task(user, task, new_status_slug):
+def move_task(user, task, new_status_slug, *, source="web"):
     """Move a task to a new status, recording completion state.
 
     Tracks the status a task was completed from in `previous_status` (cleared on
@@ -70,21 +70,38 @@ def move_task(user, task, new_status_slug):
 
     task.save(update_fields=update_fields)
 
+    from apps.tasks import activity
+    from apps.tasks.models import TaskActivity
+
+    if previous_status != new_status_slug:
+        activity.record(
+            task, TaskActivity.MOVED, actor=user, source=source,
+            field="status", old=previous_status, new=new_status_slug,
+        )
+
     task.spawned_recurrence = None
     if is_done and not was_already_done:
         task.spawned_recurrence = task.spawn_recurrence(
             completion_date=timezone.localdate(task.completed_at)
         )
+        if task.spawned_recurrence is not None:
+            activity.record_created(
+                task.spawned_recurrence, actor=None, source=TaskActivity.SOURCE_SYSTEM
+            )
 
     return task
 
 
-def reschedule_task(user, task, new_due_date):
+def reschedule_task(user, task, new_due_date, *, source="web"):
     """Move a task to a new due_date, or clear it. Clears due_time too when the
     date is cleared, since a time-of-day is meaningless without a date -- otherwise
     a later re-add of a due_date would silently resurrect a stale due_time."""
+    from apps.tasks import activity
+
+    before = activity.snapshot(task)
     task.due_date = new_due_date
     if new_due_date is None:
         task.due_time = None
     task.save(update_fields=["due_date", "due_time", "updated_at"])
+    activity.record_changes(task, before, actor=user, source=source)
     return task

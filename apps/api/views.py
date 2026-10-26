@@ -23,10 +23,12 @@ from apps.accounts.google_accounts import (
     UnverifiedGoogleEmail,
     sign_in_with_google_id_token,
 )
-from apps.tasks.models import Task, TaskComment, TaskStatus
+from apps.tasks import activity
+from apps.tasks.activity import source_for_request
+from apps.tasks.models import Task, TaskActivity, TaskComment, TaskStatus
 from apps.tasks.selectors import InvalidStatusError, move_task, visible_tasks_qs
 
-from .serializers import TaskCommentSerializer, TaskSerializer, TaskStatusSerializer
+from .serializers import TaskActivitySerializer, TaskCommentSerializer, TaskSerializer, TaskStatusSerializer
 
 
 class TaskStatusViewSet(viewsets.ModelViewSet):
@@ -85,7 +87,8 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         order = Task.objects.filter(user=self.request.user).count()
-        serializer.save(user=self.request.user, order=order)
+        task = serializer.save(user=self.request.user, order=order)
+        activity.record_created(task, actor=self.request.user, source=source_for_request(self.request))
 
     def perform_update(self, serializer):
         # A status change has to go through move_task so completing a task
@@ -93,13 +96,20 @@ class TaskViewSet(viewsets.ModelViewSet):
         # the same as the board and the move action. Saving `status` as a
         # plain field skipped all of that (e.g. the MCP's update_task).
         new_status = serializer.validated_data.pop("status", None)
+        source = source_for_request(self.request)
         with transaction.atomic():
+            before = activity.snapshot(serializer.instance)
             task = serializer.save()
+            activity.record_changes(task, before, actor=self.request.user, source=source)
             if new_status is not None and new_status != task.status:
                 try:
-                    move_task(self.request.user, task, new_status)
+                    move_task(self.request.user, task, new_status, source=source)
                 except InvalidStatusError as e:
                     raise ValidationError({"status": [str(e)]})
+
+    def perform_destroy(self, instance):
+        activity.record_deleted(instance, actor=self.request.user, source=source_for_request(self.request))
+        instance.delete()
 
     @extend_schema(
         request={"application/json": {"type": "object", "properties": {"order": {"type": "array", "items": {"type": "integer"}}}}},
@@ -129,7 +139,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         new_status_slug = request.data.get("new_status", "")
 
         try:
-            move_task(request.user, task, new_status_slug)
+            move_task(request.user, task, new_status_slug, source=source_for_request(request))
         except InvalidStatusError:
             return Response(
                 {"detail": "Invalid status slug."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -144,8 +154,19 @@ class TaskViewSet(viewsets.ModelViewSet):
             return Response(TaskCommentSerializer(task.comments.all(), many=True).data)
         serializer = TaskCommentSerializer(data={**request.data, "task": task.pk})
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        comment = serializer.save(author=request.user)
+        activity.record_comment(
+            comment, TaskActivity.COMMENTED, actor=request.user, source=source_for_request(request)
+        )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(responses={200: TaskActivitySerializer(many=True)})
+    @action(detail=True, methods=["get"], url_path="activity", url_name="activity")
+    def activity_log(self, request, pk=None):
+        """Read-only change history for a task, oldest first."""
+        task = self.get_object()
+        rows = TaskActivity.objects.filter(user_id=task.user_id, task_pk=task.pk).select_related("actor")
+        return Response(TaskActivitySerializer(rows, many=True).data)
 
 
 class TaskCommentViewSet(viewsets.GenericViewSet, mixins.DestroyModelMixin):
@@ -153,6 +174,13 @@ class TaskCommentViewSet(viewsets.GenericViewSet, mixins.DestroyModelMixin):
 
     def get_queryset(self):
         return TaskComment.objects.filter(task__in=visible_tasks_qs(self.request.user))
+
+    def perform_destroy(self, instance):
+        activity.record_comment(
+            instance, TaskActivity.COMMENT_DELETED,
+            actor=self.request.user, source=source_for_request(self.request),
+        )
+        instance.delete()
 
 
 def validate_api_resource_token(request_uri: str, audiences: list[str]) -> bool:

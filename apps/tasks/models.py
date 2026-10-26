@@ -133,6 +133,14 @@ class Task(models.Model):
 
 class TaskComment(models.Model):
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="comments")
+    # Null for comments written before authors were recorded.
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
     body = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -143,3 +151,90 @@ class TaskComment(models.Model):
         return f"Comment on {self.task_id} @ {self.created_at}"
 
 
+
+
+class TaskActivity(models.Model):
+    """Append-only history of changes to a task.
+
+    Kept lean on purpose: one short row per changed field, values truncated to
+    255 chars, and free text (notes, comment bodies) is never copied in -- the
+    row only says that it changed. `user` is the task's owner, so history stays
+    scoped (and is still listable) after the task itself is deleted; `task` is
+    nulled on delete and `task_pk` keeps the original id.
+    """
+
+    SOURCE_WEB = "web"
+    SOURCE_API = "api"
+    SOURCE_MCP = "mcp"
+    SOURCE_SYSTEM = "system"
+    SOURCE_CHOICES = [
+        (SOURCE_WEB, "Web"),
+        (SOURCE_API, "API"),
+        (SOURCE_MCP, "MCP"),
+        (SOURCE_SYSTEM, "System"),
+    ]
+
+    CREATED = "created"
+    UPDATED = "updated"
+    MOVED = "moved"
+    ARCHIVED = "archived"
+    UNARCHIVED = "unarchived"
+    DELETED = "deleted"
+    COMMENTED = "commented"
+    COMMENT_DELETED = "comment_deleted"
+    ACTION_CHOICES = [
+        (CREATED, "Created"),
+        (UPDATED, "Updated"),
+        (MOVED, "Moved"),
+        (ARCHIVED, "Archived"),
+        (UNARCHIVED, "Unarchived"),
+        (DELETED, "Deleted"),
+        (COMMENTED, "Commented"),
+        (COMMENT_DELETED, "Comment deleted"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="task_activity",
+    )
+    task = models.ForeignKey(
+        Task,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="activity",
+    )
+    task_pk = models.PositiveIntegerField(db_index=True)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    source = models.CharField(max_length=8, choices=SOURCE_CHOICES)
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES)
+    field = models.CharField(max_length=32, blank=True, default="")
+    old_value = models.CharField(max_length=255, blank=True, default="")
+    new_value = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+        indexes = [models.Index(fields=["user", "task_pk", "created_at"])]
+
+    def __str__(self):
+        return f"{self.action} {self.field} on {self.task_pk} @ {self.created_at}"
+
+    @property
+    def field_label(self):
+        return self.field.replace("_", " ")
+
+    def save(self, *args, **kwargs):
+        if self.pk is not None:
+            raise ValueError("TaskActivity is append-only.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("TaskActivity is append-only.")
