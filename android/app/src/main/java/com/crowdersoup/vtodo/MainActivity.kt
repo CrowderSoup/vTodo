@@ -25,7 +25,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        viewModel.openFromIntent(intent)
+        // Rotation keeps the ViewModel, so the launch intent was already applied.
+        // Process death does not, and Android delivers the original intent again.
+        if (viewModel.shouldApplyLaunchIntent(savedInstanceState != null)) {
+            viewModel.openFromIntent(intent)
+        }
         setContent {
             VtodoTheme {
                 val state by viewModel.state.collectAsStateWithLifecycle()

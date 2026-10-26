@@ -26,7 +26,7 @@ from apps.accounts.google_accounts import (
 from apps.tasks import activity
 from apps.tasks.activity import source_for_request
 from apps.tasks.models import Task, TaskActivity, TaskComment, TaskStatus
-from apps.tasks.selectors import InvalidStatusError, move_task, visible_tasks_qs
+from apps.tasks.selectors import InvalidStatusError, default_status_slug, move_task, visible_tasks_qs
 
 from .serializers import TaskActivitySerializer, TaskCommentSerializer, TaskSerializer, TaskStatusSerializer
 
@@ -87,8 +87,11 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         order = Task.objects.filter(user=self.request.user).count()
+        extra = {}
+        if "status" not in serializer.validated_data:
+            extra["status"] = default_status_slug(self.request.user)
         with transaction.atomic():
-            task = serializer.save(user=self.request.user, order=order)
+            task = serializer.save(user=self.request.user, order=order, **extra)
             activity.record_created(task, actor=self.request.user, source=source_for_request(self.request))
 
     def perform_update(self, serializer):

@@ -76,7 +76,7 @@ All configuration is through environment variables. Copy `.env.example` to `.env
 
 Click "Sign in with Google" on the login page. Requires `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` from a Google Cloud Console OAuth 2.0 Client (Web application type), with the authorized redirect URI set to `<your-domain>/accounts/google/login/callback/`. A new account is created automatically on first login, matched by verified email to any existing account with the same address.
 
-The Android app uses that same web client. It asks Google for an ID token aimed at `GOOGLE_CLIENT_ID`, then `POST /api/v1/auth/google/` checks the token and returns the account's API token (the one on Settings → API token). `GET /api/v1/auth/google/` returns the client id the app should request. In the same Google Cloud project, add an Android OAuth client for package `com.crowdersoup.vtodo` and the debug certificate SHA-1 in the Android section below. No new environment variable.
+The Android app uses that same web client. It asks Google for an ID token aimed at `GOOGLE_CLIENT_ID`, then `POST /api/v1/auth/google/` checks the token and returns the account's API token (the one on Settings → API token). `GET /api/v1/auth/google/` returns the client id the app should request. In the same Google Cloud project, add an Android OAuth client for package `com.crowdersoup.vtodo` and the SHA-1 of the signing key (see the Android section below). No new environment variable.
 
 ## Running tests
 
@@ -108,19 +108,34 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 Open the app once, enter the server URL, and sign in with Google. Pasting an API token still works. Then long-press the home screen and add the vtodo Today widget. The widget refreshes when you open the app, when you check a task off, and about every 30 minutes. `http://` server URLs are allowed so a machine on your LAN works. A self-signed HTTPS certificate is not.
 
-Google sign-in needs an Android OAuth client next to the web client, with package name `com.crowdersoup.vtodo` and this debug SHA-1:
+Google sign-in needs an Android OAuth client next to the web client, with package name `com.crowdersoup.vtodo` and the SHA-1 of the key that signed the build. The server you type in has to be running this version, because the phone asks it for the Google client id and then trades the ID token for an API token.
 
-```
-BD:FC:88:8A:8B:19:D2:D1:59:75:6A:31:37:CC:49:81:1E:9B:A6:8F
-```
+`android/app/debug.keystore` (alias `androiddebugkey`, password `android`) is committed so local debug builds are reproducible. Its password is public, so anyone can sign an APK with it. Do not hand out debug builds, and do not register its SHA-1 on the production Android OAuth client. A debug build can still sign in to production by pasting an API token, or with Google against a development server whose own Google Cloud project has that SHA-1 registered.
 
-That fingerprint is for `android/app/debug.keystore` (alias `androiddebugkey`, password `android`), which is also what the GitHub Action APK is signed with. The server you type in has to be running this version, because the phone asks it for the Google client id and then trades the ID token for an API token.
-
-Pushing a change under `android/` also runs the Android workflow. On a finished run, download `vtodo-debug.apk` from the artifacts. It is signed with the debug key in `android/app/debug.keystore` (password `android`), so a later build installs over the previous one:
+Release builds use a key that is never committed. Create one once and keep a backup, because an installed app only accepts updates signed with the same key:
 
 ```bash
-adb install -r vtodo-debug.apk
+keytool -genkeypair -v -keystore vtodo-release.jks -alias vtodo \
+  -keyalg RSA -keysize 4096 -validity 10000
+keytool -list -v -keystore vtodo-release.jks -alias vtodo   # prints the SHA-1
 ```
+
+Register that SHA-1 on the Android OAuth client. To build a release locally, put the key in `~/.gradle/gradle.properties`:
+
+```properties
+VTODO_RELEASE_KEYSTORE=/path/to/vtodo-release.jks
+VTODO_RELEASE_KEYSTORE_PASSWORD=...
+VTODO_RELEASE_KEY_ALIAS=vtodo
+VTODO_RELEASE_KEY_PASSWORD=...
+```
+
+Pushing a change under `android/` runs the Android workflow. It always runs the unit tests and a debug build. With the repository secrets `VTODO_RELEASE_KEYSTORE_BASE64` (the output of `base64 -w0 vtodo-release.jks`), `VTODO_RELEASE_KEYSTORE_PASSWORD`, `VTODO_RELEASE_KEY_ALIAS`, and `VTODO_RELEASE_KEY_PASSWORD` set, it also builds a signed `vtodo.apk` and attaches it to the run:
+
+```bash
+adb install -r vtodo.apk
+```
+
+A phone that has the old debug-signed build has to uninstall it first, because the signature changed. The phone only holds a copy of the website's data, so sign in again afterwards.
 
 ## License
 

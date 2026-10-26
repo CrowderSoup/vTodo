@@ -151,14 +151,20 @@ class VtodoRepository(
         }
     }
 
-    suspend fun saveTask(taskId: Long, input: TaskWrite): Result<Unit> {
+    /**
+     * Saves an edit. [baseline] is the task as it was when editing started;
+     * only fields that differ from it are sent, so a stale copy on the phone
+     * does not overwrite changes made elsewhere in the meantime.
+     */
+    suspend fun saveTask(taskId: Long, input: TaskWrite, baseline: TaskWrite): Result<Unit> {
         val body = input.toBody()
             ?: return Result.failure(IllegalArgumentException("A title is required."))
         val session = sessionStore.current()
             ?: return Result.failure(IllegalStateException("Sign in first."))
+        val changes = taskPayload(body, baseline.toBody())
         return try {
             mutex.withLock {
-                api.patchTask(session, taskId, body)
+                if (changes.isNotEmpty()) api.patchTask(session, taskId, changes)
                 pull(session)
             }
             Result.success(Unit)
@@ -239,7 +245,7 @@ class VtodoRepository(
         val time = if (dueDate == null) null else dueTime
         return TaskBody(
             title = trimmed,
-            notes = notes.trim(),
+            notes = notes,
             dueDate = dueDate?.toString(),
             dueTime = time?.let(::formatDueTime),
             tags = normalizeTags(tags),

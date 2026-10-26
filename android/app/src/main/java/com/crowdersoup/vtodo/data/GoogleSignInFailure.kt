@@ -14,9 +14,8 @@ internal fun googleSignInFailureMessage(raw: String?): String {
         "[10]" in lower
     ) {
         return "Google rejected this app's signing certificate. The Android OAuth client " +
-            "needs package com.crowdersoup.vtodo and SHA-1 " +
-            "BD:FC:88:8A:8B:19:D2:D1:59:75:6A:31:37:CC:49:81:1E:9B:A6:8F, " +
-            "in the same Google Cloud project as the website."
+            "needs package com.crowdersoup.vtodo and the SHA-1 of the key this build " +
+            "was signed with, in the same Google Cloud project as the website."
     }
     if (
         detail.isEmpty() ||

@@ -35,11 +35,30 @@ jobs:
         working-directory: android
         run: ./gradlew :app:testDebugUnitTest :app:assembleDebug
 
-      - name: Name the APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk vtodo-debug.apk
+      # The debug APK is signed with the public key in android/app/debug.keystore,
+      # so it is only a build check and is not uploaded. A release APK is built
+      # once the signing secrets are set (see README, Android).
+      - name: Build signed release APK
+        id: release
+        working-directory: android
+        env:
+          VTODO_RELEASE_KEYSTORE_BASE64: ${{ secrets.VTODO_RELEASE_KEYSTORE_BASE64 }}
+          VTODO_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.VTODO_RELEASE_KEYSTORE_PASSWORD }}
+          VTODO_RELEASE_KEY_ALIAS: ${{ secrets.VTODO_RELEASE_KEY_ALIAS }}
+          VTODO_RELEASE_KEY_PASSWORD: ${{ secrets.VTODO_RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$VTODO_RELEASE_KEYSTORE_BASE64" ]; then
+            exit 0
+          fi
+          echo "$VTODO_RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          VTODO_RELEASE_KEYSTORE="$RUNNER_TEMP/release.jks" ./gradlew :app:assembleRelease
+          rm "$RUNNER_TEMP/release.jks"
+          cp app/build/outputs/apk/release/app-release.apk ../vtodo.apk
+          echo "built=true" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v7
+        if: steps.release.outputs.built == 'true'
         with:
-          path: vtodo-debug.apk
+          path: vtodo.apk
           if-no-files-found: error
           archive: false

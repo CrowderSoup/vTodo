@@ -10,7 +10,7 @@ class GoogleSignInFailureTest {
     fun reauthFailedPointsAtTheSigningCertificate() {
         val message = googleSignInFailureMessage("[16] Account reauth failed.")
         assertTrue(message.contains("com.crowdersoup.vtodo"))
-        assertTrue(message.contains("BD:FC:88:8A:8B:19:D2:D1:59:75:6A:31:37:CC:49:81:1E:9B:A6:8F"))
+        assertTrue(message.contains("SHA-1"))
     }
 
     @Test

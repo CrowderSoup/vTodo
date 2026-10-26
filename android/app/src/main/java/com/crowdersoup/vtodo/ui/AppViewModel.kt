@@ -47,6 +47,9 @@ data class TaskDraft(
     val tags: List<String>,
     val recurrenceDays: String = "",
     val recurrenceFrom: String = RECURRENCE_FROM_COMPLETION,
+    // The task as the phone last saw it when this draft was opened. Saving
+    // sends only what differs from it.
+    val baseline: TaskWrite,
 )
 
 data class NewTaskDraft(
@@ -84,6 +87,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val saving = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
     private val busy = MutableStateFlow<Set<Long>>(emptySet())
+
+    // Survives rotation with this ViewModel, and is gone after process death.
+    private var launchIntentConsumed = false
 
     val state: StateFlow<AppUiState> = combine(
         graph.sessionStore.session,
@@ -218,7 +224,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    fun shouldApplyLaunchIntent(restoredInstance: Boolean): Boolean =
+        !launchIntentConsumed || !restoredInstance
+
     fun openFromIntent(intent: Intent?) {
+        launchIntentConsumed = true
         if (intent?.action != MainActivity.ACTION_OPEN) return
         if (!intent.hasExtra(MainActivity.EXTRA_TASK_ID)) {
             showList()
@@ -294,7 +304,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             saving.value = true
             message.value = null
-            val result = graph.repository.saveTask(current.id, current.toWrite(schedule))
+            val result = graph.repository.saveTask(current.id, current.toWrite(schedule), current.baseline)
             result.onSuccess {
                 refreshTodayWidget(getApplication())
                 val fresh = graph.repository.findTask(current.id)
@@ -408,6 +418,15 @@ private fun OpenTask.toDraft() = TaskDraft(
     tags = tags,
     recurrenceDays = recurrenceDays?.toString().orEmpty(),
     recurrenceFrom = normalizeRecurrenceFrom(recurrenceFrom),
+    baseline = TaskWrite(
+        title = title,
+        notes = notes,
+        dueDate = dueDate,
+        dueTime = dueTime,
+        tags = tags,
+        recurrenceDays = recurrenceDays,
+        recurrenceFrom = normalizeRecurrenceFrom(recurrenceFrom),
+    ),
 )
 
 private data class Schedule(

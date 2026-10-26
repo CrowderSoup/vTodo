@@ -36,6 +36,18 @@ def visible_statuses_qs(user):
     return TaskStatus.objects.filter(user=user)
 
 
+def default_status_slug(user):
+    """Status for a new task created without one: the user's chosen default,
+    else their first status. Matches the board's create panel, so a task from
+    the API lands in a column that exists instead of a hard-coded "todo"."""
+    if user.default_status_id:
+        default = visible_statuses_qs(user).filter(pk=user.default_status_id).first()
+        if default:
+            return default.slug
+    first = visible_statuses_qs(user).first()
+    return first.slug if first else "todo"
+
+
 def resolve_status_for_task(task):
     """The TaskStatus row matching task.status."""
     return TaskStatus.objects.filter(user_id=task.user_id, slug=task.status).first()
