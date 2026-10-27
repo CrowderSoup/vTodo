@@ -149,6 +149,34 @@ def test_default_status_stays_on_its_workspace(client):
 
 
 @pytest.mark.django_db
+def test_bad_timezone_does_not_change_the_shared_default(client):
+    user = User.objects.create_user(display_name="Ada", timezone="UTC")
+    personal = Workspace.objects.get(owner=user)
+    shared = create_shared_workspace(user=user, name="Family")
+    todo = shared.statuses.get(slug="todo")
+    shared.default_status = todo
+    shared.save(update_fields=["default_status"])
+
+    _login(client, user, shared)
+    response = client.post(
+        reverse("users:settings"),
+        {"display_name": "Grace", "default_status": "", "timezone": "Not/AZone"},
+        follow=True,
+    )
+
+    user.refresh_from_db()
+    shared.refresh_from_db()
+    personal.refresh_from_db()
+    assert response.status_code == 200
+    assert user.display_name == "Ada"
+    assert user.timezone == "UTC"
+    assert user.default_status_id is None
+    assert shared.default_status_id == todo.pk
+    assert personal.default_status_id is None
+    assert any("recognized timezone" in message.message for message in response.context["messages"])
+
+
+@pytest.mark.django_db
 def test_recurrence_stays_in_the_shared_workspace():
     user = User.objects.create_user()
     shared = create_shared_workspace(user=user, name="Family")
@@ -223,6 +251,29 @@ def _team():
     Membership.objects.create(workspace=shared, user=member, role=Membership.ROLE_MEMBER)
     Membership.objects.create(workspace=shared, user=viewer, role=Membership.ROLE_VIEWER)
     return shared, owner, member, viewer
+
+
+@pytest.mark.django_db
+def test_viewers_do_not_get_drag_handles(client):
+    shared, owner, member, viewer = _team()
+    Task.objects.create(user=owner, workspace=shared, title="Visible", status="todo")
+
+    _login(client, viewer, shared)
+    board = client.get(reverse("boards:board")).content
+    calendar = client.get(reverse("calendar:calendar")).content
+    assert b'draggable="true"' not in board
+    assert b"col-drag-handle" not in board
+    assert b'draggable="true"' not in calendar
+    assert b"calendar-drop-zone" not in calendar
+
+    _login(client, member, shared)
+    member_board = client.get(reverse("boards:board")).content
+    assert b'draggable="true"' in member_board
+    assert b"col-drag-handle" not in member_board
+
+    _login(client, owner, shared)
+    owner_board = client.get(reverse("boards:board")).content
+    assert b'class="col-drag-handle" draggable="true"' in owner_board
 
 
 @pytest.mark.django_db

@@ -1,6 +1,6 @@
 <article class="task-card task-card--compact{% if task.completed_at %} task-card--complete{% endif %}{% if task.due_date and not task.completed_at and task.due_date < today %} task-card--overdue{% endif %}"
          id="task-{{ task.pk }}"
-         draggable="true"
+         {% if can_write_workspace %}draggable="true"{% endif %}
          data-task-id="{{ task.pk }}"
          data-status="{{ task.status }}"{% if oob_swap %} hx-swap-oob="true"{% endif %}>
   <span class="cal-task-dot" style="background: {% for status in statuses %}{% if status.slug == task.status %}{{ status.color|default:"var(--accent)" }}{% endif %}{% endfor %};"></span>

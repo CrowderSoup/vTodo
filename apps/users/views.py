@@ -60,27 +60,15 @@ class SettingsGeneralView(LoginRequiredMixin, View):
     def post(self, request):
         from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+        from django.db import transaction
+
         from apps.tasks.models import TaskStatus
         from apps.workspaces.access import active_workspace
         from apps.workspaces.models import Workspace
 
         user = request.user
         workspace = active_workspace(request)
-        user.display_name = request.POST.get("display_name", "").strip()
-
-        update_fields = ["display_name", "timezone"]
-        if request.workspace_membership.can_admin() and "default_status" in request.POST:
-            default_status = None
-            default_status_id = request.POST.get("default_status", "").strip()
-            if default_status_id.isdigit():
-                default_status = TaskStatus.objects.filter(
-                    workspace=workspace, pk=int(default_status_id)
-                ).first()
-            workspace.default_status = default_status
-            workspace.save(update_fields=["default_status"])
-            if workspace.kind == Workspace.KIND_PERSONAL and workspace.owner_id == user.pk:
-                user.default_status = default_status
-                update_fields.append("default_status")
+        display_name = request.POST.get("display_name", "").strip()
 
         tzname = request.POST.get("timezone", "").strip()
         if tzname:
@@ -89,9 +77,33 @@ class SettingsGeneralView(LoginRequiredMixin, View):
             except (ZoneInfoNotFoundError, ValueError):
                 messages.error(request, "That's not a recognized timezone.")
                 return redirect(reverse("users:settings"))
-            user.timezone = tzname
 
-        user.save(update_fields=update_fields)
+        update_fields = ["display_name"]
+        user.display_name = display_name
+        if tzname:
+            user.timezone = tzname
+            update_fields.append("timezone")
+
+        update_default_status = (
+            request.workspace_membership.can_admin() and "default_status" in request.POST
+        )
+        default_status = None
+        if update_default_status:
+            default_status_id = request.POST.get("default_status", "").strip()
+            if default_status_id.isdigit():
+                default_status = TaskStatus.objects.filter(
+                    workspace=workspace, pk=int(default_status_id)
+                ).first()
+
+        with transaction.atomic():
+            if update_default_status:
+                workspace.default_status = default_status
+                workspace.save(update_fields=["default_status"])
+                if workspace.kind == Workspace.KIND_PERSONAL and workspace.owner_id == user.pk:
+                    user.default_status = default_status
+                    update_fields.append("default_status")
+            user.save(update_fields=update_fields)
+
         messages.success(request, "Settings saved.")
         return redirect(reverse("users:settings"))
 

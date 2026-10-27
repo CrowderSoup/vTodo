@@ -10,10 +10,10 @@
                 {% elif lane.default_status == done_slug %}--column-accent: var(--success);
                 {% endif %}">
   {% if lane.collapsed %}
-  <div class="column-collapsed-strip col-drag-handle"
-       draggable="true"
+  <div class="column-collapsed-strip{% if can_admin_workspace %} col-drag-handle{% endif %}"
+       {% if can_admin_workspace %}draggable="true"{% endif %}
        data-column-id="{{ lane.dom_id }}"
-       title="Drag to reorder &ldquo;{{ lane.label }}&rdquo;">
+       title="{% if can_admin_workspace %}Drag to reorder &ldquo;{{ lane.label }}&rdquo;{% else %}{{ lane.label }}{% endif %}">
     <button class="col-actions-btn column-collapsed-expand" type="button" title="Expand &ldquo;{{ lane.label }}&rdquo;"
             hx-post="{{ lane.hide_url }}"
             hx-target="#task-list-content"
@@ -27,7 +27,9 @@
 
   <div class="column-header{% if lane.collapsed %} column-header--collapsed{% endif %}">
     <div class="column-header-main">
+      {% if can_admin_workspace %}
       <span class="col-drag-handle" draggable="true" data-column-id="{{ lane.dom_id }}" title="Drag to reorder">⋮⋮</span>
+      {% endif %}
       <div>
         <p class="column-kicker">Lane {{ lane.number }}</p>
         <h2 class="column-title">{{ lane.label }}</h2>

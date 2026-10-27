@@ -9,7 +9,7 @@
             hx-on::after-request="openTaskPanel()">+</button>
     {% endif %}
   </div>
-  <div class="calendar-day-tasks calendar-drop-zone" data-date="{{ cell.date|date:'Y-m-d' }}">
+  <div class="calendar-day-tasks{% if can_write_workspace %} calendar-drop-zone{% endif %}" data-date="{{ cell.date|date:'Y-m-d' }}">
     {% for task in cell.tasks %}
     {% include "partials/task_card_calendar.html" %}
     {% endfor %}
