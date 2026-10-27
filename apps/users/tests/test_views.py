@@ -67,6 +67,41 @@ def test_settings_post_rejects_default_status_from_another_user(logged_in_client
 
 
 @pytest.mark.django_db
+def test_settings_post_bad_timezone_leaves_default_status_unchanged(logged_in_client):
+    from apps.workspaces.models import Workspace
+
+    client, user = logged_in_client
+    workspace = Workspace.objects.get(owner=user)
+    todo = workspace.statuses.get(slug="todo")
+    done = workspace.statuses.get(slug="done")
+    user.display_name = "Ada"
+    user.timezone = "UTC"
+    user.default_status = todo
+    user.save(update_fields=["display_name", "timezone", "default_status"])
+    workspace.default_status = todo
+    workspace.save(update_fields=["default_status"])
+
+    response = client.post(
+        reverse("users:settings"),
+        {
+            "display_name": "Grace",
+            "default_status": str(done.pk),
+            "timezone": "Not/AZone",
+        },
+        follow=True,
+    )
+
+    user.refresh_from_db()
+    workspace.refresh_from_db()
+    assert response.status_code == 200
+    assert user.display_name == "Ada"
+    assert user.timezone == "UTC"
+    assert user.default_status_id == todo.pk
+    assert workspace.default_status_id == todo.pk
+    assert any("recognized timezone" in message.message for message in response.context["messages"])
+
+
+@pytest.mark.django_db
 def test_settings_calendar_shows_connect_link_when_disconnected(logged_in_client):
     client, _ = logged_in_client
     response = client.get(reverse("users:settings-calendar"))

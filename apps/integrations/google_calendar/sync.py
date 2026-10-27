@@ -10,9 +10,15 @@ DEFAULT_DURATION_MINUTES = 30
 
 
 def user_tasks_qs(user):
-    """All of a user's tasks. Public since the disconnect view also needs it,
-    to clean up ExternalLinks."""
-    return Task.objects.filter(user=user)
+    """The tasks on a user's personal workspace. Public since the disconnect
+    view also needs it, to clean up ExternalLinks.
+
+    Shared workspaces stay off the calendar: an ExternalLink belongs to the
+    task, not to a connection, so two people syncing one shared task would
+    each treat the other's event as their own."""
+    from apps.workspaces.models import Workspace
+
+    return Task.objects.filter(workspace__owner=user, workspace__kind=Workspace.KIND_PERSONAL)
 
 
 def _eligible_tasks_qs(user):

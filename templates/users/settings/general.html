@@ -42,9 +42,10 @@
   <section class="settings-card surface-panel">
     <div>
       <h2 class="card-title">Task Capture</h2>
-      <p class="card-subtitle">Choose the status brand-new tasks should get by default.</p>
+      <p class="card-subtitle">New tasks in {{ active_workspace.name }} start in this status.</p>
     </div>
 
+    {% if can_admin_workspace %}
     <div class="form-field">
       <label class="field-label" for="default_status">Default status</label>
       <select id="default_status" name="default_status">
@@ -55,7 +56,10 @@
       </select>
     </div>
 
-    <p class="field-help">Leave this unset to use your first status whenever you create a task from the floating add button.</p>
+    <p class="field-help">Leave this unset to use the first status whenever you create a task from the floating add button.</p>
+    {% else %}
+    <p class="field-help">Only an owner of {{ active_workspace.name }} can change the default status.</p>
+    {% endif %}
   </section>
 
   <section class="settings-card settings-card--wide surface-panel">

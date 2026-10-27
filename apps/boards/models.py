@@ -3,10 +3,17 @@ from django.db import models
 
 
 class Board(models.Model):
-    """Every user has exactly one personal board."""
+    """One board per workspace. `user` is who created it, if they still exist."""
 
-    user = models.OneToOneField(
+    user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="boards",
+    )
+    workspace = models.OneToOneField(
+        "workspaces.Workspace",
         on_delete=models.CASCADE,
         related_name="board",
     )
@@ -31,13 +38,14 @@ class Column(models.Model):
     def __str__(self):
         return f"{self.label} ({self.board})"
 
-    def default_status(self, user):
+    def default_status(self, user=None):
         """Returns the status slug to assign to tasks added in this column."""
         statuses = self.filter_config.get("statuses", [])
         if statuses:
             return statuses[0]
-        from apps.tasks.selectors import visible_statuses_qs
-        first = visible_statuses_qs(user).first()
+        from apps.tasks.models import TaskStatus
+
+        first = TaskStatus.objects.filter(workspace_id=self.board.workspace_id).first()
         return first.slug if first else "todo"
 
 

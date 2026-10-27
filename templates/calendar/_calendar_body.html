@@ -3,11 +3,11 @@
 </div>
 <aside class="calendar-nodate-pane">
   <h3 class="calendar-nodate-title">No due date</h3>
-  <div class="calendar-nodate-list calendar-drop-zone" data-date="">
+  <div class="calendar-nodate-list{% if can_write_workspace %} calendar-drop-zone{% endif %}" data-date="">
     {% for task in undated_tasks %}
     {% include "partials/task_card.html" %}
     {% empty %}
-    <div class="task-empty">Nothing undated. Drag a card here to clear its due date.</div>
+    <div class="task-empty">{% if can_write_workspace %}Nothing undated. Drag a card here to clear its due date.{% else %}Nothing undated.{% endif %}</div>
     {% endfor %}
   </div>
 </aside>

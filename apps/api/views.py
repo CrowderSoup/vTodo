@@ -8,7 +8,7 @@ from oauth2_provider.contrib.rest_framework import OAuth2Authentication, TokenHa
 from oauth2_provider.oauth2_validators import validate_resource_as_url_prefix
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -34,21 +34,28 @@ from apps.tasks.selectors import (
     visible_statuses_qs,
     visible_tasks_qs,
 )
+from apps.workspaces.access import can_delete_comment
 
 from .models import DeviceToken
+from .permissions import OAuthTokenHasTasksScope, WorkspaceRolePermission
 from .serializers import TaskActivitySerializer, TaskCommentSerializer, TaskSerializer, TaskStatusSerializer
+
+WORKSPACE_PERMISSIONS = [IsAuthenticated, OAuthTokenHasTasksScope, WorkspaceRolePermission]
 
 
 class TaskStatusViewSet(viewsets.ModelViewSet):
     serializer_class = TaskStatusSerializer
     lookup_field = "slug"
+    permission_classes = WORKSPACE_PERMISSIONS
+    workspace_admin = True
 
     def get_queryset(self):
-        return TaskStatus.objects.filter(user=self.request.user)
+        return TaskStatus.objects.filter(workspace=self.request.active_workspace)
 
     def perform_create(self, serializer):
-        order = TaskStatus.objects.filter(user=self.request.user).count()
-        serializer.save(user=self.request.user, order=order)
+        workspace = self.request.active_workspace
+        order = TaskStatus.objects.filter(workspace=workspace).count()
+        serializer.save(user=self.request.user, workspace=workspace, order=order)
 
     @extend_schema(
         request={"application/json": {"type": "object", "properties": {"order": {"type": "array", "items": {"type": "integer"}}}}},
@@ -62,8 +69,8 @@ class TaskStatusViewSet(viewsets.ModelViewSet):
 
         statuses = {s.pk: s for s in TaskStatus.objects.filter(pk__in=order)}
         if statuses:
-            owns_scope = all(s.user_id == request.user.id for s in statuses.values())
-            if not owns_scope:
+            workspace_id = request.active_workspace.pk
+            if any(s.workspace_id != workspace_id for s in statuses.values()):
                 return Response(status=status.HTTP_403_FORBIDDEN)
 
         for i, pk in enumerate(order):
@@ -91,6 +98,7 @@ class TaskStatusViewSet(viewsets.ModelViewSet):
 class TaskViewSet(viewsets.ModelViewSet):
     serializer_class = TaskSerializer
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    permission_classes = WORKSPACE_PERMISSIONS
 
     def get_queryset(self):
         qs = visible_tasks_qs(self.request.user)
@@ -111,12 +119,15 @@ class TaskViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        order = Task.objects.filter(user=self.request.user).count()
+        workspace = self.request.active_workspace
+        order = Task.objects.filter(workspace=workspace).count()
         extra = {}
         if "status" not in serializer.validated_data:
             extra["status"] = default_status_slug(self.request.user)
         with transaction.atomic():
-            task = serializer.save(user=self.request.user, order=order, **extra)
+            task = serializer.save(
+                user=self.request.user, workspace=workspace, order=order, **extra
+            )
             activity.record_created(task, actor=self.request.user, source=source_for_request(self.request))
 
     def perform_update(self, serializer):
@@ -201,7 +212,9 @@ class TaskViewSet(viewsets.ModelViewSet):
             task_pk = int(pk)
         except (TypeError, ValueError):
             raise NotFound()
-        rows = TaskActivity.objects.filter(user=request.user, task_pk=task_pk).select_related("actor")
+        rows = TaskActivity.objects.filter(
+            workspace=request.active_workspace, task_pk=task_pk
+        ).select_related("actor")
         if not rows.exists() and not visible_tasks_qs(request.user).filter(pk=task_pk).exists():
             raise NotFound()
         return Response(TaskActivitySerializer(rows, many=True).data)
@@ -209,11 +222,14 @@ class TaskViewSet(viewsets.ModelViewSet):
 
 class TaskCommentViewSet(viewsets.GenericViewSet, mixins.DestroyModelMixin):
     serializer_class = TaskCommentSerializer
+    permission_classes = WORKSPACE_PERMISSIONS
 
     def get_queryset(self):
         return TaskComment.objects.filter(task__in=visible_tasks_qs(self.request.user))
 
     def perform_destroy(self, instance):
+        if not can_delete_comment(self.request, instance):
+            raise PermissionDenied("Only its author or an owner can delete this comment.")
         with transaction.atomic():
             activity.record_comment(
                 instance, TaskActivity.COMMENT_DELETED,

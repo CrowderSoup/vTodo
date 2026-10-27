@@ -1,4 +1,4 @@
-{% if done_task_count %}
+{% if done_task_count and can_write_workspace %}
 <form hx-post="{% url 'boards:board-archive-done' %}"
       hx-target="#task-list-content"
       hx-swap="innerHTML"

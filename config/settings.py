@@ -58,6 +58,7 @@ if not DEBUG:
 INSTALLED_APPS = [
     # Local apps — users first because AUTH_USER_MODEL depends on it
     "apps.users.apps.UsersConfig",
+    "apps.workspaces.apps.WorkspacesConfig",
     "apps.accounts.apps.AccountsConfig",
     "apps.emailauth.apps.EmailAuthConfig",
     "apps.teams.apps.TeamsConfig",
@@ -165,6 +166,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "apps.users.middleware.TimezoneMiddleware",
+    "apps.workspaces.middleware.ActiveWorkspaceMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -185,6 +187,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "apps.siteadmin.context_processors.admin_status",
+                "apps.workspaces.context_processors.workspace_nav",
             ],
         },
     },

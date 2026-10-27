@@ -15,10 +15,18 @@ DEFAULT_STATUS_DEFS = [
 
 
 class TaskStatus(models.Model):
+    # Who created the row. The workspace owns it, so it outlives this person.
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="task_statuses",
+    )
+    workspace = models.ForeignKey(
+        "workspaces.Workspace",
+        on_delete=models.CASCADE,
+        related_name="statuses",
     )
     name = models.CharField(max_length=100)
     slug = models.SlugField(max_length=50)
@@ -30,8 +38,8 @@ class TaskStatus(models.Model):
         ordering = ["order"]
         constraints = [
             models.UniqueConstraint(
-                fields=["user", "slug"],
-                name="taskstatus_unique_user_slug",
+                fields=["workspace", "slug"],
+                name="taskstatus_unique_workspace_slug",
             ),
         ]
 
@@ -45,8 +53,16 @@ class TaskStatus(models.Model):
 
 
 class Task(models.Model):
+    # Who created the row. The workspace owns it, so it outlives this person.
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tasks",
+    )
+    workspace = models.ForeignKey(
+        "workspaces.Workspace",
         on_delete=models.CASCADE,
         related_name="tasks",
     )
@@ -93,14 +109,14 @@ class Task(models.Model):
         """Create the next recurrence of this task in backlog. Returns the new task or None.
 
         Also returns None when an open occurrence of this series already exists
-        (same owner, title, and schedule; not completed and not archived).
+        (same workspace, title, and schedule; not completed and not archived).
         Completing an older copy must not leave two open copies side by side.
         """
         if not self.recurrence_days:
             return None
 
         open_sibling = Task.objects.filter(
-            user_id=self.user_id,
+            workspace_id=self.workspace_id,
             title=self.title,
             recurrence_days=self.recurrence_days,
             recurrence_from=self.recurrence_from,
@@ -119,6 +135,7 @@ class Task(models.Model):
 
         return Task.objects.create(
             user=self.user,
+            workspace_id=self.workspace_id,
             title=self.title,
             notes=self.notes,
             status="backlog",
@@ -206,10 +223,18 @@ class TaskActivity(models.Model):
         (COMMENT_DELETED, "Comment deleted"),
     ]
 
+    # Who created the row. The workspace owns it, so it outlives this person.
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="task_activity",
+    )
+    workspace = models.ForeignKey(
+        "workspaces.Workspace",
+        on_delete=models.CASCADE,
+        related_name="activity",
     )
     task = models.ForeignKey(
         Task,

@@ -1,5 +1,6 @@
 {% for status in statuses %}
 <div class="config-row status-row" data-status-id="{{ status.pk }}">
+  {% if can_admin_workspace %}
   <span class="status-drag-handle" draggable="true" data-status-id="{{ status.pk }}" title="Drag to reorder">⋮⋮</span>
   <input type="color" name="color" class="status-color-input"
          value="{{ status.color|default:'#94a3b8' }}"
@@ -8,6 +9,7 @@
          hx-target="#status-list"
          hx-swap="innerHTML"
          title="Lane color">
+  {% endif %}
   <div class="config-main">
     <div class="config-title">
       <span>{{ status.name }}</span>
@@ -18,6 +20,7 @@
       {% endif %}
     </div>
   </div>
+  {% if can_admin_workspace %}
   {% if status.color %}
   <button type="button" class="btn-ghost btn-icon"
           hx-post="{% url 'users:status-color-update' status.pk %}"
@@ -31,6 +34,7 @@
           hx-target="#status-list"
           hx-swap="innerHTML"
           hx-confirm="Delete status &ldquo;{{ status.name|escapejs }}&rdquo;? Tasks with this status will be unaffected.">×</button>
+  {% endif %}
 </div>
 {% empty %}
 <div class="settings-empty-state">

@@ -1,6 +1,6 @@
 <article class="task-card{% if task.completed_at %} task-card--complete{% endif %}{% if task.due_date and not task.completed_at %}{% if task.due_date < today %} task-card--overdue{% elif task.due_date == today %} task-card--today{% endif %}{% endif %}"
          id="task-{{ task.pk }}{% if lane %}-{{ lane.kind }}-{{ lane.pk }}{% endif %}"
-         draggable="true"
+         {% if can_write_workspace %}draggable="true"{% endif %}
          data-task-id="{{ task.pk }}"
          data-status="{{ task.status }}"{% if oob_swap %} hx-swap-oob="true"{% endif %}>
   <div class="task-card-top">
@@ -55,6 +55,7 @@
   </div>
   {% endif %}
 
+  {% if can_write_workspace %}
   <div class="task-card-actions">
     <div class="task-action-row">
       {% if not task.completed_at %}
@@ -79,4 +80,5 @@
       {% endif %}
     </div>
   </div>
+  {% endif %}
 </article>
