@@ -157,3 +157,29 @@ def remove_workspace_member(*, membership):
         if not other_owners.exists():
             raise MemberError("A workspace needs an owner.")
     membership.delete()
+
+
+def hand_off_shared_workspaces(user):
+    """Before `user` is deleted, keep their shared workspaces owned.
+
+    A workspace they own alone passes to the longest-standing member, or to a
+    viewer when no member is left. A workspace with nobody else in it goes away.
+    """
+    owned = Workspace.objects.filter(
+        kind=Workspace.KIND_SHARED,
+        memberships__user=user,
+        memberships__role=Membership.ROLE_OWNER,
+    )
+    for workspace in owned:
+        others = workspace.memberships.exclude(user=user)
+        if others.filter(role=Membership.ROLE_OWNER).exists():
+            continue
+        heir = (
+            others.filter(role=Membership.ROLE_MEMBER).order_by("joined_at", "pk").first()
+            or others.order_by("joined_at", "pk").first()
+        )
+        if heir is None:
+            workspace.delete()
+            continue
+        heir.role = Membership.ROLE_OWNER
+        heir.save(update_fields=["role"])

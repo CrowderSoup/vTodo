@@ -1,8 +1,12 @@
 from django.conf import settings
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_save, pre_delete, pre_save
 from django.dispatch import receiver
 
-from apps.workspaces.services import ensure_personal_workspace, personal_workspace_id
+from apps.workspaces.services import (
+    ensure_personal_workspace,
+    hand_off_shared_workspaces,
+    personal_workspace_id,
+)
 
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
@@ -10,6 +14,11 @@ def create_personal_workspace(sender, instance, created, raw=False, **kwargs):
     if raw or not created:
         return
     ensure_personal_workspace(instance)
+
+
+@receiver(pre_delete, sender=settings.AUTH_USER_MODEL)
+def keep_shared_workspaces_owned(sender, instance, **kwargs):
+    hand_off_shared_workspaces(instance)
 
 
 def _assign_workspace(sender, instance, raw=False, **kwargs):

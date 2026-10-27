@@ -15,9 +15,12 @@ DEFAULT_STATUS_DEFS = [
 
 
 class TaskStatus(models.Model):
+    # Who created the row. The workspace owns it, so it outlives this person.
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="task_statuses",
     )
     workspace = models.ForeignKey(
@@ -50,9 +53,12 @@ class TaskStatus(models.Model):
 
 
 class Task(models.Model):
+    # Who created the row. The workspace owns it, so it outlives this person.
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="tasks",
     )
     workspace = models.ForeignKey(
@@ -217,9 +223,12 @@ class TaskActivity(models.Model):
         (COMMENT_DELETED, "Comment deleted"),
     ]
 
+    # Who created the row. The workspace owns it, so it outlives this person.
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="task_activity",
     )
     workspace = models.ForeignKey(

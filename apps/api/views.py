@@ -8,7 +8,7 @@ from oauth2_provider.contrib.rest_framework import OAuth2Authentication, TokenHa
 from oauth2_provider.oauth2_validators import validate_resource_as_url_prefix
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -34,6 +34,7 @@ from apps.tasks.selectors import (
     visible_statuses_qs,
     visible_tasks_qs,
 )
+from apps.workspaces.access import can_delete_comment
 
 from .models import DeviceToken
 from .permissions import OAuthTokenHasTasksScope, WorkspaceRolePermission
@@ -227,6 +228,8 @@ class TaskCommentViewSet(viewsets.GenericViewSet, mixins.DestroyModelMixin):
         return TaskComment.objects.filter(task__in=visible_tasks_qs(self.request.user))
 
     def perform_destroy(self, instance):
+        if not can_delete_comment(self.request, instance):
+            raise PermissionDenied("Only its author or an owner can delete this comment.")
         with transaction.atomic():
             activity.record_comment(
                 instance, TaskActivity.COMMENT_DELETED,

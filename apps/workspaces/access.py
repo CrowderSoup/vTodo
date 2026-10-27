@@ -112,6 +112,16 @@ def ensure_can_admin(request):
         raise PermissionDenied
 
 
+def can_delete_comment(request, comment):
+    """Its author can delete a comment while they can still write. An owner
+    can delete any comment in the workspace."""
+    bind_request_workspace(request)
+    membership = getattr(request, "workspace_membership", None)
+    if membership is None or not membership.can_write():
+        return False
+    return membership.can_admin() or comment.author_id == request.user.pk
+
+
 def _membership_on(user, workspace_id):
     return Membership.objects.filter(user=user, workspace_id=workspace_id).first()
 

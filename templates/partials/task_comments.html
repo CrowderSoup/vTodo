@@ -4,7 +4,7 @@
   <div class="surface-card comment-card">
     <div class="comment-meta">
       <span>{{ entry.comment.created_at|date:"N j, Y g:i a" }}</span>
-      {% if can_write_workspace %}
+      {% if can_admin_workspace or can_write_workspace and entry.comment.author_id == request.user.pk %}
       <button class="btn-ghost btn-small"
               hx-post="{% url 'boards:task-comment-delete' task.pk entry.comment.pk %}"
               hx-target="#task-comments"

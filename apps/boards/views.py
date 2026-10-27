@@ -6,7 +6,7 @@ from datetime import timedelta
 from urllib.parse import parse_qs, urlparse
 
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
@@ -18,6 +18,7 @@ from apps.tasks import activity
 from apps.tasks.models import Task, TaskActivity, TaskComment, TaskStatus
 from apps.workspaces.access import (
     active_workspace,
+    can_delete_comment,
     ensure_can_admin,
     ensure_can_write,
     require_admin_on,
@@ -1068,6 +1069,8 @@ class TaskCommentDeleteView(LoginRequiredMixin, View):
         ensure_can_write(request)
         task = get_task_or_404(request.user, pk)
         comment = get_object_or_404(TaskComment, pk=comment_pk, task=task)
+        if not can_delete_comment(request, comment):
+            raise PermissionDenied
         with transaction.atomic():
             activity.record_comment(
                 comment, TaskActivity.COMMENT_DELETED, actor=request.user, source=TaskActivity.SOURCE_WEB

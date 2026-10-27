@@ -213,3 +213,104 @@ def test_last_owner_cannot_be_removed(client):
     assert response.status_code == 200
     assert Membership.objects.filter(pk=membership.pk).exists()
     assert b"needs an owner" in response.content
+
+
+def _team():
+    owner = User.objects.create_user()
+    member = User.objects.create_user()
+    viewer = User.objects.create_user()
+    shared = create_shared_workspace(user=owner, name="Family")
+    Membership.objects.create(workspace=shared, user=member, role=Membership.ROLE_MEMBER)
+    Membership.objects.create(workspace=shared, user=viewer, role=Membership.ROLE_VIEWER)
+    return shared, owner, member, viewer
+
+
+@pytest.mark.django_db
+def test_deleting_the_creator_keeps_the_shared_board():
+    shared, owner, member, _viewer = _team()
+    task = Task.objects.create(user=owner, workspace=shared, title="Owner's", status="todo")
+    status_count = shared.statuses.count()
+
+    owner.delete()
+
+    shared.refresh_from_db()
+    assert shared.board.user_id is None
+    assert shared.statuses.count() == status_count
+    task.refresh_from_db()
+    assert task.user_id is None
+    assert Membership.objects.get(workspace=shared, user=member).role == Membership.ROLE_OWNER
+
+
+@pytest.mark.django_db
+def test_deleting_a_member_keeps_their_shared_tasks():
+    shared, _owner, member, _viewer = _team()
+    task = Task.objects.create(user=member, workspace=shared, title="Member's", status="todo")
+    personal_task = Task.objects.create(
+        user=member, workspace=Workspace.objects.get(owner=member), title="Private", status="todo"
+    )
+
+    member.delete()
+
+    task.refresh_from_db()
+    assert task.user_id is None
+    assert task.workspace_id == shared.pk
+    assert not Task.objects.filter(pk=personal_task.pk).exists()
+
+
+@pytest.mark.django_db
+def test_deleting_the_last_owner_hands_off_or_removes_the_workspace():
+    owner = User.objects.create_user()
+    viewer = User.objects.create_user()
+    with_viewer = create_shared_workspace(user=owner, name="Family")
+    Membership.objects.create(workspace=with_viewer, user=viewer, role=Membership.ROLE_VIEWER)
+    alone = create_shared_workspace(user=owner, name="Solo")
+
+    owner.delete()
+
+    assert Membership.objects.get(workspace=with_viewer, user=viewer).role == Membership.ROLE_OWNER
+    assert not Workspace.objects.filter(pk=alone.pk).exists()
+
+
+@pytest.mark.django_db
+def test_calendar_sync_only_covers_personal_tasks():
+    from apps.integrations.google_calendar.sync import user_tasks_qs
+
+    shared, owner, member, _viewer = _team()
+    Task.objects.create(user=owner, workspace=shared, title="Shared, by owner", status="todo")
+    Task.objects.create(user=member, workspace=shared, title="Shared, by member", status="todo")
+    Task.objects.create(
+        user=owner, workspace=Workspace.objects.get(owner=owner), title="Personal", status="todo"
+    )
+
+    assert set(user_tasks_qs(owner).values_list("title", flat=True)) == {"Personal"}
+
+
+@pytest.mark.django_db
+def test_only_the_author_or_an_owner_deletes_a_comment(client):
+    from apps.tasks.models import TaskComment
+
+    shared, owner, member, _viewer = _team()
+    other = User.objects.create_user()
+    Membership.objects.create(workspace=shared, user=other, role=Membership.ROLE_MEMBER)
+    task = Task.objects.create(user=owner, workspace=shared, title="T", status="todo")
+    owners = TaskComment.objects.create(task=task, author=owner, body="owner's")
+    members = TaskComment.objects.create(task=task, author=member, body="member's")
+    url = lambda comment: reverse("boards:task-comment-delete", args=[task.pk, comment.pk])
+
+    _login(client, other, shared)
+    assert client.post(url(members)).status_code == 403
+    token, _ = Token.objects.get_or_create(user=other)
+    api = APIClient()
+    api.credentials(HTTP_AUTHORIZATION=f"Token {token.key}", HTTP_X_WORKSPACE_ID=str(shared.pk))
+    assert api.delete(f"/api/v1/comments/{members.pk}/").status_code == 403
+    assert TaskComment.objects.filter(pk=members.pk).exists()
+
+    _login(client, member, shared)
+    assert client.post(url(owners)).status_code == 403
+    assert client.post(url(members)).status_code == 200
+    assert not TaskComment.objects.filter(pk=members.pk).exists()
+
+    _login(client, owner, shared)
+    other_comment = TaskComment.objects.create(task=task, author=other, body="other's")
+    assert client.post(url(other_comment)).status_code == 200
+    assert not TaskComment.objects.filter(pk=other_comment.pk).exists()

@@ -3,11 +3,13 @@ from django.db import models
 
 
 class Board(models.Model):
-    """One board per workspace. `user` is who created it."""
+    """One board per workspace. `user` is who created it, if they still exist."""
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="boards",
     )
     workspace = models.OneToOneField(
