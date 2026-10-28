@@ -1,0 +1,27 @@
+<section class="settings-card settings-card--wide surface-panel">
+  <div>
+    <h2 class="card-title">Connected accounts</h2>
+    <p class="card-subtitle">
+      Sign-in methods linked to this account. Connecting Pocket ID keeps your tasks, API tokens, and devices on this user.
+    </p>
+  </div>
+
+  <div class="settings-list">
+    {% for account in social_accounts %}
+    <div class="config-row">
+      <div class="config-main">
+        <div class="config-title"><span>{{ account.label }}</span></div>
+        <div class="config-description"><span class="pill">Connected</span></div>
+      </div>
+    </div>
+    {% empty %}
+    <p class="field-help">No sign-in methods linked yet.</p>
+    {% endfor %}
+  </div>
+
+  {% if pocket_id_connect_url %}
+  <div class="panel-footer-secondary">
+    <button type="submit" class="btn-primary" form="pocket-id-connect-form">Connect Pocket ID</button>
+  </div>
+  {% endif %}
+</section>

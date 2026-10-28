@@ -60,3 +60,28 @@ def test_login_page_drops_unsafe_next(client):
     response = client.get(reverse("accounts:login"), {"next": "https://evil.example.com/"})
     assert response.status_code == 200
     assert b"evil.example.com" not in response.content
+
+
+@pytest.mark.django_db
+def test_login_page_hides_pocket_id_when_unconfigured(client, settings):
+    settings.POCKET_ID_ENABLED = False
+    response = client.get(reverse("accounts:login"))
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert "Sign in with Google" in content
+    assert "Sign in with Pocket ID" not in content
+    assert "Get started with Google." in content
+
+
+@pytest.mark.django_db
+def test_login_page_shows_pocket_id_next_to_google_when_configured(client, settings):
+    from apps.accounts.pocket_id import pocket_id_login_path
+
+    settings.POCKET_ID_ENABLED = True
+    response = client.get(reverse("accounts:login"), {"next": "/board/some-deep-link/"})
+    content = response.content.decode()
+    assert response.status_code == 200
+    assert "Sign in with Google" in content
+    assert "Sign in with Pocket ID" in content
+    assert pocket_id_login_path() in content
+    assert "next=%2Fboard%2Fsome-deep-link%2F" in content
