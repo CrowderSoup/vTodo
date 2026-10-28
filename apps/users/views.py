@@ -40,6 +40,7 @@ def _default_status_id(user, workspace):
 
 class SettingsGeneralView(LoginRequiredMixin, View):
     def get(self, request):
+        from apps.accounts.linking import settings_connection_context
         from apps.tasks.models import TaskStatus
         from apps.users.selectors import primary_email
         from apps.workspaces.access import active_workspace
@@ -54,6 +55,7 @@ class SettingsGeneralView(LoginRequiredMixin, View):
             "signed_in_email": primary_email(request.user),
             "active_tab": "general",
         }
+        context.update(settings_connection_context(request.user))
         context.update(_hero_stats(workspace))
         return render(request, "users/settings/general.html", context)
 
