@@ -1,12 +1,12 @@
 """Match a verified Google account the same way the website login does.
 
 The website (apps.accounts.adapters.SocialAccountAdapter) and the Android
-app's ID-token exchange both end up here, so a person who already signed in
-on one gets the same user on the other.
+app's ID-token exchange both end up in account_for_verified_email, so a
+person who already signed in on one gets the same user on the other.
+Pocket ID uses that helper directly.
 """
 
 import re
-import uuid
 
 from django.conf import settings
 from django.core.cache import cache
@@ -14,8 +14,12 @@ from google.auth.exceptions import GoogleAuthError, TransportError
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 
-from apps.emailauth.models import EmailIdentity
-from apps.siteadmin.selectors import consume_signup_slot
+from apps.accounts.linking import (
+    AccountLinkError,
+    SignupNotAllowed,
+    account_for_verified_email,
+    sync_social_profile,
+)
 from apps.users.models import User
 
 _GOOGLE_ISSUERS = {"accounts.google.com", "https://accounts.google.com"}
@@ -119,51 +123,22 @@ def verify_google_id_token(raw_token: str) -> dict:
 
 
 def account_for_verified_google_email(email: str, extra_data: dict | None = None) -> User:
-    """Find or create the user for a verified Google email address."""
-    address = (email or "").strip().lower()
-    if not address or "@" not in address:
-        raise UnverifiedGoogleEmail("Your account's email isn't verified.")
+    """Find or create the user for a verified Google email address.
 
-    identity = EmailIdentity.objects.select_related("user").filter(email__iexact=address).first()
-    if identity is None:
-        if not consume_signup_slot(address):
-            raise SignupClosed("vtodo isn't open for signups right now.")
-        user = User.objects.create_user(username=uuid.uuid4().hex[:16])
-        # EmailIdentity emails are stored lower-cased (see ADMIN_EMAILS).
-        identity = EmailIdentity.objects.create(user=user, email=address, verified=True)
-    else:
-        if not identity.verified:
-            identity.verified = True
-            identity.save(update_fields=["verified"])
-        user = identity.user
-
-    sync_google_profile(user, extra_data or {})
-    return user
+    Same user row as a Pocket ID login with that email. Android keeps
+    calling this name; the shared rules live in account_for_verified_email.
+    """
+    try:
+        return account_for_verified_email(email, extra_data)
+    except SignupNotAllowed as exc:
+        raise SignupClosed(exc.message) from exc
+    except AccountLinkError as exc:
+        raise UnverifiedGoogleEmail(exc.message) from exc
 
 
 def sync_google_profile(user, extra_data):
-    """Display name is backfilled once and left to the user to edit from
-    then on. Avatar has no user-editable alternative, so it always mirrors
-    Google's current picture."""
-    if not extra_data:
-        return
-    update_fields = []
-    name = extra_data.get("name") or ""
-    if not isinstance(name, str):
-        name = ""
-    name = name.strip()[:255]
-    if not user.display_name and name:
-        user.display_name = name
-        update_fields.append("display_name")
-    picture = extra_data.get("picture") or ""
-    if not isinstance(picture, str):
-        picture = ""
-    picture = picture.strip()[:2000]
-    if picture and user.avatar_url != picture:
-        user.avatar_url = picture
-        update_fields.append("avatar_url")
-    if update_fields:
-        user.save(update_fields=update_fields)
+    """Google profile sync. Pocket ID claims go through the same helper."""
+    sync_social_profile(user, extra_data)
 
 
 def sign_in_with_google_id_token(raw_token: str, device_name: str = "") -> str:

@@ -3,6 +3,11 @@
 {% block settings_title %}General{% endblock %}
 
 {% block settings_content %}
+{% if pocket_id_connect_url %}
+<form id="pocket-id-connect-form" method="post" action="{{ pocket_id_connect_url }}" hidden>
+  {% csrf_token %}
+</form>
+{% endif %}
 <form method="post" action="{% url 'users:settings' %}" class="settings-grid">
   {% csrf_token %}
 
@@ -16,7 +21,7 @@
       <div class="config-row">
         <div class="config-main">
           <div class="config-title"><span>Signed in as</span></div>
-          <div class="config-description"><span class="pill">Google</span> {{ signed_in_email }}</div>
+          <div class="config-description"><span class="pill">{{ signed_in_provider }}</span> {{ signed_in_email }}</div>
         </div>
       </div>
     </div>
@@ -26,7 +31,7 @@
       <input type="text" id="display_name" name="display_name" value="{{ user.display_name }}">
     </div>
 
-    <p class="field-help">Your avatar mirrors your Google account's picture.</p>
+    <p class="field-help">Your avatar mirrors the picture from the account you sign in with.</p>
 
     <div class="form-field">
       <label class="field-label" for="timezone">Timezone</label>
@@ -57,6 +62,8 @@
 
     <p class="field-help">Leave this unset to use your first status whenever you create a task from the floating add button.</p>
   </section>
+
+  {% include "users/settings/_connected_accounts.html" %}
 
   <section class="settings-card settings-card--wide surface-panel">
     <div class="settings-actions">
