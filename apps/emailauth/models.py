@@ -3,9 +3,11 @@ from django.db import models
 
 
 class EmailIdentity(models.Model):
-    """Links a User to their verified sign-in email address (currently always
-    populated via Google OAuth). Used to match a Google login to an existing
-    account and for admin-email checks."""
+    """Links a User to a verified sign-in email (Google or Pocket ID).
+
+    A new social login matches an existing account through this row, and
+    admin-email checks use it too. Emails are stored lower-cased.
+    """
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
