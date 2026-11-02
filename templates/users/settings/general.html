@@ -3,8 +3,8 @@
 {% block settings_title %}General{% endblock %}
 
 {% block settings_content %}
-{% if pocket_id_connect_url %}
-<form id="pocket-id-connect-form" method="post" action="{{ pocket_id_connect_url }}" hidden>
+{% if oidc_connect_url %}
+<form id="oidc-connect-form" method="post" action="{{ oidc_connect_url }}" hidden>
   {% csrf_token %}
 </form>
 {% endif %}

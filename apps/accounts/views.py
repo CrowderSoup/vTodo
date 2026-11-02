@@ -4,13 +4,13 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views import View
 
-from apps.accounts.pocket_id import pocket_id_login_url
+from apps.accounts.oidc import oidc_login_url, oidc_name
 
 from .utils import safe_next_url
 
 
 class LoginView(View):
-    """Login page. Google is always offered. Pocket ID appears when configured."""
+    """Login page. Google is always offered. OpenID Connect appears when configured."""
 
     def get(self, request):
         next_url = safe_next_url(request, request.GET.get("next"))
@@ -19,7 +19,7 @@ class LoginView(View):
         return render(
             request,
             "login.html",
-            {"next": next_url, "pocket_id_login_url": pocket_id_login_url(next_url)},
+            {"next": next_url, "oidc_login_url": oidc_login_url(next_url), "oidc_name": oidc_name()},
         )
 
 

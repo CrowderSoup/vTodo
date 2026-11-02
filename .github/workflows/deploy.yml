@@ -25,6 +25,8 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/crowder-cloud
           chmod 600 ~/.ssh/crowder-cloud
 
+      # The OIDC_CLIENT_* values come from the POCKET_ID_CLIENT_* repo secrets,
+      # which kept their names when the app's settings were made provider-neutral.
       - name: Write kamal secrets
         run: |
           cat > .kamal/secrets <<'EOF'
@@ -37,8 +39,8 @@ jobs:
           VTODO_MCP_TOKEN=$VTODO_MCP_TOKEN
           GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
           GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
-          POCKET_ID_CLIENT_ID=$POCKET_ID_CLIENT_ID
-          POCKET_ID_CLIENT_SECRET=$POCKET_ID_CLIENT_SECRET
+          OIDC_CLIENT_ID=$POCKET_ID_CLIENT_ID
+          OIDC_CLIENT_SECRET=$POCKET_ID_CLIENT_SECRET
           INTEGRATIONS_ENCRYPTION_KEY=$INTEGRATIONS_ENCRYPTION_KEY
           REDIS_PASSWORD=$REDIS_PASSWORD
           EOF

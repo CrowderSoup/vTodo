@@ -17,9 +17,9 @@ from apps.emailauth.models import EmailIdentity
 class SocialAccountAdapter(DefaultSocialAccountAdapter):
     """
     Matches a social login to an existing account by verified email via
-    EmailIdentity. Google and Pocket ID both use this path, so a first
-    Pocket ID login lands on the same user row as a Google account with
-    that email. Settings uses allauth's connect flow to attach a new
+    EmailIdentity. Google and OpenID Connect both use this path, so a
+    first OpenID Connect login lands on the same user row as a Google
+    account with that email. Settings uses allauth's connect flow to attach a new
     login to the signed-in user. An identity already linked to someone
     else is refused. Two user rows are never merged.
     """
