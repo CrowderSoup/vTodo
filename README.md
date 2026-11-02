@@ -85,7 +85,7 @@ The Android app uses that same web client. It asks Google for an ID token aimed 
 
 Pocket ID is an optional second sign-in method. It uses django-allauth's generic OpenID Connect provider (`pocket-id`) with the authorization code flow and PKCE. Set `POCKET_ID_URL`, `POCKET_ID_CLIENT_ID`, and `POCKET_ID_CLIENT_SECRET` together. If any one is unset, Pocket ID is not registered and the login page stays Google-only.
 
-In Pocket ID, create an OIDC client and register this redirect URI:
+In Pocket ID, create an OIDC client with PKCE on and register this redirect URI:
 
 ```
 https://<your-domain>/accounts/oidc/pocket-id/login/callback/
@@ -93,7 +93,7 @@ https://<your-domain>/accounts/oidc/pocket-id/login/callback/
 
 `POCKET_ID_URL` is the issuer, with no path. vtodo reads `{POCKET_ID_URL}/.well-known/openid-configuration`.
 
-Linking keeps a single user row. A first Pocket ID login with a verified email attaches to the user who already has that email, including an account created with Google, so tasks, API tokens, Android device logins, and MCP access stay on that user. An unverified email is refused. A brand-new verified email follows the same private and invite-only signup gate as Google. From Settings → General → Connected accounts, a signed-in user can connect Pocket ID to the account they are already using. If that Pocket ID identity, or its verified email, already belongs to a different user, connecting is refused and neither user is changed.
+Linking keeps a single user row. A first Pocket ID login with a verified email attaches to the user who already has that email, including an account created with Google, so tasks, API tokens, Android device logins, and MCP access stay on that user. An unverified email is refused. Pocket ID reports a new account's email as unverified until an admin marks it verified, or turns on **Emails Verified** in its application configuration. A brand-new verified email follows the same private and invite-only signup gate as Google. From Settings → General → Connected accounts, a signed-in user can connect Pocket ID to the account they are already using. If that Pocket ID identity, or its verified email, already belongs to a different user, connecting is refused and neither user is changed.
 
 ## Running tests
 
