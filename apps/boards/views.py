@@ -6,7 +6,7 @@ from datetime import timedelta
 from urllib.parse import parse_qs, urlparse
 
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
@@ -16,6 +16,15 @@ from django.views import View
 
 from apps.tasks import activity
 from apps.tasks.models import Task, TaskActivity, TaskComment, TaskStatus
+from apps.workspaces.access import (
+    active_workspace,
+    can_delete_comment,
+    ensure_can_admin,
+    ensure_can_write,
+    require_admin_on,
+    require_write_on,
+)
+from apps.workspaces.models import Membership
 from apps.tasks.selectors import (
     InvalidStatusError,
     board_tasks_qs,
@@ -48,8 +57,8 @@ def _parse_lane_key(key):
 
 
 def _board_for_task(task):
-    """The board a task belongs on."""
-    return Board.objects.get(user_id=task.user_id)
+    """The board a task belongs on: its workspace's board."""
+    return Board.objects.get(workspace_id=task.workspace_id)
 
 
 def _board_from_post(request):
@@ -237,8 +246,11 @@ def _resolve_task_create_selection(user, board, statuses, lane_param=""):
                 column.default_status(user),
             )
 
-    if user.default_status_id:
-        status_slug = _resolve_status_slug(user.default_status.slug, statuses)
+    from apps.tasks.selectors import default_status_for
+
+    default = default_status_for(user)
+    if default:
+        status_slug = _resolve_status_slug(default.slug, statuses)
         status = next((s for s in statuses if s.slug == status_slug), None)
         if status:
             return _lane_key("status", status.pk), status.name, status.slug
@@ -535,9 +547,9 @@ def _resolve_lane_and_board(user, lane_key):
     kind, pk = _parse_lane_key(lane_key)
     if kind == "status":
         status = get_object_or_404(TaskStatus, pk=pk)
-        if status.user_id != user.id:
+        if not Membership.objects.filter(workspace_id=status.workspace_id, user=user).exists():
             raise Http404()
-        board = Board.objects.get(user=user)
+        board = status.workspace.board
         return board, status.name, (lambda t: t.status == status.slug)
     if kind == "column":
         column = get_object_or_404(Column.objects.select_related("board"), pk=pk)
@@ -578,6 +590,7 @@ class BoardArchiveDoneView(LoginRequiredMixin, View):
 
     def post(self, request):
         board = _board_from_post(request)
+        require_write_on(request.user, board.workspace_id)
         to_archive = board_tasks_qs(board).filter(is_archived=False, completed_at__isnull=False)
         with transaction.atomic():
             archived = list(to_archive)
@@ -592,6 +605,7 @@ class ColumnReorderView(LoginRequiredMixin, View):
     always render after all status lanes (see _build_board_context)."""
 
     def post(self, request):
+        ensure_can_admin(request)
         try:
             data = json.loads(request.body)
             order = data.get("order", [])
@@ -601,7 +615,7 @@ class ColumnReorderView(LoginRequiredMixin, View):
         columns = {c.pk: c for c in Column.objects.filter(pk__in=order).select_related("board")}
         if columns:
             board = next(iter(columns.values())).board
-            if not user_can_access_board(request.user, board) or any(
+            if board.workspace_id != active_workspace(request).pk or any(
                 c.board_id != board.pk for c in columns.values()
             ):
                 return HttpResponse(status=403)
@@ -619,6 +633,7 @@ class StatusReorderView(LoginRequiredMixin, View):
     equivalent on custom lanes."""
 
     def post(self, request):
+        ensure_can_admin(request)
         try:
             data = json.loads(request.body)
             order = data.get("order", [])
@@ -627,10 +642,8 @@ class StatusReorderView(LoginRequiredMixin, View):
 
         statuses = {s.pk: s for s in TaskStatus.objects.filter(pk__in=order)}
         if statuses:
-            first = next(iter(statuses.values()))
-            same_scope = all(s.user_id == first.user_id for s in statuses.values())
-            owns_scope = first.user_id == request.user.id
-            if not same_scope or not owns_scope:
+            workspace_id = active_workspace(request).pk
+            if any(s.workspace_id != workspace_id for s in statuses.values()):
                 return HttpResponse(status=403)
 
         for i, pk in enumerate(order):
@@ -643,6 +656,7 @@ class StatusReorderView(LoginRequiredMixin, View):
 
 class TaskReorderView(LoginRequiredMixin, View):
     def post(self, request):
+        ensure_can_write(request)
         try:
             data = json.loads(request.body)
             order = data.get("order", [])
@@ -667,6 +681,7 @@ def _posted_due_date(request):
 
 class TaskCreateView(LoginRequiredMixin, View):
     def post(self, request):
+        ensure_can_write(request)
         statuses, _, _ = _status_context_for(request.user)
         status = _resolve_status_slug(request.POST.get("status", "").strip(), statuses)
         title = request.POST.get("title", "").strip()
@@ -675,13 +690,19 @@ class TaskCreateView(LoginRequiredMixin, View):
             return HttpResponse(status=422)
 
         with transaction.atomic():
-            task = Task.objects.create(user=request.user, title=title, status=status)
+            task = Task.objects.create(
+                user=request.user,
+                workspace=active_workspace(request),
+                title=title,
+                status=status,
+            )
             activity.record_created(task, actor=request.user, source=TaskActivity.SOURCE_WEB)
         return render(request, "partials/task_card.html", _task_render_context(request.user, task))
 
 
 class TaskUpdateView(LoginRequiredMixin, View):
     def post(self, request, pk):
+        ensure_can_write(request)
         task = get_task_or_404(request.user, pk)
         title = request.POST.get("title", "").strip()
         notes = request.POST.get("notes", "")
@@ -716,6 +737,7 @@ class TaskUpdateView(LoginRequiredMixin, View):
 
 class TaskMoveView(LoginRequiredMixin, View):
     def post(self, request, pk):
+        ensure_can_write(request)
         task = get_task_or_404(request.user, pk)
         new_status = request.POST.get("new_status", "")
         board = _board_for_task(task)
@@ -756,6 +778,7 @@ class TaskMoveView(LoginRequiredMixin, View):
 
 class TaskDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
+        ensure_can_write(request)
         task = get_task_or_404(request.user, pk)
         board = _board_for_task(task)
         is_calendar, year, month = _calendar_params_from_request(request)
@@ -824,6 +847,7 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
         return render(request, "partials/task_panel_create.html", context)
 
     def post(self, request):
+        ensure_can_write(request)
         board = resolve_board(request.user)
 
         form_values = {
@@ -854,6 +878,7 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
         with transaction.atomic():
             task = Task.objects.create(
                 user=request.user,
+                workspace=active_workspace(request),
                 title=form_values["title"],
                 notes=form_values["notes"],
                 status=context["selected_status"],
@@ -885,6 +910,7 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
     """
 
     def post(self, request, pk):
+        ensure_can_write(request)
         task = get_task_or_404(request.user, pk)
         title = request.POST.get("title", "").strip()
         notes = request.POST.get("notes", "")
@@ -1008,7 +1034,7 @@ def _render_markdown(text):
 def _render_activity(task):
     """Newest first, actors prefetched; the panel shows the latest 50."""
     return list(
-        TaskActivity.objects.filter(user_id=task.user_id, task_pk=task.pk)
+        TaskActivity.objects.filter(workspace_id=task.workspace_id, task_pk=task.pk)
         .select_related("actor")
         .order_by("-created_at", "-pk")[:50]
     )
@@ -1023,6 +1049,7 @@ def _render_comments(task):
 
 class TaskCommentCreateView(LoginRequiredMixin, View):
     def post(self, request, pk):
+        ensure_can_write(request)
         task = get_task_or_404(request.user, pk)
         body = request.POST.get("body", "").strip()
         if body:
@@ -1039,8 +1066,11 @@ class TaskCommentCreateView(LoginRequiredMixin, View):
 
 class TaskCommentDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk, comment_pk):
+        ensure_can_write(request)
         task = get_task_or_404(request.user, pk)
         comment = get_object_or_404(TaskComment, pk=comment_pk, task=task)
+        if not can_delete_comment(request, comment):
+            raise PermissionDenied
         with transaction.atomic():
             activity.record_comment(
                 comment, TaskActivity.COMMENT_DELETED, actor=request.user, source=TaskActivity.SOURCE_WEB
@@ -1065,6 +1095,7 @@ class SavedFilterLoadView(LoginRequiredMixin, View):
 class SavedFilterSaveView(LoginRequiredMixin, View):
     def post(self, request):
         board = _board_from_post(request)
+        require_admin_on(request.user, board.workspace_id)
         name = request.POST.get("name", "").strip()
         if not name:
             return _render_filter_response(request, request.user, board, request.session)
@@ -1082,6 +1113,7 @@ class SavedFilterDeleteView(LoginRequiredMixin, View):
         saved_filter = get_object_or_404(SavedFilter.objects.select_related("board"), pk=pk)
         if not user_can_access_board(request.user, saved_filter.board):
             raise Http404()
+        require_admin_on(request.user, saved_filter.board.workspace_id)
         board = saved_filter.board
         saved_filter.delete()
         return _render_filter_response(request, request.user, board, request.session)

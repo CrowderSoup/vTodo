@@ -13,6 +13,7 @@ urlpatterns = [
     path("board/", include("apps.boards.urls", namespace="boards")),
     path("calendar/", include("apps.boards.urls_calendar", namespace="calendar")),
     path("settings/", include("apps.users.urls", namespace="users")),
+    path("workspaces/", include("apps.workspaces.urls", namespace="workspaces")),
     path("integrations/", include("apps.integrations.urls", namespace="integrations")),
     path("admin-panel/", include("apps.siteadmin.urls", namespace="siteadmin")),
     # OAuth 2.1 authorization server, for remote MCP clients (Claude) — see

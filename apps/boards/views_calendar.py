@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.views import View
 
 from apps.tasks.selectors import board_tasks_qs, get_task_or_404, reschedule_task
+from apps.workspaces.access import ensure_can_write
 
 from .selectors import resolve_board
 from .views import (
@@ -149,6 +150,7 @@ class TaskRescheduleView(LoginRequiredMixin, View):
     def post(self, request, pk):
         from .views import _board_for_task, _calendar_params_from_request
 
+        ensure_can_write(request)
         task = get_task_or_404(request.user, pk)
         raw = request.POST.get("due_date", "").strip()
         new_due_date = None

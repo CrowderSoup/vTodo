@@ -7,7 +7,7 @@
   <div class="hero-copy">
     <span class="eyebrow">Settings</span>
     <h1 class="page-title">Board Setup</h1>
-    <p class="page-subtitle">Every status below is automatically a lane on your board. Add a custom lane further down for a filtered view that cuts across statuses, like "Overdue."</p>
+    <p class="page-subtitle">Statuses and lanes for {{ active_workspace.name }}. A custom lane is a filtered view that cuts across statuses, like "Overdue."</p>
   </div>
 </header>
 {% endblock %}
@@ -24,6 +24,7 @@
       {% include "users/_status_list.html" %}
     </div>
 
+    {% if can_admin_workspace %}
     <form class="inline-form"
           hx-post="{% url 'users:status-create' %}"
           hx-target="#status-list"
@@ -47,17 +48,21 @@
         <button type="submit" class="btn-primary">Add status</button>
       </div>
     </form>
+    {% else %}
+    <p class="field-help">Only an owner can change statuses.</p>
+    {% endif %}
 
+    <div id="column-list" class="settings-list">
+      {% include "users/_column_list.html" %}
+    </div>
+
+    {% if can_admin_workspace %}
     <details class="settings-disclosure">
       <summary>+ Add a custom lane</summary>
       <p class="field-help">
         For a filtered lane beyond a single status &mdash; e.g. "Overdue" or a tag. Most boards don't need one;
         every status already gets its own lane above.
       </p>
-
-      <div id="column-list" class="settings-list">
-        {% include "users/_column_list.html" %}
-      </div>
 
       <form class="column-create-form"
             hx-post="{% url 'users:column-create' %}"
@@ -106,6 +111,7 @@
         </div>
       </form>
     </details>
+    {% endif %}
   </section>
 
   <section class="settings-card settings-card--wide surface-panel">
@@ -119,6 +125,69 @@
     <div id="saved-views-list" class="settings-list">
       {% include "users/_saved_views_list.html" %}
     </div>
+  </section>
+
+  <section class="settings-card settings-card--wide surface-panel">
+    <div>
+      <h2 class="card-title">People</h2>
+      <p class="card-subtitle">
+        You are {{ workspace_membership.get_role_display|lower }} of {{ active_workspace.name }}.
+      </p>
+    </div>
+
+    {% if active_workspace.kind == "personal" %}
+    <p class="field-help">This workspace is just yours. Start a shared workspace when you want other people on the board.</p>
+    <a class="btn-primary" href="{% url 'workspaces:create' %}">New shared workspace</a>
+    {% else %}
+    <div class="settings-list">
+      {% for row in members %}
+      <div class="config-row">
+        <div class="config-main">
+          <div class="config-title"><span>{{ row.name }}</span></div>
+          <div class="config-description">{{ row.email }}</div>
+        </div>
+        {% if can_admin_workspace %}
+        <form method="post" action="{% url 'workspaces:member-role' row.membership.pk %}">
+          {% csrf_token %}
+          <select name="role" aria-label="Role for {{ row.name }}" onchange="this.form.submit()">
+            {% for value, label in workspace_role_choices %}
+            <option value="{{ value }}" {% if row.membership.role == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </form>
+        <form method="post" action="{% url 'workspaces:member-remove' row.membership.pk %}">
+          {% csrf_token %}
+          <button type="submit" class="btn-danger btn-small">Remove</button>
+        </form>
+        {% else %}
+        <span class="pill">{{ row.membership.get_role_display }}</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if can_admin_workspace %}
+    <form method="post" action="{% url 'workspaces:member-add' %}" class="inline-form">
+      {% csrf_token %}
+      <div class="form-field">
+        <label class="field-label" for="member-email">Email</label>
+        <input id="member-email" type="email" name="email" placeholder="they@example.com" required>
+      </div>
+      <div class="form-field">
+        <label class="field-label" for="member-role">Role</label>
+        <select id="member-role" name="role">
+          {% for value, label in workspace_role_choices %}
+          <option value="{{ value }}" {% if value == "member" %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-field">
+        <button type="submit" class="btn-primary">Add person</button>
+      </div>
+    </form>
+    <p class="field-help">They need to have signed in with that email already. Owners change the board. Members change tasks. Viewers can look.</p>
+    {% endif %}
+    {% endif %}
   </section>
 </div>
 {% endblock %}

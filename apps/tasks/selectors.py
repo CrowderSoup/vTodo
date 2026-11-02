@@ -2,6 +2,8 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
+from apps.workspaces.access import workspace_for
+
 from .models import Task, TaskStatus
 
 
@@ -10,13 +12,13 @@ class InvalidStatusError(Exception):
 
 
 def visible_tasks_qs(user):
-    """Tasks the user may see: their own tasks."""
-    return Task.objects.filter(user=user)
+    """Tasks on the workspace the user is acting in."""
+    return Task.objects.filter(workspace=workspace_for(user))
 
 
 def board_tasks_qs(board):
-    """Tasks belonging on a given board: its owner's tasks."""
-    return Task.objects.filter(user_id=board.user_id)
+    """Tasks on this board's workspace."""
+    return Task.objects.filter(workspace_id=board.workspace_id)
 
 
 def get_task_or_404(user, pk):
@@ -33,24 +35,49 @@ def known_tags_for_board(board):
 
 
 def visible_statuses_qs(user):
-    return TaskStatus.objects.filter(user=user)
+    return TaskStatus.objects.filter(workspace=workspace_for(user))
+
+
+def default_status_for(user):
+    """The status new tasks should start in, or None to use the first one.
+
+    A workspace default wins. A personal workspace still honors the older
+    account-level default when the workspace itself has none.
+    """
+    workspace = workspace_for(user)
+    if workspace.default_status_id:
+        status = TaskStatus.objects.filter(
+            pk=workspace.default_status_id, workspace=workspace
+        ).first()
+        if status:
+            return status
+    from apps.workspaces.models import Workspace
+
+    if (
+        workspace.kind == Workspace.KIND_PERSONAL
+        and workspace.owner_id == user.pk
+        and user.default_status_id
+    ):
+        return TaskStatus.objects.filter(
+            pk=user.default_status_id, workspace=workspace
+        ).first()
+    return None
 
 
 def default_status_slug(user):
-    """Status for a new task created without one: the user's chosen default,
-    else their first status. Matches the board's create panel, so a task from
-    the API lands in a column that exists instead of a hard-coded "todo"."""
-    if user.default_status_id:
-        default = visible_statuses_qs(user).filter(pk=user.default_status_id).first()
-        if default:
-            return default.slug
+    """Status for a new task created without one. Matches the board's create
+    panel, so a task from the API lands in a column that exists instead of a
+    hard-coded "todo"."""
+    default = default_status_for(user)
+    if default:
+        return default.slug
     first = visible_statuses_qs(user).first()
     return first.slug if first else "todo"
 
 
 def resolve_status_for_task(task):
     """The TaskStatus row matching task.status."""
-    return TaskStatus.objects.filter(user_id=task.user_id, slug=task.status).first()
+    return TaskStatus.objects.filter(workspace_id=task.workspace_id, slug=task.status).first()
 
 
 def move_task(user, task, new_status_slug, *, source="web"):
@@ -62,7 +89,7 @@ def move_task(user, task, new_status_slug, *, source="web"):
     statuses (e.g. Done -> Archived) leaves completed_at/previous_status alone,
     since the task never actually left the completed state.
     """
-    task_statuses = visible_statuses_qs(user)
+    task_statuses = TaskStatus.objects.filter(workspace_id=task.workspace_id)
     valid_slugs = set(task_statuses.values_list("slug", flat=True))
     if new_status_slug not in valid_slugs:
         raise InvalidStatusError(f"{new_status_slug!r} is not a valid status for this task.")

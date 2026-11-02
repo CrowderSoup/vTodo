@@ -102,6 +102,35 @@
     return match ? match[1] : "";
   }
 
+  function restoreNode(parent, node, next) {
+    if (!parent || !node) {
+      return;
+    }
+    if (next && next.parentNode !== parent) {
+      next = null;
+    }
+    parent.insertBefore(node, next);
+  }
+
+  function postJson(url, payload, undo) {
+    fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCsrfToken(),
+      },
+      body: JSON.stringify(payload),
+    }).then(function (response) {
+      if (!response.ok && undo) {
+        undo();
+      }
+    }).catch(function () {
+      if (undo) {
+        undo();
+      }
+    });
+  }
+
   function clearCardDropIndicators() {
     document.querySelectorAll(".task-card.drop-before, .task-card.drop-after").forEach(function (card) {
       card.classList.remove("drop-before", "drop-after");
@@ -668,6 +697,8 @@
       var draggedElement = board.querySelector('.board-column[data-column-id="' + draggingColumnId + '"]');
       var draggedIndex = columns.indexOf(draggedElement);
       var targetIndex = columns.indexOf(targetColumn);
+      var laneHome = draggedElement ? draggedElement.parentNode : null;
+      var laneNext = draggedElement ? draggedElement.nextSibling : null;
 
       if (draggedElement) {
         if (draggedIndex < targetIndex) {
@@ -685,13 +716,8 @@
       });
       var reorderUrl = draggingLaneKind === "status" ? "/board/statuses/reorder/" : "/board/columns/reorder/";
 
-      fetch(reorderUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRFToken": getCsrfToken(),
-        },
-        body: JSON.stringify({ order: order }),
+      postJson(reorderUrl, { order: order }, function () {
+        restoreNode(laneHome, draggedElement, laneNext);
       });
 
       if (draggedElement) {
@@ -714,6 +740,8 @@
     var card = draggingCard;
 
     if (card && card.closest(".task-list") === list) {
+      var cardHome = card.parentNode;
+      var cardNext = card.nextSibling;
       if (dropTargetCard && dropTargetCard !== card) {
         if (dropPosition === "before") {
           list.insertBefore(card, dropTargetCard);
@@ -724,13 +752,8 @@
       var newOrder = Array.from(list.querySelectorAll(".task-card")).map(function (taskCard) {
         return parseInt(taskCard.dataset.taskId, 10);
       });
-      fetch("/board/tasks/reorder/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRFToken": getCsrfToken(),
-        },
-        body: JSON.stringify({ order: newOrder }),
+      postJson("/board/tasks/reorder/", { order: newOrder }, function () {
+        restoreNode(cardHome, card, cardNext);
       });
     } else {
       window.htmx.ajax("POST", "/board/tasks/" + taskId + "/move/", {
@@ -895,6 +918,8 @@
     var draggedRow = list.querySelector('.status-row[data-status-id="' + draggingStatusId + '"]');
     var draggedIndex = rows.indexOf(draggedRow);
     var targetIndex = rows.indexOf(targetRow);
+    var statusHome = draggedRow ? draggedRow.parentNode : null;
+    var statusNext = draggedRow ? draggedRow.nextSibling : null;
 
     if (draggedRow) {
       if (draggedIndex < targetIndex) {
@@ -908,13 +933,8 @@
       return parseInt(row.dataset.statusId, 10);
     });
 
-    fetch("/board/statuses/reorder/", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRFToken": getCsrfToken(),
-      },
-      body: JSON.stringify({ order: order }),
+    postJson("/board/statuses/reorder/", { order: order }, function () {
+      restoreNode(statusHome, draggedRow, statusNext);
     });
 
     if (draggedRow) {

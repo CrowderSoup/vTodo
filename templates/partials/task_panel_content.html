@@ -38,6 +38,7 @@
   </div>
   {% endif %}
 
+  {% if can_write_workspace %}
   <section class="task-panel-section">
     <span class="section-title">Status</span>
     <select id="task-panel-status-{{ task.pk }}"
@@ -53,6 +54,7 @@
       {% endfor %}
     </select>
   </section>
+  {% endif %}
 
   <section class="task-panel-section">
     <span class="section-title">Notes</span>
@@ -71,6 +73,7 @@
       {% include "partials/task_comments.html" %}
     </div>
 
+    {% if can_write_workspace %}
     <form id="task-comment-form"
           class="panel-form"
           hx-post="{% url 'boards:task-comment-create' task.pk %}"
@@ -82,6 +85,7 @@
         <button type="submit" class="btn-primary btn-small">Add comment</button>
       </div>
     </form>
+    {% endif %}
   </section>
 
   {% if activity %}
@@ -93,6 +97,7 @@
 
 </div>
 
+{% if can_write_workspace %}
 <div class="task-panel-footer">
   <div class="panel-footer-actions">
     {% if not task.completed_at %}
@@ -123,3 +128,4 @@
             hx-swap="innerHTML">Edit task</button>
   </div>
 </div>
+{% endif %}

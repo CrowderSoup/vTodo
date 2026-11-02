@@ -54,6 +54,19 @@
 
       <span class="nav-spacer"></span>
 
+      {% if active_workspace %}
+      <form method="post" action="{% url 'workspaces:switch' %}" class="workspace-switcher">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <label class="visually-hidden" for="workspace-switch">Workspace</label>
+        <select id="workspace-switch" name="workspace" onchange="this.form.submit()">
+          {% for ws in workspaces %}
+          <option value="{{ ws.pk }}" {% if ws.pk == active_workspace.pk %}selected{% endif %}>{{ ws.name }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      {% endif %}
+
       <div class="user-menu">
         <button class="user-chip user-menu-toggle" type="button" data-disclosure-toggle aria-haspopup="true" aria-label="Account menu" title="Account menu">
           {% if user.avatar_url %}
@@ -66,6 +79,7 @@
         </button>
 
         <div class="user-menu-popover">
+          <a class="user-menu-link" href="{% url 'workspaces:create' %}">New shared workspace</a>
           <a class="user-menu-link {% if request.resolver_match.namespace == 'users' %}is-active{% endif %}" href="{% url 'users:settings' %}">Settings</a>
           {% if is_site_admin %}
           <a class="user-menu-link {% if request.resolver_match.namespace == 'siteadmin' %}is-active{% endif %}" href="{% url 'siteadmin:dashboard' %}">Admin</a>

@@ -21,11 +21,13 @@
       {% endwith %}
     </div>
   </div>
+  {% if can_admin_workspace %}
   <button class="btn-danger btn-icon"
           hx-post="{% url 'users:column-delete' column.pk %}"
           hx-target="#column-list"
           hx-swap="innerHTML"
           hx-confirm="Delete custom lane &ldquo;{{ column.label|escapejs }}&rdquo;?">×</button>
+  {% endif %}
 </div>
 {% empty %}
 <div class="settings-empty-state">

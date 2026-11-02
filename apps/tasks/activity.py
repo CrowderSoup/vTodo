@@ -51,8 +51,15 @@ def source_for_request(request):
 
 
 def _row(task, action, actor, source, field="", old="", new=""):
+    workspace_id = task.workspace_id
+    if workspace_id is None and task.user_id:
+        # bulk_create skips pre_save, where the workspace would otherwise be set.
+        from apps.workspaces.services import personal_workspace_id
+
+        workspace_id = personal_workspace_id(task.user_id)
     return TaskActivity(
         user_id=task.user_id,
+        workspace_id=workspace_id,
         task=task,
         task_pk=task.pk,
         actor=actor,

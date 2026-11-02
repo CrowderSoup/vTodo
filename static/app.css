@@ -569,6 +569,37 @@ hr {
   order: 3;
 }
 
+.workspace-switcher {
+  order: 4;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.workspace-switcher select {
+  max-width: 11rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.4rem 0.55rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  color: inherit;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .nav-collapsible-wrap {
   display: contents;
 }
@@ -2407,8 +2438,16 @@ textarea:has(+ .EasyMDEContainer) {
     left: 0;
   }
 
-  .user-menu {
+  .workspace-switcher {
     order: 4;
+  }
+
+  .workspace-switcher select {
+    max-width: 7.5rem;
+  }
+
+  .user-menu {
+    order: 5;
   }
 
   .user-name,
