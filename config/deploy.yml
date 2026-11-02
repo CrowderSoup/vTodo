@@ -74,9 +74,13 @@ env:
     EMAIL_USE_SSL: "True"
     DEFAULT_FROM_EMAIL: Aaron <aaron@crowder.cloud>
     ADMIN_EMAILS: aaron.crowder@gmail.com
-    # Pocket ID sign-in. Needs the two POCKET_ID_CLIENT_* secrets below too;
-    # with any of the three empty, the login page stays Google-only.
-    POCKET_ID_URL: https://id.crowdersoup.com
+    # OpenID Connect sign-in via Pocket ID. Needs the two OIDC_CLIENT_* secrets
+    # below too; with any of the three empty, the login page stays Google-only.
+    OIDC_URL: https://id.crowdersoup.com
+    OIDC_NAME: Pocket ID
+    # Existing links and the callback URL registered in Pocket ID use this id.
+    # Don't change it.
+    OIDC_PROVIDER_ID: pocket-id
   secret:
     - SECRET_KEY
     - DATABASE_URL
@@ -84,8 +88,8 @@ env:
     - EMAIL_HOST_PASSWORD
     - GOOGLE_CLIENT_ID
     - GOOGLE_CLIENT_SECRET
-    - POCKET_ID_CLIENT_ID
-    - POCKET_ID_CLIENT_SECRET
+    - OIDC_CLIENT_ID
+    - OIDC_CLIENT_SECRET
     - INTEGRATIONS_ENCRYPTION_KEY
 
 accessories:

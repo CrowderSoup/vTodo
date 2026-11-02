@@ -2,7 +2,7 @@ from pathlib import Path
 
 import environ
 
-from apps.accounts.pocket_id import pocket_id_provider_settings
+from apps.accounts.oidc import DEFAULT_NAME, DEFAULT_PROVIDER_ID, oidc_provider_settings
 
 env = environ.Env(
     DEBUG=(bool, False),
@@ -316,15 +316,19 @@ LOGGING = {
 GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID", default="")
 GOOGLE_CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET", default="")
 
-# Pocket ID is optional. Any missing value leaves the OpenID Connect
-# provider unregistered, so existing deploys keep a Google-only login page.
-POCKET_ID_URL = env("POCKET_ID_URL", default="")
-POCKET_ID_CLIENT_ID = env("POCKET_ID_CLIENT_ID", default="")
-POCKET_ID_CLIENT_SECRET = env("POCKET_ID_CLIENT_SECRET", default="")
-_pocket_id_provider = pocket_id_provider_settings(
-    POCKET_ID_URL, POCKET_ID_CLIENT_ID, POCKET_ID_CLIENT_SECRET
+# OpenID Connect sign-in (Pocket ID, Authentik, Keycloak, ...) is optional.
+# Any missing URL, client id, or secret leaves the provider unregistered, so
+# the login page stays Google-only. See apps/accounts/oidc.py for why
+# OIDC_PROVIDER_ID must not change once accounts are linked.
+OIDC_URL = env("OIDC_URL", default="")
+OIDC_CLIENT_ID = env("OIDC_CLIENT_ID", default="")
+OIDC_CLIENT_SECRET = env("OIDC_CLIENT_SECRET", default="")
+OIDC_PROVIDER_ID = env("OIDC_PROVIDER_ID", default="").strip() or DEFAULT_PROVIDER_ID
+OIDC_NAME = env("OIDC_NAME", default="").strip() or DEFAULT_NAME
+_oidc_provider = oidc_provider_settings(
+    OIDC_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_PROVIDER_ID, OIDC_NAME
 )
-POCKET_ID_ENABLED = _pocket_id_provider is not None
+OIDC_ENABLED = _oidc_provider is not None
 
 SOCIALACCOUNT_PROVIDERS = {
     "google": {
@@ -337,9 +341,9 @@ SOCIALACCOUNT_PROVIDERS = {
         "AUTH_PARAMS": {"access_type": "online"},
     },
 }
-if POCKET_ID_ENABLED:
+if OIDC_ENABLED:
     INSTALLED_APPS.append("allauth.socialaccount.providers.openid_connect")
-    SOCIALACCOUNT_PROVIDERS["openid_connect"] = _pocket_id_provider
+    SOCIALACCOUNT_PROVIDERS["openid_connect"] = _oidc_provider
 SOCIALACCOUNT_ADAPTER = "apps.accounts.adapters.SocialAccountAdapter"
 # The User model has no `email` field (email lives on apps.emailauth.EmailIdentity) —
 # tell allauth's account app not to assume/sync one.

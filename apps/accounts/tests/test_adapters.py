@@ -10,41 +10,41 @@ from apps.siteadmin.models import SiteInvite, SiteSettings
 from apps.users.models import User
 
 
-def _install_pocket_id_provider():
-    """Register a provider class so connect() can attach a Pocket ID login.
+def _install_oidc_provider():
+    """Register a provider class so connect() can attach an OpenID Connect login.
 
     The real OpenID Connect provider is installed only when the env vars are
-    set. allauth still asks the registry for ``pocket-id`` while saving the
+    set. allauth still asks the registry for ``oidc`` while saving the
     link. ``package`` points at a real allauth package so provider URL
     discovery does not import this test module.
     """
     from allauth.socialaccount.providers import registry
     from allauth.socialaccount.providers.base import Provider
 
-    if registry.get_class("pocket-id") is not None:
+    if registry.get_class("oidc") is not None:
         return
 
-    class PocketIDProvider(Provider):
-        id = "pocket-id"
-        name = "Pocket ID"
+    class OIDCTestProvider(Provider):
+        id = "oidc"
+        name = "SSO"
         uses_apps = False
         package = "allauth.socialaccount.providers.openid_connect"
 
-    registry.register(PocketIDProvider)
+    registry.register(OIDCTestProvider)
 
 
 @pytest.fixture(autouse=True)
-def pocket_id_social_app(db):
-    """allauth looks up a SocialApp when connect() saves a Pocket ID login."""
+def oidc_social_app(db):
+    """allauth looks up a SocialApp when connect() saves an OpenID Connect login."""
     from django.contrib.sites.models import Site
 
     from allauth.socialaccount.models import SocialApp
 
-    _install_pocket_id_provider()
+    _install_oidc_provider()
     site, _ = Site.objects.get_or_create(pk=1, defaults={"domain": "example.com", "name": "example"})
     app, _ = SocialApp.objects.get_or_create(
-        provider="pocket-id",
-        defaults={"name": "Pocket ID", "client_id": "pocket-client", "secret": "pocket-secret", "key": ""},
+        provider="oidc",
+        defaults={"name": "SSO", "client_id": "oidc-client", "secret": "oidc-secret", "key": ""},
     )
     app.sites.add(site)
 
@@ -230,14 +230,14 @@ def test_repeat_login_refreshes_avatar_from_google(request_factory):
     assert user.display_name == "Existing Name"
 
 
-def _pocket_claims(**extra):
+def _oidc_claims(**extra):
     claims = {"email_verified": True, "email": "ada@example.com"}
     claims.update(extra)
     return claims
 
 
 @pytest.mark.django_db
-def test_pocket_id_first_login_links_existing_google_account(request_factory):
+def test_oidc_first_login_links_existing_google_account(request_factory):
     from apps.tasks.models import Task
 
     user = User.objects.create_user()
@@ -245,29 +245,29 @@ def test_pocket_id_first_login_links_existing_google_account(request_factory):
     SocialAccount.objects.create(user=user, provider="google", uid="google-sub")
     task = Task.objects.create(user=user, title="Keep me")
     sociallogin = _sociallogin(
-        provider="pocket-id",
+        provider="oidc",
         email="Ada@example.com",
         verified=True,
-        uid="pocket-sub",
-        extra_data=_pocket_claims(name="Ada Lovelace", picture="https://id.example/ada.png"),
+        uid="oidc-sub",
+        extra_data=_oidc_claims(name="Ada Lovelace", picture="https://id.example/ada.png"),
     )
 
     SocialAccountAdapter().pre_social_login(request_factory(), sociallogin)
 
     assert User.objects.count() == 1
     assert sociallogin.user.id == user.id
-    assert SocialAccount.objects.get(provider="pocket-id", uid="pocket-sub").user_id == user.id
+    assert SocialAccount.objects.get(provider="oidc", uid="oidc-sub").user_id == user.id
     task.refresh_from_db()
     assert task.user_id == user.id
     assert EmailIdentity.objects.filter(email="ada@example.com").count() == 1
 
 
 @pytest.mark.django_db
-def test_pocket_id_unverified_email_is_refused(request_factory):
+def test_oidc_unverified_email_is_refused(request_factory):
     from allauth.core.exceptions import ImmediateHttpResponse
 
     sociallogin = _sociallogin(
-        provider="pocket-id",
+        provider="oidc",
         email="unverified@example.com",
         verified=False,
         extra_data={"email": "unverified@example.com", "email_verified": False},
@@ -281,12 +281,12 @@ def test_pocket_id_unverified_email_is_refused(request_factory):
 
 
 @pytest.mark.django_db
-def test_pocket_id_refuses_when_claim_says_unverified(request_factory):
+def test_oidc_refuses_when_claim_says_unverified(request_factory):
     from allauth.core.exceptions import ImmediateHttpResponse
 
     # allauth may have marked the address verified; an explicit OIDC false still refuses.
     sociallogin = _sociallogin(
-        provider="pocket-id",
+        provider="oidc",
         email="unverified@example.com",
         verified=True,
         extra_data={"email": "unverified@example.com", "email_verified": False},
@@ -299,12 +299,12 @@ def test_pocket_id_refuses_when_claim_says_unverified(request_factory):
 
 
 @pytest.mark.django_db
-def test_pocket_id_new_email_blocked_when_private(request_factory):
+def test_oidc_new_email_blocked_when_private(request_factory):
     from allauth.core.exceptions import ImmediateHttpResponse
 
     SiteSettings.objects.create(pk=1, signup_mode=SiteSettings.MODE_PRIVATE)
     sociallogin = _sociallogin(
-        provider="pocket-id",
+        provider="oidc",
         email="private@example.com",
         verified=True,
         extra_data={"email": "private@example.com", "email_verified": True},
@@ -317,12 +317,12 @@ def test_pocket_id_new_email_blocked_when_private(request_factory):
 
 
 @pytest.mark.django_db
-def test_pocket_id_new_email_blocked_invite_only_without_invite(request_factory):
+def test_oidc_new_email_blocked_invite_only_without_invite(request_factory):
     from allauth.core.exceptions import ImmediateHttpResponse
 
     SiteSettings.objects.create(pk=1, signup_mode=SiteSettings.MODE_INVITE_ONLY)
     sociallogin = _sociallogin(
-        provider="pocket-id",
+        provider="oidc",
         email="uninvited@example.com",
         verified=True,
         extra_data={"email": "uninvited@example.com", "email_verified": True},
@@ -335,11 +335,11 @@ def test_pocket_id_new_email_blocked_invite_only_without_invite(request_factory)
 
 
 @pytest.mark.django_db
-def test_pocket_id_new_email_allowed_invite_only_with_valid_invite(request_factory):
+def test_oidc_new_email_allowed_invite_only_with_valid_invite(request_factory):
     SiteSettings.objects.create(pk=1, signup_mode=SiteSettings.MODE_INVITE_ONLY)
     invite = SiteInvite.generate("invited@example.com", invited_by=None)
     sociallogin = _sociallogin(
-        provider="pocket-id",
+        provider="oidc",
         email="invited@example.com",
         verified=True,
         extra_data={"email": "invited@example.com", "email_verified": True, "name": "Invited Person"},
@@ -355,9 +355,9 @@ def test_pocket_id_new_email_allowed_invite_only_with_valid_invite(request_facto
 
 
 @pytest.mark.django_db
-def test_pocket_id_backfills_name_from_oidc_claims(request_factory):
+def test_oidc_backfills_name_from_oidc_claims(request_factory):
     sociallogin = _sociallogin(
-        provider="pocket-id",
+        provider="oidc",
         email="oidc@example.com",
         verified=True,
         extra_data={
@@ -377,7 +377,7 @@ def test_pocket_id_backfills_name_from_oidc_claims(request_factory):
 
 
 @pytest.mark.django_db
-def test_connect_pocket_id_links_the_signed_in_user(request_factory):
+def test_connect_oidc_links_the_signed_in_user(request_factory):
     from apps.tasks.models import Task
 
     user = User.objects.create_user()
@@ -388,18 +388,18 @@ def test_connect_pocket_id_links_the_signed_in_user(request_factory):
         request,
         user,
         _sociallogin(
-            provider="pocket-id",
+            provider="oidc",
             email="ada@example.com",
             verified=True,
-            uid="pocket-sub",
-            extra_data=_pocket_claims(name="Ada", picture="https://id.example/a.png"),
+            uid="oidc-sub",
+            extra_data=_oidc_claims(name="Ada", picture="https://id.example/a.png"),
         ),
     )
 
     SocialAccountAdapter().pre_social_login(request, sociallogin)
 
     assert sociallogin.user.id == user.id
-    assert SocialAccount.objects.get(provider="pocket-id", uid="pocket-sub").user_id == user.id
+    assert SocialAccount.objects.get(provider="oidc", uid="oidc-sub").user_id == user.id
     assert User.objects.count() == 1
     task.refresh_from_db()
     assert task.user_id == user.id
@@ -407,17 +407,17 @@ def test_connect_pocket_id_links_the_signed_in_user(request_factory):
 
 
 @pytest.mark.django_db
-def test_connect_pocket_id_adds_a_new_email_to_the_current_user(request_factory):
+def test_connect_oidc_adds_a_new_email_to_the_current_user(request_factory):
     user = User.objects.create_user()
     request = request_factory()
     sociallogin = _as_connect(
         request,
         user,
         _sociallogin(
-            provider="pocket-id",
+            provider="oidc",
             email="person@example.com",
             verified=True,
-            uid="pocket-new",
+            uid="oidc-new",
             extra_data={"email": "person@example.com", "email_verified": True},
         ),
     )
@@ -430,7 +430,7 @@ def test_connect_pocket_id_adds_a_new_email_to_the_current_user(request_factory)
 
 
 @pytest.mark.django_db
-def test_connect_pocket_id_is_not_blocked_by_the_private_signup_gate(request_factory):
+def test_connect_oidc_is_not_blocked_by_the_private_signup_gate(request_factory):
     SiteSettings.objects.create(pk=1, signup_mode=SiteSettings.MODE_PRIVATE)
     user = User.objects.create_user()
     request = request_factory()
@@ -438,10 +438,10 @@ def test_connect_pocket_id_is_not_blocked_by_the_private_signup_gate(request_fac
         request,
         user,
         _sociallogin(
-            provider="pocket-id",
+            provider="oidc",
             email="person@example.com",
             verified=True,
-            uid="pocket-new",
+            uid="oidc-new",
             extra_data={"email": "person@example.com", "email_verified": True},
         ),
     )
@@ -452,15 +452,15 @@ def test_connect_pocket_id_is_not_blocked_by_the_private_signup_gate(request_fac
 
 
 @pytest.mark.django_db
-def test_connect_refuses_pocket_id_identity_owned_by_another_user(request_factory):
+def test_connect_refuses_oidc_identity_owned_by_another_user(request_factory):
     from allauth.core.exceptions import ImmediateHttpResponse
 
     owner = User.objects.create_user(display_name="Owner", avatar_url="https://example.com/owner.png")
     current = User.objects.create_user()
     SocialAccount.objects.create(
         user=owner,
-        provider="pocket-id",
-        uid="pocket-sub",
+        provider="oidc",
+        uid="oidc-sub",
         extra_data={"picture": "https://example.com/owner.png"},
     )
     request = request_factory()
@@ -468,11 +468,11 @@ def test_connect_refuses_pocket_id_identity_owned_by_another_user(request_factor
         request,
         current,
         _sociallogin(
-            provider="pocket-id",
+            provider="oidc",
             email="ada@example.com",
             verified=True,
-            uid="pocket-sub",
-            extra_data=_pocket_claims(picture="https://example.com/stolen.png", name="Stolen"),
+            uid="oidc-sub",
+            extra_data=_oidc_claims(picture="https://example.com/stolen.png", name="Stolen"),
         ),
     )
 
@@ -480,8 +480,8 @@ def test_connect_refuses_pocket_id_identity_owned_by_another_user(request_factor
         SocialAccountAdapter().pre_social_login(request, sociallogin)
 
     assert exc_info.value.response["Location"] == "/settings/"
-    assert SocialAccount.objects.get(provider="pocket-id", uid="pocket-sub").user_id == owner.id
-    assert not SocialAccount.objects.filter(user=current, provider="pocket-id").exists()
+    assert SocialAccount.objects.get(provider="oidc", uid="oidc-sub").user_id == owner.id
+    assert not SocialAccount.objects.filter(user=current, provider="oidc").exists()
     assert User.objects.count() == 2
     owner.refresh_from_db()
     assert owner.avatar_url == "https://example.com/owner.png"
@@ -499,11 +499,11 @@ def test_connect_refuses_email_owned_by_another_user(request_factory):
         request,
         current,
         _sociallogin(
-            provider="pocket-id",
+            provider="oidc",
             email="ada@example.com",
             verified=True,
-            uid="pocket-new",
-            extra_data=_pocket_claims(),
+            uid="oidc-new",
+            extra_data=_oidc_claims(),
         ),
     )
 
@@ -521,7 +521,7 @@ def test_connect_refuses_email_owned_by_another_user(request_factory):
     [
         ("google", {"name": "New Name", "picture": "https://example.com/g.jpg"}),
         (
-            "pocket-id",
+            "oidc",
             {
                 "name": "New Name",
                 "picture": "https://example.com/p.jpg",
@@ -531,7 +531,7 @@ def test_connect_refuses_email_owned_by_another_user(request_factory):
         ),
     ],
 )
-def test_repeat_login_resyncs_profile_for_google_and_pocket_id(request_factory, provider, extra_data):
+def test_repeat_login_resyncs_profile_for_google_and_oidc(request_factory, provider, extra_data):
     user = User.objects.create_user(display_name="Existing Name", avatar_url="https://example.com/old.jpg")
     account = SocialAccount(provider=provider, uid=f"{provider}-uid", user=user, extra_data=extra_data)
     sociallogin = SocialLogin(user=user, account=account)

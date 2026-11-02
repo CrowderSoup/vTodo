@@ -1,7 +1,7 @@
 """Match a verified sign-in email to one existing user row.
 
-Google (the website and the Android ID-token exchange) and Pocket ID both
-come through here. The caller attaches the new social login to that user.
+Google (the website and the Android ID-token exchange) and OpenID Connect
+both come through here. The caller attaches the new social login to that user.
 Nothing in this module merges two users or creates a second user for an
 email that already has an EmailIdentity.
 """
@@ -15,11 +15,7 @@ from apps.siteadmin.selectors import consume_signup_slot
 from apps.users.models import User
 
 _VERIFIED_FLAGS = (True, "true", "True", 1, "1")
-_PROVIDER_LABELS = {
-    "google": "Google",
-    "pocket-id": "Pocket ID",
-}
-_PROVIDER_ORDER = {"google": 0, "pocket-id": 1}
+_PROVIDER_LABELS = {"google": "Google"}
 
 
 class AccountLinkError(Exception):
@@ -62,8 +58,8 @@ def sync_social_profile(user, extra_data):
 
     Avatar has no user-editable alternative, so it always mirrors the
     provider's current picture. Google sends ``name`` and ``picture``.
-    Pocket ID sends those OIDC claims, or ``given_name`` / ``family_name``
-    / ``preferred_username`` when ``name`` is absent.
+    OpenID Connect providers send those claims, or ``given_name`` /
+    ``family_name`` / ``preferred_username`` when ``name`` is absent.
     """
     if not extra_data:
         return
@@ -97,6 +93,10 @@ def claims_mark_email_unverified(extra_data) -> bool:
 
 
 def provider_label(provider: str) -> str:
+    from apps.accounts.oidc import oidc_name, oidc_provider_id
+
+    if provider == oidc_provider_id():
+        return oidc_name()
     return _PROVIDER_LABELS.get(provider, provider)
 
 
@@ -105,31 +105,31 @@ def list_connected_accounts(user):
     for provider in SocialAccount.objects.filter(user=user).order_by("id").values_list("provider", flat=True):
         if provider not in seen:
             seen.append(provider)
-    seen.sort(key=lambda provider: (_PROVIDER_ORDER.get(provider, 9), provider))
+    # Google first, then everything else alphabetically.
+    seen.sort(key=lambda provider: (provider != "google", provider))
     return [{"provider": provider, "label": provider_label(provider)} for provider in seen]
 
 
 def signed_in_provider_label(accounts) -> str:
     providers = {account["provider"] for account in accounts}
-    if "pocket-id" in providers and "google" not in providers:
-        return "Pocket ID"
     if "google" in providers or not providers:
         return "Google"
     return accounts[0]["label"]
 
 
 def settings_connection_context(user) -> dict:
-    from apps.accounts.pocket_id import POCKET_ID_PROVIDER_ID, pocket_id_login_url
+    from apps.accounts.oidc import oidc_login_url, oidc_name, oidc_provider_id
 
     accounts = list_connected_accounts(user)
     linked = {account["provider"] for account in accounts}
     connect_url = ""
-    if POCKET_ID_PROVIDER_ID not in linked:
-        connect_url = pocket_id_login_url(next_url="/settings/", process="connect")
+    if oidc_provider_id() not in linked:
+        connect_url = oidc_login_url(next_url="/settings/", process="connect")
     return {
         "social_accounts": accounts,
         "signed_in_provider": signed_in_provider_label(accounts),
-        "pocket_id_connect_url": connect_url,
+        "oidc_connect_url": connect_url,
+        "oidc_name": oidc_name(),
     }
 
 

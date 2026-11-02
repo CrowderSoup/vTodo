@@ -1,13 +1,13 @@
 # vtodo
 
-A personal kanban-style task manager built with Django. Log in with Google, or with Pocket ID when it is configured, then manage tasks on a customizable board.
+A personal kanban-style task manager built with Django. Log in with Google, or with your own OpenID Connect provider when one is configured, then manage tasks on a customizable board.
 
 ## Features
 
 - **Kanban board** — columns that filter tasks by status, tags, or due date (overdue / today / this week)
 - **Custom task statuses** — define your own ordered statuses with optional colors
 - **Task details** — title, notes, tags, due date, completion tracking
-- **Sign-in** — Google via django-allauth, plus optional Pocket ID (OpenID Connect, authorization code with PKCE)
+- **Sign-in** — Google via django-allauth, plus an optional OpenID Connect provider such as Pocket ID, Authentik, or Keycloak (authorization code with PKCE)
 - **HTMX-powered UI** — fast partial-page updates without a full JS framework
 - **Docker-ready** — single Dockerfile, configurable via environment variables
 
@@ -64,9 +64,11 @@ All configuration is through environment variables. Copy `.env.example` to `.env
 | `CSRF_TRUSTED_ORIGINS` | Comma-separated trusted origins | `http://localhost:8000` |
 | `GOOGLE_CLIENT_ID` | Web OAuth client ID from Google Cloud Console. The Android app uses this as the ID-token audience. | |
 | `GOOGLE_CLIENT_SECRET` | OAuth client secret from Google Cloud Console | |
-| `POCKET_ID_URL` | Pocket ID issuer URL, such as `https://id.crowdersoup.com`, with no path. Unset leaves Pocket ID sign-in off. | |
-| `POCKET_ID_CLIENT_ID` | OIDC client id from Pocket ID. Required together with the URL and secret. | |
-| `POCKET_ID_CLIENT_SECRET` | OIDC client secret from Pocket ID. Required together with the URL and client id. | |
+| `OIDC_URL` | OpenID Connect issuer URL, such as `https://id.example.com`, with no path. Unset leaves OpenID Connect sign-in off. | |
+| `OIDC_CLIENT_ID` | OIDC client id from the provider. Required together with the URL and secret. | |
+| `OIDC_CLIENT_SECRET` | OIDC client secret from the provider. Required together with the URL and client id. | |
+| `OIDC_NAME` | Provider name on the login button and in Settings ("Sign in with …") | `SSO` |
+| `OIDC_PROVIDER_ID` | allauth provider id: lower-case letters, digits, `-`, `_`. It is in the callback URL and stored on every linked account, so don't change it once people have linked. | `oidc` |
 | `EMAIL_BACKEND` | Django email backend | `console` (prints to stdout) |
 | `EMAIL_HOST` | SMTP host | |
 | `EMAIL_PORT` | SMTP port | `587` |
@@ -81,19 +83,21 @@ Click "Sign in with Google" on the login page. Requires `GOOGLE_CLIENT_ID`/`GOOG
 
 The Android app uses that same web client. It asks Google for an ID token aimed at `GOOGLE_CLIENT_ID`, then `POST /api/v1/auth/google/` checks the token and returns a new API token for that phone. Each phone gets its own token, listed under Settings → API → Signed-in devices, where a lost phone can be signed out. Signing out in the app revokes its token through `POST /api/v1/auth/sign-out/`. The Settings → API token is separate and still works when pasted into the app. `GET /api/v1/auth/google/` returns the client id the app should request. In the same Google Cloud project, add an Android OAuth client for package `com.crowdersoup.vtodo` and the SHA-1 of the signing key (see the Android section below). No new environment variable.
 
-### Pocket ID
+### OpenID Connect
 
-Pocket ID is an optional second sign-in method. It uses django-allauth's generic OpenID Connect provider (`pocket-id`) with the authorization code flow and PKCE. Set `POCKET_ID_URL`, `POCKET_ID_CLIENT_ID`, and `POCKET_ID_CLIENT_SECRET` together. If any one is unset, Pocket ID is not registered and the login page stays Google-only.
+Any OpenID Connect provider with discovery can be an optional second sign-in method: Pocket ID, Authentik, Keycloak, Authelia, Zitadel, and so on. It uses django-allauth's generic OpenID Connect provider with the authorization code flow and PKCE. Set `OIDC_URL`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET` together. If any one is unset, the provider is not registered and the login page stays Google-only. Set `OIDC_NAME` to the name people know it by, such as `Pocket ID`.
 
-In Pocket ID, create an OIDC client with PKCE on and register this redirect URI:
+In the provider, create a confidential OIDC client with PKCE on and register this redirect URI:
 
 ```
-https://<your-domain>/accounts/oidc/pocket-id/login/callback/
+https://<your-domain>/accounts/oidc/<OIDC_PROVIDER_ID>/login/callback/
 ```
 
-`POCKET_ID_URL` is the issuer, with no path. vtodo reads `{POCKET_ID_URL}/.well-known/openid-configuration`.
+With the default `OIDC_PROVIDER_ID` that is `/accounts/oidc/oidc/login/callback/`. Pick the provider id before anyone links an account and leave it: it is stored on each linked account, so changing it breaks those links and the registered redirect URI.
 
-Linking keeps a single user row. A first Pocket ID login with a verified email attaches to the user who already has that email, including an account created with Google, so tasks, API tokens, Android device logins, and MCP access stay on that user. An unverified email is refused. Pocket ID reports a new account's email as unverified until an admin marks it verified, or turns on **Emails Verified** in its application configuration. A brand-new verified email follows the same private and invite-only signup gate as Google. From Settings → General → Connected accounts, a signed-in user can connect Pocket ID to the account they are already using. If that Pocket ID identity, or its verified email, already belongs to a different user, connecting is refused and neither user is changed.
+`OIDC_URL` is the issuer, with no path. vtodo reads `{OIDC_URL}/.well-known/openid-configuration`.
+
+Linking keeps a single user row. A first OpenID Connect login with a verified email attaches to the user who already has that email, including an account created with Google, so tasks, API tokens, Android device logins, and MCP access stay on that user. An unverified email (`email_verified: false`) is refused. Pocket ID, for one, reports a new account's email as unverified until an admin marks it verified or turns on **Emails Verified** in its application configuration. A brand-new verified email follows the same private and invite-only signup gate as Google. From Settings → General → Connected accounts, a signed-in user can connect the OpenID Connect provider to the account they are already using. If that identity, or its verified email, already belongs to a different user, connecting is refused and neither user is changed.
 
 ## Running tests
 

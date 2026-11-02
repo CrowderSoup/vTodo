@@ -2,7 +2,7 @@
   <div>
     <h2 class="card-title">Connected accounts</h2>
     <p class="card-subtitle">
-      Sign-in methods linked to this account. Connecting Pocket ID keeps your tasks, API tokens, and devices on this user.
+      Sign-in methods linked to this account.{% if oidc_connect_url %} Connecting {{ oidc_name }} keeps your tasks, API tokens, and devices on this user.{% endif %}
     </p>
   </div>
 
@@ -19,9 +19,9 @@
     {% endfor %}
   </div>
 
-  {% if pocket_id_connect_url %}
+  {% if oidc_connect_url %}
   <div class="panel-footer-secondary">
-    <button type="submit" class="btn-primary" form="pocket-id-connect-form">Connect Pocket ID</button>
+    <button type="submit" class="btn-primary" form="oidc-connect-form">Connect {{ oidc_name }}</button>
   </div>
   {% endif %}
 </section>

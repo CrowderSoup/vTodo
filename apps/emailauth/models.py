@@ -3,7 +3,7 @@ from django.db import models
 
 
 class EmailIdentity(models.Model):
-    """Links a User to a verified sign-in email (Google or Pocket ID).
+    """Links a User to a verified sign-in email (Google or OpenID Connect).
 
     A new social login matches an existing account through this row, and
     admin-email checks use it too. Emails are stored lower-cased.

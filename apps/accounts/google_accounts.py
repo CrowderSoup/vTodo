@@ -3,7 +3,7 @@
 The website (apps.accounts.adapters.SocialAccountAdapter) and the Android
 app's ID-token exchange both end up in account_for_verified_email, so a
 person who already signed in on one gets the same user on the other.
-Pocket ID uses that helper directly.
+OpenID Connect uses that helper directly.
 """
 
 import re
@@ -125,7 +125,7 @@ def verify_google_id_token(raw_token: str) -> dict:
 def account_for_verified_google_email(email: str, extra_data: dict | None = None) -> User:
     """Find or create the user for a verified Google email address.
 
-    Same user row as a Pocket ID login with that email. Android keeps
+    Same user row as an OpenID Connect login with that email. Android keeps
     calling this name; the shared rules live in account_for_verified_email.
     """
     try:
@@ -137,7 +137,7 @@ def account_for_verified_google_email(email: str, extra_data: dict | None = None
 
 
 def sync_google_profile(user, extra_data):
-    """Google profile sync. Pocket ID claims go through the same helper."""
+    """Google profile sync. OpenID Connect claims go through the same helper."""
     sync_social_profile(user, extra_data)
 
 

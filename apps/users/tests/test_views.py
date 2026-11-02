@@ -128,9 +128,9 @@ def test_settings_calendar_shows_status_when_connected(logged_in_client):
 
 
 @pytest.mark.django_db
-def test_settings_lists_connected_accounts_and_hides_pocket_id_when_unconfigured(logged_in_client, settings):
+def test_settings_lists_connected_accounts_and_hides_oidc_when_unconfigured(logged_in_client, settings):
     client, user = logged_in_client
-    settings.POCKET_ID_ENABLED = False
+    settings.OIDC_ENABLED = False
     SocialAccount.objects.create(user=user, provider="google", uid="google-sub")
 
     response = client.get(reverse("users:settings"))
@@ -139,13 +139,14 @@ def test_settings_lists_connected_accounts_and_hides_pocket_id_when_unconfigured
     assert response.status_code == 200
     assert "Connected accounts" in content
     assert "Google" in content
-    assert "Connect Pocket ID" not in content
+    assert "Connect SSO" not in content
 
 
 @pytest.mark.django_db
-def test_settings_offers_connect_pocket_id_when_configured(logged_in_client, settings):
+def test_settings_offers_connect_oidc_when_configured(logged_in_client, settings):
     client, user = logged_in_client
-    settings.POCKET_ID_ENABLED = True
+    settings.OIDC_ENABLED = True
+    settings.OIDC_NAME = "Pocket ID"
     SocialAccount.objects.create(user=user, provider="google", uid="google-sub")
 
     response = client.get(reverse("users:settings"))
@@ -154,13 +155,16 @@ def test_settings_offers_connect_pocket_id_when_configured(logged_in_client, set
     assert response.status_code == 200
     assert "Connect Pocket ID" in content
     assert "process=connect" in content
-    assert 'form="pocket-id-connect-form"' in content
+    assert 'form="oidc-connect-form"' in content
 
 
 @pytest.mark.django_db
-def test_settings_hides_connect_when_pocket_id_is_already_linked(logged_in_client, settings):
+def test_settings_hides_connect_when_oidc_is_already_linked(logged_in_client, settings):
+    # A deploy that set OIDC_PROVIDER_ID keeps matching the links it already has.
     client, user = logged_in_client
-    settings.POCKET_ID_ENABLED = True
+    settings.OIDC_ENABLED = True
+    settings.OIDC_PROVIDER_ID = "pocket-id"
+    settings.OIDC_NAME = "Pocket ID"
     SocialAccount.objects.create(user=user, provider="pocket-id", uid="pocket-sub")
 
     response = client.get(reverse("users:settings"))
