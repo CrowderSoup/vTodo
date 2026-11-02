@@ -15,7 +15,7 @@
       </div>
       <h1 class="auth-heading">A more polished place for the work you actually care about.</h1>
       <p class="auth-copy">
-        vtodo keeps the kanban board small, fast, and yours. Sign in with Google, then manage work with customizable columns, quick notes, and calm HTMX interactions.
+        vtodo keeps the kanban board small, fast, and yours. Sign in with Google{% if pocket_id_login_url %} or Pocket ID{% endif %}, then manage work with customizable columns, quick notes, and calm HTMX interactions.
       </p>
     </div>
 
@@ -23,19 +23,28 @@
       <span class="auth-feature">Custom statuses</span>
       <span class="auth-feature">Saved views</span>
       <span class="auth-feature">Google sign-in</span>
+      {% if pocket_id_login_url %}<span class="auth-feature">Pocket ID</span>{% endif %}
       <span class="auth-feature">Keyboard-light flow</span>
     </div>
   </div>
 
   <div class="auth-card surface-panel">
     <span class="eyebrow">Sign in</span>
-    <h2 class="card-title">Get started with Google.</h2>
-    <p class="card-subtitle">One click and you're on your board.</p>
+    <h2 class="card-title">{% if pocket_id_login_url %}Sign in.{% else %}Get started with Google.{% endif %}</h2>
+    <p class="card-subtitle">{% if pocket_id_login_url %}Google or Pocket ID. Either one opens the same account.{% else %}One click and you're on your board.{% endif %}</p>
 
-    <form class="auth-form" method="post" action="{% provider_login_url 'google' next=next %}">
-      {% csrf_token %}
-      <button type="submit" class="btn-primary">Sign in with Google</button>
-    </form>
+    <div class="auth-form">
+      <form method="post" action="{% provider_login_url 'google' next=next %}">
+        {% csrf_token %}
+        <button type="submit" class="btn-primary">Sign in with Google</button>
+      </form>
+      {% if pocket_id_login_url %}
+      <form method="post" action="{{ pocket_id_login_url }}">
+        {% csrf_token %}
+        <button type="submit" class="btn-secondary">Sign in with Pocket ID</button>
+      </form>
+      {% endif %}
+    </div>
   </div>
 </section>
 {% endblock %}
