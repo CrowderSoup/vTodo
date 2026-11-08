@@ -27,8 +27,26 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
+    KIND_HUMAN = "human"
+    KIND_AGENT = "agent"
+    KIND_CHOICES = [
+        (KIND_HUMAN, "Person"),
+        (KIND_AGENT, "Agent"),
+    ]
+
     # Auto-generated slug — never entered by humans.
     username = models.CharField(max_length=64, unique=True)
+
+    # An agent is a sub-account of a person. It signs in only with an API
+    # token, acts in its parent's workspaces, and can be assigned tasks.
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default=KIND_HUMAN)
+    parent = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="agents",
+    )
 
     display_name = models.CharField(max_length=255, blank=True, default="")
     avatar_url = models.URLField(max_length=2000, blank=True, default="")
@@ -54,5 +72,25 @@ class User(AbstractBaseUser, PermissionsMixin):
     USERNAME_FIELD = "username"
     REQUIRED_FIELDS = []
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(kind="human", parent__isnull=True)
+                    | models.Q(kind="agent", parent__isnull=False)
+                ),
+                name="user_agent_has_parent",
+            ),
+        ]
+
     def __str__(self):
         return self.display_name or self.username
+
+    @property
+    def is_agent(self):
+        return self.kind == self.KIND_AGENT
+
+    @property
+    def account(self):
+        """The person this user acts for: an agent's parent, else themselves."""
+        return self.parent if self.is_agent else self

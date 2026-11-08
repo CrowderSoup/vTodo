@@ -2,6 +2,9 @@
 
 The active workspace lives in the session for the browser. API clients send
 `X-Workspace-Id` instead. Anything else uses the caller's personal workspace.
+
+An agent has no memberships of its own. It acts in its parent's workspaces,
+as a member at most, and its personal workspace is its parent's.
 """
 
 from contextvars import ContextVar
@@ -42,33 +45,62 @@ def bind_request_workspace(request):
     request._workspace_bound = True
 
 
+def _as_agent(membership, agent):
+    """The parent's membership, as the agent may use it: never an owner."""
+    role = (
+        Membership.ROLE_VIEWER
+        if membership.role == Membership.ROLE_VIEWER
+        else Membership.ROLE_MEMBER
+    )
+    return Membership(workspace=membership.workspace, user=agent, role=role)
+
+
+def memberships_for(user):
+    """Every workspace `user` can act in, as Membership rows. An agent's rows
+    are its parent's, capped at member, and are not saved."""
+    if getattr(user, "is_agent", False):
+        return [
+            _as_agent(m, user)
+            for m in Membership.objects.filter(user_id=user.parent_id).select_related("workspace")
+        ]
+    return list(Membership.objects.filter(user=user).select_related("workspace"))
+
+
+def membership_on(user, workspace_id):
+    """What `user` may do in this workspace, or None when they are not in it."""
+    if getattr(user, "is_agent", False):
+        membership = (
+            Membership.objects.filter(user_id=user.parent_id, workspace_id=workspace_id)
+            .select_related("workspace")
+            .first()
+        )
+        return _as_agent(membership, user) if membership is not None else None
+    return (
+        Membership.objects.filter(user=user, workspace_id=workspace_id)
+        .select_related("workspace")
+        .first()
+    )
+
+
 def resolve_request_workspace(request):
     user = request.user
     explicit = request.headers.get("X-Workspace-Id", "").strip()
     if explicit:
         if not explicit.isdigit():
             raise Http404("No such workspace.")
-        membership = (
-            Membership.objects.filter(workspace_id=int(explicit), user=user)
-            .select_related("workspace")
-            .first()
-        )
+        membership = membership_on(user, int(explicit))
         if membership is None:
             raise Http404("No such workspace.")
         return membership.workspace, membership
 
     stored = request.session.get(SESSION_KEY)
     if stored:
-        membership = (
-            Membership.objects.filter(workspace_id=stored, user=user)
-            .select_related("workspace")
-            .first()
-        )
+        membership = membership_on(user, stored)
         if membership is not None:
             return membership.workspace, membership
 
     workspace = ensure_personal_workspace(user)
-    membership = Membership.objects.get(workspace=workspace, user=user)
+    membership = membership_on(user, workspace.pk)
     if request.session.session_key:
         request.session[SESSION_KEY] = workspace.pk
     return workspace, membership
@@ -122,17 +154,13 @@ def can_delete_comment(request, comment):
     return membership.can_admin() or comment.author_id == request.user.pk
 
 
-def _membership_on(user, workspace_id):
-    return Membership.objects.filter(user=user, workspace_id=workspace_id).first()
-
-
 def require_write_on(user, workspace_id):
-    membership = _membership_on(user, workspace_id)
+    membership = membership_on(user, workspace_id)
     if membership is None or not membership.can_write():
         raise PermissionDenied
 
 
 def require_admin_on(user, workspace_id):
-    membership = _membership_on(user, workspace_id)
+    membership = membership_on(user, workspace_id)
     if membership is None or not membership.can_admin():
         raise PermissionDenied

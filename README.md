@@ -7,6 +7,7 @@ A personal kanban-style task manager built with Django. Log in with Google, or w
 - **Kanban board** — columns that filter tasks by status, tags, or due date (overdue / today / this week)
 - **Custom task statuses** — define your own ordered statuses with optional colors
 - **Task details** — title, notes, tags, due date, completion tracking
+- **Agents** — sub-accounts that work for you through the API (Settings → API → Agents). Assign them tasks; they poll `POST /api/v1/tasks/claim-next/` and hold each task with a renewable lease (`claim` / `release`), so two workers never pick up the same task. An agent acts in its owner's workspaces as a member at most.
 - **Sign-in** — Google via django-allauth, plus an optional OpenID Connect provider such as Pocket ID, Authentik, or Keycloak (authorization code with PKCE)
 - **HTMX-powered UI** — fast partial-page updates without a full JS framework
 - **Docker-ready** — single Dockerfile, configurable via environment variables

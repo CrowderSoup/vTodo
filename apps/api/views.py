@@ -2,7 +2,9 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.urls import reverse
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication, TokenHasScope
 from oauth2_provider.oauth2_validators import validate_resource_as_url_prefix
@@ -26,6 +28,14 @@ from apps.accounts.google_accounts import (
 )
 from apps.tasks import activity
 from apps.tasks.activity import source_for_request
+from apps.tasks.claims import (
+    ClaimConflict,
+    assignable_users,
+    claim_next_task,
+    claim_task,
+    lease_from,
+    release_task,
+)
 from apps.tasks.models import Task, TaskActivity, TaskComment, TaskStatus
 from apps.tasks.selectors import (
     InvalidStatusError,
@@ -34,12 +44,12 @@ from apps.tasks.selectors import (
     visible_statuses_qs,
     visible_tasks_qs,
 )
-from apps.workspaces.access import can_delete_comment
-from apps.workspaces.models import Membership
+from apps.workspaces.access import can_delete_comment, memberships_for
 
 from .models import DeviceToken
 from .permissions import OAuthTokenHasTasksScope, WorkspaceRolePermission
 from .serializers import (
+    AssigneeSerializer,
     TaskActivitySerializer,
     TaskCommentSerializer,
     TaskSerializer,
@@ -60,11 +70,21 @@ class WorkspaceViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
 
     def get_queryset(self):
         # Personal first, then shared workspaces by name.
-        return (
-            Membership.objects.filter(user=self.request.user)
-            .select_related("workspace")
-            .order_by("workspace__kind", "workspace__name", "workspace_id")
+        return sorted(
+            memberships_for(self.request.user),
+            key=lambda m: (m.workspace.kind, m.workspace.name, m.workspace_id),
         )
+
+
+class AssigneeViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
+    """People and agents a task in the active workspace can be assigned to:
+    everyone who can change its tasks, and their agents."""
+
+    serializer_class = AssigneeSerializer
+    permission_classes = WORKSPACE_PERMISSIONS
+
+    def get_queryset(self):
+        return assignable_users(self.request.active_workspace)
 
 
 class TaskStatusViewSet(viewsets.ModelViewSet):
@@ -116,6 +136,16 @@ class TaskStatusViewSet(viewsets.ModelViewSet):
                     "done status. The Android app syncs just these."
                 ),
             ),
+            OpenApiParameter(
+                "assignee",
+                str,
+                description='A user id, "me" for the caller, or "none" for unassigned tasks.',
+            ),
+            OpenApiParameter(
+                "claimable",
+                bool,
+                description="Only tasks nobody holds a live claim on.",
+            ),
         ],
     ),
 )
@@ -125,7 +155,21 @@ class TaskViewSet(viewsets.ModelViewSet):
     permission_classes = WORKSPACE_PERMISSIONS
 
     def get_queryset(self):
-        qs = visible_tasks_qs(self.request.user)
+        qs = visible_tasks_qs(self.request.user).select_related("assignee", "claimed_by")
+        assignee = self.request.query_params.get("assignee", "").strip().lower()
+        if assignee == "me":
+            qs = qs.filter(assignee=self.request.user)
+        elif assignee == "none":
+            qs = qs.filter(assignee__isnull=True)
+        elif assignee.isdigit():
+            qs = qs.filter(assignee_id=int(assignee))
+        elif assignee:
+            raise ValidationError({"assignee": ['Use a user id, "me" or "none".']})
+        if self.request.query_params.get("claimable") in ("1", "true"):
+            now = timezone.now()
+            qs = qs.filter(
+                Q(claimed_by__isnull=True) | Q(claim_expires_at__isnull=True) | Q(claim_expires_at__lte=now)
+            )
         if self.request.query_params.get("open") in ("1", "true"):
             done_slugs = visible_statuses_qs(self.request.user).filter(is_done=True).values("slug")
             qs = qs.filter(is_archived=False, completed_at__isnull=True).exclude(status__in=done_slugs)
@@ -210,6 +254,67 @@ class TaskViewSet(viewsets.ModelViewSet):
                 {"detail": "Invalid status slug."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY
             )
 
+        return Response(TaskSerializer(task).data)
+
+    def _lease(self, request):
+        data = request.data if hasattr(request.data, "get") else {}
+        try:
+            return lease_from(data.get("lease_seconds"))
+        except ValueError as e:
+            raise ValidationError({"lease_seconds": [str(e)]})
+
+    def _conflict(self, exc):
+        return Response(
+            {
+                "detail": str(exc),
+                "claimed_by": exc.task.claimed_by_id,
+                "claim_expires_at": exc.task.claim_expires_at,
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    @extend_schema(
+        request={"application/json": {"type": "object", "properties": {"lease_seconds": {"type": "integer"}}}},
+        responses={200: TaskSerializer, 409: None},
+    )
+    @action(detail=True, methods=["post"])
+    def claim(self, request, pk=None):
+        """Claim this task for lease_seconds (default 900, 30 to 86400), or
+        renew your own claim. 409 while someone else holds it."""
+        task = self.get_object()
+        lease = self._lease(request)
+        try:
+            claim_task(task, request.user, lease=lease, source=source_for_request(request))
+        except ClaimConflict as exc:
+            return self._conflict(exc)
+        return Response(TaskSerializer(task).data)
+
+    @extend_schema(request=None, responses={200: TaskSerializer, 409: None})
+    @action(detail=True, methods=["post"])
+    def release(self, request, pk=None):
+        """Drop the claim on this task. A person may release anyone's claim;
+        an agent only its own."""
+        task = self.get_object()
+        try:
+            release_task(task, request.user, source=source_for_request(request))
+        except ClaimConflict as exc:
+            return self._conflict(exc)
+        return Response(TaskSerializer(task).data)
+
+    @extend_schema(
+        request={"application/json": {"type": "object", "properties": {"lease_seconds": {"type": "integer"}}}},
+        responses={200: TaskSerializer, 204: None},
+    )
+    @action(detail=False, methods=["post"], url_path="claim-next", url_name="claim-next")
+    def claim_next(self, request):
+        """Claim the next open task assigned to you that nobody holds, in board
+        order. 204 when there is none. Agents poll this for work."""
+        lease = self._lease(request)
+        task = claim_next_task(
+            request.user, request.active_workspace, lease=lease, source=source_for_request(request)
+        )
+        if task is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(TaskSerializer(task).data)
 
     @action(detail=True, methods=["get", "post"])

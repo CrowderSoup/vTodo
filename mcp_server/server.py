@@ -116,6 +116,21 @@ def _resolve_workspace(client: VtodoClient, workspace: int | str | None) -> int 
     raise VtodoAPIError(400, f"More than one workspace is named {text!r}. Pass its id instead.")
 
 
+def _resolve_assignee(client: VtodoClient, assignee: int | str) -> int:
+    """A user id from an id or a name in list_assignees."""
+    if isinstance(assignee, int) and not isinstance(assignee, bool):
+        return assignee
+    text = str(assignee).strip()
+    if text.isdigit():
+        return int(text)
+    matches = [a for a in client.list_assignees() if (a.get("name") or "").casefold() == text.casefold()]
+    if len(matches) == 1:
+        return matches[0]["id"]
+    if not matches:
+        raise VtodoAPIError(404, f"No one named {text!r} can be assigned here. Call list_assignees.")
+    raise VtodoAPIError(400, f"More than one assignee is named {text!r}. Pass their id instead.")
+
+
 def _client(workspace: int | str | None = None) -> VtodoClient:
     client = _current_client()
     workspace_id = _resolve_workspace(client, workspace)
@@ -175,12 +190,17 @@ def list_tasks(
     exclude_tags: list[str] | None = None,
     include_archived: bool = False,
     include_done: bool = False,
+    assignee: str | None = None,
+    claimable: bool = False,
     workspace: int | str | None = None,
 ) -> str:
     """List tasks, optionally filtered by status slug and/or tags.
 
     tags requires a task to have every listed tag; exclude_tags drops any task
     that has any of the listed tags (e.g. "show me everything except `home`").
+
+    assignee is a user id, "me", or "none" for unassigned tasks. claimable
+    keeps only tasks nobody holds a live claim on.
 
     Archived tasks are hidden unless include_archived is true. When no status
     is given, tasks in a done status are hidden unless include_done is true;
@@ -190,7 +210,10 @@ def list_tasks(
     """
     try:
         client = _client(workspace)
-        tasks = client.list_tasks(status=status, tags=tags, exclude_tags=exclude_tags)
+        tasks = client.list_tasks(
+            status=status, tags=tags, exclude_tags=exclude_tags,
+            assignee=assignee, claimable=claimable,
+        )
         if not include_archived:
             tasks = [t for t in tasks if not t.get("is_archived")]
         if not status and not include_done:
@@ -224,6 +247,7 @@ def create_task(
     tags: list[str] | None = None,
     recurrence_days: int | None = None,
     recurrence_from: str | None = None,
+    assignee: int | str | None = None,
     workspace: int | str | None = None,
 ) -> str:
     """Create a new task. due_date format: YYYY-MM-DD, due_time format: HH:MM.
@@ -233,10 +257,14 @@ def create_task(
     optionally recurrence_from ("completion" (default) or "due_date" — which
     date the next recurrence counts forward from).
 
+    assignee is a user id or name from list_assignees: a person, or an agent
+    that will pick the task up by claiming it.
+
     workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
     """
     try:
-        return _ok(_client(workspace).create_task(
+        client = _client(workspace)
+        return _ok(client.create_task(
             title,
             notes=notes,
             status=status,
@@ -246,6 +274,7 @@ def create_task(
             tags=tags,
             recurrence_days=recurrence_days,
             recurrence_from=recurrence_from,
+            assignee=None if assignee is None else _resolve_assignee(client, assignee),
         ))
     except VtodoAPIError as e:
         return _err(e)
@@ -269,6 +298,8 @@ def update_task(
     clear_due_time: bool = False,
     clear_duration: bool = False,
     clear_recurrence: bool = False,
+    assignee: int | str | None = None,
+    clear_assignee: bool = False,
     workspace: int | str | None = None,
 ) -> str:
     """Update one or more fields on an existing task.
@@ -282,7 +313,8 @@ def update_task(
     to a new date and time in one call, pass due_date together with
     due_time (not clear_due_date). Pass archived=True/False to archive or
     unarchive the task without deleting it. due_time format: HH:MM.
-    recurrence_from is "completion" (default) or "due_date".
+    recurrence_from is "completion" (default) or "due_date". assignee is a
+    user id or name from list_assignees; clear_assignee=True unassigns.
 
     workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
     """
@@ -324,7 +356,12 @@ def update_task(
     if recurrence_from is not None:
         fields["recurrence_from"] = recurrence_from
     try:
-        return _ok(_client(workspace).update_task(id, **fields))
+        client = _client(workspace)
+        if clear_assignee:
+            fields["assignee"] = None
+        elif assignee is not None:
+            fields["assignee"] = _resolve_assignee(client, assignee)
+        return _ok(client.update_task(id, **fields))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -369,6 +406,68 @@ def reorder_tasks(ids: list[int], workspace: int | str | None = None) -> str:
         return f"Reordered {len(ids)} task(s)."
     except VtodoAPIError as e:
         return _err(e)
+
+
+# ── Assignment and claim tools ─────────────────────────────────────────────────
+
+
+@mcp.tool()
+def list_assignees(workspace: int | str | None = None) -> str:
+    """List who tasks can be assigned to: people who can change the
+    workspace's tasks (kind "human") and their agents (kind "agent").
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
+    try:
+        return _ok(_client(workspace).list_assignees())
+    except VtodoAPIError as e:
+        return _err(e)
+
+
+@mcp.tool()
+def claim_task(id: int, lease_seconds: int | None = None, workspace: int | str | None = None) -> str:
+    """Claim a task so no one else picks it up, or renew your claim.
+
+    The claim lasts lease_seconds (default 900, 30 to 86400) and then lapses.
+    Claim again before then to keep it. Fails with 409 while someone else
+    holds it. Moving the task to a done status releases the claim.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
+    try:
+        return _ok(_client(workspace).claim_task(id, lease_seconds))
+    except VtodoAPIError as e:
+        return _err(e)
+
+
+@mcp.tool()
+def release_task(id: int, workspace: int | str | None = None) -> str:
+    """Drop the claim on a task so someone else can pick it up. A person can
+    release anyone's claim; an agent only its own.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
+    try:
+        return _ok(_client(workspace).release_task(id))
+    except VtodoAPIError as e:
+        return _err(e)
+
+
+@mcp.tool()
+def claim_next_task(lease_seconds: int | None = None, workspace: int | str | None = None) -> str:
+    """Claim the next open task assigned to you that nobody is working on, in
+    board order. Returns the task, or a message when there's nothing waiting.
+    lease_seconds works as in claim_task.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
+    try:
+        task = _client(workspace).claim_next_task(lease_seconds)
+    except VtodoAPIError as e:
+        return _err(e)
+    if task is None:
+        return "No assigned tasks are waiting."
+    return _ok(task)
 
 
 # ── Comment tools ──────────────────────────────────────────────────────────────

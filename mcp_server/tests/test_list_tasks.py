@@ -17,7 +17,7 @@ class FakeClient:
         self.list_statuses_calls = 0
         self.raise_on_statuses = None
 
-    def list_tasks(self, status=None, tags=None, exclude_tags=None):
+    def list_tasks(self, status=None, tags=None, exclude_tags=None, assignee=None, claimable=False):
         if not status:
             return self._tasks
         return [t for t in self._tasks if t["status"] == status]

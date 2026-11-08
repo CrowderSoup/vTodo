@@ -17,6 +17,7 @@ TRACKED_FIELDS = (
     "due_time",
     "duration_minutes",
     "tags",
+    "assignee",
     "recurrence_days",
     "recurrence_from",
 )

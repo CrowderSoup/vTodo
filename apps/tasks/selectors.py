@@ -53,13 +53,14 @@ def default_status_for(user):
             return status
     from apps.workspaces.models import Workspace
 
+    account = user.account
     if (
         workspace.kind == Workspace.KIND_PERSONAL
-        and workspace.owner_id == user.pk
-        and user.default_status_id
+        and workspace.owner_id == account.pk
+        and account.default_status_id
     ):
         return TaskStatus.objects.filter(
-            pk=user.default_status_id, workspace=workspace
+            pk=account.default_status_id, workspace=workspace
         ).first()
     return None
 
@@ -104,6 +105,10 @@ def move_task(user, task, new_status_slug, *, source="web"):
         if not was_already_done:
             task.completed_at = timezone.now()
             task.previous_status = previous_status
+        # Finished work needs no one holding it.
+        task.claimed_by = None
+        task.claim_expires_at = None
+        update_fields += ["claimed_by", "claim_expires_at"]
     else:
         task.completed_at = None
         task.previous_status = ""

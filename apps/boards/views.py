@@ -15,6 +15,7 @@ from django.utils import timezone
 from django.views import View
 
 from apps.tasks import activity
+from apps.tasks.claims import assignable_users
 from apps.tasks.models import Task, TaskActivity, TaskComment, TaskStatus
 from apps.workspaces.access import (
     active_workspace,
@@ -281,6 +282,7 @@ def _task_panel_context(user, task):
         "notes_html": _render_markdown(task.notes) if task.notes else "",
         "comments": _render_comments(task),
         "activity": _render_activity(task),
+        "claim_holder": task.claimed_by if task.active_claim_holder_id() else None,
     })
     return context
 
@@ -899,6 +901,7 @@ class TaskPanelEditView(LoginRequiredMixin, View):
         task = get_task_or_404(request.user, pk)
         context = _task_render_context(request.user, task)
         context["known_tags"] = known_tags_for_board(context["board"])
+        context["assignees"] = assignable_users(task.workspace)
         return render(request, "partials/task_panel_edit.html", context)
 
 
@@ -927,6 +930,20 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
         if recurrence_from not in (Task.RECURRENCE_FROM_COMPLETION, Task.RECURRENCE_FROM_DUE_DATE):
             recurrence_from = Task.RECURRENCE_FROM_COMPLETION
 
+        # Only the panel form sends an assignee. Leave it alone when absent.
+        update_fields = ["title", "notes", "due_date", "tags", "recurrence_days", "recurrence_from", "updated_at"]
+        assignee_set = "assignee" in request.POST
+        if assignee_set:
+            raw_assignee = request.POST.get("assignee", "").strip()
+            assignee = None
+            if raw_assignee:
+                if not raw_assignee.isdigit():
+                    return HttpResponse(status=422)
+                assignee = assignable_users(task.workspace).filter(pk=int(raw_assignee)).first()
+                if assignee is None:
+                    return HttpResponse(status=422)
+            update_fields.append("assignee")
+
         board = _board_for_task(task)
         is_calendar, _, _ = _calendar_params_from_request(request)
         before_ids = set()
@@ -942,8 +959,10 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
         task.tags = tags
         task.recurrence_days = recurrence_days
         task.recurrence_from = recurrence_from
+        if assignee_set:
+            task.assignee = assignee
         with transaction.atomic():
-            task.save(update_fields=["title", "notes", "due_date", "tags", "recurrence_days", "recurrence_from", "updated_at"])
+            task.save(update_fields=update_fields)
             activity.record_changes(task, before, actor=request.user, source=TaskActivity.SOURCE_WEB)
 
         context = _task_panel_context(request.user, task)

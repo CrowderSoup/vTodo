@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    AssigneeViewSet,
     GoogleSignInView,
     SignOutView,
     TaskCommentViewSet,
@@ -16,6 +17,7 @@ router.register("tasks", TaskViewSet, basename="task")
 router.register("statuses", TaskStatusViewSet, basename="taskstatus")
 router.register("comments", TaskCommentViewSet, basename="taskcomment")
 router.register("workspaces", WorkspaceViewSet, basename="workspace")
+router.register("assignees", AssigneeViewSet, basename="assignee")
 
 urlpatterns = [
     path("auth/google/", GoogleSignInView.as_view(), name="google-sign-in"),
