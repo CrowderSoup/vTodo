@@ -35,12 +35,36 @@ from apps.tasks.selectors import (
     visible_tasks_qs,
 )
 from apps.workspaces.access import can_delete_comment
+from apps.workspaces.models import Membership
 
 from .models import DeviceToken
 from .permissions import OAuthTokenHasTasksScope, WorkspaceRolePermission
-from .serializers import TaskActivitySerializer, TaskCommentSerializer, TaskSerializer, TaskStatusSerializer
+from .serializers import (
+    TaskActivitySerializer,
+    TaskCommentSerializer,
+    TaskSerializer,
+    TaskStatusSerializer,
+    WorkspaceMembershipSerializer,
+)
 
 WORKSPACE_PERMISSIONS = [IsAuthenticated, OAuthTokenHasTasksScope, WorkspaceRolePermission]
+
+
+class WorkspaceViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
+    """The workspaces the caller belongs to, with their role in each. Send a
+    workspace's id as X-Workspace-Id to act in it. Without that header, API
+    calls use the caller's personal workspace."""
+
+    serializer_class = WorkspaceMembershipSerializer
+    permission_classes = [IsAuthenticated, OAuthTokenHasTasksScope]
+
+    def get_queryset(self):
+        # Personal first, then shared workspaces by name.
+        return (
+            Membership.objects.filter(user=self.request.user)
+            .select_related("workspace")
+            .order_by("workspace__kind", "workspace__name", "workspace_id")
+        )
 
 
 class TaskStatusViewSet(viewsets.ModelViewSet):

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.tasks.models import Task, TaskActivity, TaskComment, TaskStatus
+from apps.workspaces.models import Membership
 
 
 class TaskStatusSerializer(serializers.ModelSerializer):
@@ -56,3 +57,24 @@ class TaskActivitySerializer(serializers.ModelSerializer):
         if obj.actor is None:
             return None
         return obj.actor.display_name or obj.actor.username
+
+
+class WorkspaceMembershipSerializer(serializers.ModelSerializer):
+    """One of the caller's workspaces, seen through their membership."""
+
+    id = serializers.IntegerField(source="workspace_id", read_only=True)
+    name = serializers.CharField(source="workspace.name", read_only=True)
+    kind = serializers.CharField(source="workspace.kind", read_only=True)
+    can_write = serializers.SerializerMethodField()
+    can_admin = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Membership
+        fields = ["id", "name", "kind", "role", "can_write", "can_admin"]
+        read_only_fields = fields
+
+    def get_can_write(self, obj):
+        return obj.can_write()
+
+    def get_can_admin(self, obj):
+        return obj.can_admin()

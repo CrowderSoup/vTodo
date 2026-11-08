@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 import requests
@@ -20,6 +21,22 @@ class VtodoClient:
         self._session = requests.Session()
         # X-Vtodo-Client labels this traffic as MCP in the task activity log.
         self._session.headers.update({"Authorization": f"{scheme} {token}", "X-Vtodo-Client": "mcp"})
+        # Sent with each request. Empty means the caller's personal workspace.
+        self._headers: dict[str, str] = {}
+
+    def in_workspace(self, workspace_id: int | None) -> "VtodoClient":
+        """A client acting in another workspace, sharing this one's session.
+        None keeps the personal workspace."""
+        if workspace_id is None:
+            return self
+        scoped = copy.copy(self)
+        scoped._headers = {"X-Workspace-Id": str(workspace_id)}
+        return scoped
+
+    def _request(self, method: str, path: str, **kwargs: Any) -> requests.Response:
+        r = self._session.request(method, f"{self._base}{path}", headers=self._headers, **kwargs)
+        self._raise(r)
+        return r
 
     def _raise(self, response: requests.Response) -> None:
         try:
@@ -50,18 +67,13 @@ class VtodoClient:
             params["tags"] = tags
         if exclude_tags:
             params["exclude_tags"] = exclude_tags
-        r = self._session.get(f"{self._base}/tasks/", params=params)
-        self._raise(r)
-        return r.json()
+        return self._request("GET", "/tasks/", params=params).json()
 
     def reorder_tasks(self, order: list[int]) -> None:
-        r = self._session.post(f"{self._base}/tasks/reorder/", json={"order": order})
-        self._raise(r)
+        self._request("POST", "/tasks/reorder/", json={"order": order})
 
     def get_task(self, task_id: int) -> dict:
-        r = self._session.get(f"{self._base}/tasks/{task_id}/")
-        self._raise(r)
-        return r.json()
+        return self._request("GET", f"/tasks/{task_id}/").json()
 
     def create_task(
         self,
@@ -92,32 +104,21 @@ class VtodoClient:
             payload["recurrence_days"] = recurrence_days
         if recurrence_from is not None:
             payload["recurrence_from"] = recurrence_from
-        r = self._session.post(f"{self._base}/tasks/", json=payload)
-        self._raise(r)
-        return r.json()
+        return self._request("POST", "/tasks/", json=payload).json()
 
     def update_task(self, task_id: int, **fields: Any) -> dict:
-        r = self._session.patch(f"{self._base}/tasks/{task_id}/", json=fields)
-        self._raise(r)
-        return r.json()
+        return self._request("PATCH", f"/tasks/{task_id}/", json=fields).json()
 
     def delete_task(self, task_id: int) -> None:
-        r = self._session.delete(f"{self._base}/tasks/{task_id}/")
-        self._raise(r)
+        self._request("DELETE", f"/tasks/{task_id}/")
 
     def move_task(self, task_id: int, new_status: str) -> dict:
-        r = self._session.post(
-            f"{self._base}/tasks/{task_id}/move/", json={"new_status": new_status}
-        )
-        self._raise(r)
-        return r.json()
+        return self._request("POST", f"/tasks/{task_id}/move/", json={"new_status": new_status}).json()
 
     # ── Statuses ───────────────────────────────────────────────────────────
 
     def list_statuses(self) -> list[dict]:
-        r = self._session.get(f"{self._base}/statuses/")
-        self._raise(r)
-        return r.json()
+        return self._request("GET", "/statuses/").json()
 
     def create_status(
         self,
@@ -130,42 +131,34 @@ class VtodoClient:
             payload["color"] = color
         if is_done is not None:
             payload["is_done"] = is_done
-        r = self._session.post(f"{self._base}/statuses/", json=payload)
-        self._raise(r)
-        return r.json()
+        return self._request("POST", "/statuses/", json=payload).json()
 
     def update_status(self, slug: str, **fields: Any) -> dict:
-        r = self._session.patch(f"{self._base}/statuses/{slug}/", json=fields)
-        self._raise(r)
-        return r.json()
+        return self._request("PATCH", f"/statuses/{slug}/", json=fields).json()
 
     def delete_status(self, slug: str) -> None:
-        r = self._session.delete(f"{self._base}/statuses/{slug}/")
-        self._raise(r)
+        self._request("DELETE", f"/statuses/{slug}/")
 
     def reorder_statuses(self, order: list[int]) -> None:
-        r = self._session.post(f"{self._base}/statuses/reorder/", json={"order": order})
-        self._raise(r)
+        self._request("POST", "/statuses/reorder/", json={"order": order})
 
     # ── Comments ───────────────────────────────────────────────────────────
 
     def list_comments(self, task_id: int) -> list[dict]:
-        r = self._session.get(f"{self._base}/tasks/{task_id}/comments/")
-        self._raise(r)
-        return r.json()
+        return self._request("GET", f"/tasks/{task_id}/comments/").json()
 
     def add_comment(self, task_id: int, body: str) -> dict:
-        r = self._session.post(f"{self._base}/tasks/{task_id}/comments/", json={"body": body})
-        self._raise(r)
-        return r.json()
+        return self._request("POST", f"/tasks/{task_id}/comments/", json={"body": body}).json()
 
     def delete_comment(self, comment_id: int) -> None:
-        r = self._session.delete(f"{self._base}/comments/{comment_id}/")
-        self._raise(r)
+        self._request("DELETE", f"/comments/{comment_id}/")
 
     # ── Activity ───────────────────────────────────────────────────────────
 
     def list_activity(self, task_id: int) -> list[dict]:
-        r = self._session.get(f"{self._base}/tasks/{task_id}/activity/")
-        self._raise(r)
-        return r.json()
+        return self._request("GET", f"/tasks/{task_id}/activity/").json()
+
+    # ── Workspaces ─────────────────────────────────────────────────────────
+
+    def list_workspaces(self) -> list[dict]:
+        return self._request("GET", "/workspaces/").json()

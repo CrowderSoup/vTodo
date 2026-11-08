@@ -97,6 +97,31 @@ def _current_client() -> VtodoClient:
     return client
 
 
+def _resolve_workspace(client: VtodoClient, workspace: int | str | None) -> int | None:
+    """A workspace id from an id or a name. None (or blank) means Personal."""
+    if workspace is None or isinstance(workspace, bool):
+        return None
+    if isinstance(workspace, int):
+        return workspace
+    text = workspace.strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return int(text)
+    matches = [w for w in client.list_workspaces() if w["name"].casefold() == text.casefold()]
+    if len(matches) == 1:
+        return matches[0]["id"]
+    if not matches:
+        raise VtodoAPIError(404, f"No workspace named {text!r}. Call list_workspaces to see yours.")
+    raise VtodoAPIError(400, f"More than one workspace is named {text!r}. Pass its id instead.")
+
+
+def _client(workspace: int | str | None = None) -> VtodoClient:
+    client = _current_client()
+    workspace_id = _resolve_workspace(client, workspace)
+    return client if workspace_id is None else client.in_workspace(workspace_id)
+
+
 mcp = FastMCP(
     "vtodo",
     host=_settings.host,
@@ -121,6 +146,25 @@ def _err(e: VtodoAPIError) -> str:
     return f"Error {e.status_code}: {e.detail}"
 
 
+# ── Workspace tools ────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+def list_workspaces() -> str:
+    """List the workspaces you belong to and your role in each.
+
+    Personal is yours alone. A shared workspace is one other people are in
+    too. Pass a workspace's id or name as `workspace` to the task, comment and
+    status tools to act in it; leave it out for Personal. Roles: a viewer can
+    only read, a member can change tasks and comments, and an owner can also
+    change statuses.
+    """
+    try:
+        return _ok(_current_client().list_workspaces())
+    except VtodoAPIError as e:
+        return _err(e)
+
+
 # ── Task tools ─────────────────────────────────────────────────────────────────
 
 
@@ -131,6 +175,7 @@ def list_tasks(
     exclude_tags: list[str] | None = None,
     include_archived: bool = False,
     include_done: bool = False,
+    workspace: int | str | None = None,
 ) -> str:
     """List tasks, optionally filtered by status slug and/or tags.
 
@@ -140,9 +185,11 @@ def list_tasks(
     Archived tasks are hidden unless include_archived is true. When no status
     is given, tasks in a done status are hidden unless include_done is true;
     passing a status (e.g. "done") always returns that status's tasks.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
     """
     try:
-        client = _current_client()
+        client = _client(workspace)
         tasks = client.list_tasks(status=status, tags=tags, exclude_tags=exclude_tags)
         if not include_archived:
             tasks = [t for t in tasks if not t.get("is_archived")]
@@ -155,10 +202,13 @@ def list_tasks(
 
 
 @mcp.tool()
-def get_task(id: int) -> str:
-    """Get a single task by its numeric ID."""
+def get_task(id: int, workspace: int | str | None = None) -> str:
+    """Get a single task by its numeric ID.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
     try:
-        return _ok(_current_client().get_task(id))
+        return _ok(_client(workspace).get_task(id))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -174,6 +224,7 @@ def create_task(
     tags: list[str] | None = None,
     recurrence_days: int | None = None,
     recurrence_from: str | None = None,
+    workspace: int | str | None = None,
 ) -> str:
     """Create a new task. due_date format: YYYY-MM-DD, due_time format: HH:MM.
 
@@ -181,9 +232,11 @@ def create_task(
     recurring, set recurrence_days (how many days after it's next due) and
     optionally recurrence_from ("completion" (default) or "due_date" — which
     date the next recurrence counts forward from).
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
     """
     try:
-        return _ok(_current_client().create_task(
+        return _ok(_client(workspace).create_task(
             title,
             notes=notes,
             status=status,
@@ -216,6 +269,7 @@ def update_task(
     clear_due_time: bool = False,
     clear_duration: bool = False,
     clear_recurrence: bool = False,
+    workspace: int | str | None = None,
 ) -> str:
     """Update one or more fields on an existing task.
 
@@ -229,6 +283,8 @@ def update_task(
     due_time (not clear_due_date). Pass archived=True/False to archive or
     unarchive the task without deleting it. due_time format: HH:MM.
     recurrence_from is "completion" (default) or "due_date".
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
     """
     fields: dict[str, Any] = {}
     if title is not None:
@@ -268,40 +324,48 @@ def update_task(
     if recurrence_from is not None:
         fields["recurrence_from"] = recurrence_from
     try:
-        return _ok(_current_client().update_task(id, **fields))
+        return _ok(_client(workspace).update_task(id, **fields))
     except VtodoAPIError as e:
         return _err(e)
 
 
 @mcp.tool()
-def delete_task(id: int) -> str:
-    """Delete a task by its numeric ID."""
+def delete_task(id: int, workspace: int | str | None = None) -> str:
+    """Delete a task by its numeric ID.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
     try:
-        _current_client().delete_task(id)
+        _client(workspace).delete_task(id)
         return f"Task {id} deleted."
     except VtodoAPIError as e:
         return _err(e)
 
 
 @mcp.tool()
-def move_task(id: int, new_status: str) -> str:
-    """Move a task to a different status column (pass the status slug)."""
+def move_task(id: int, new_status: str, workspace: int | str | None = None) -> str:
+    """Move a task to a different status column (pass the status slug).
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
     try:
-        return _ok(_current_client().move_task(id, new_status))
+        return _ok(_client(workspace).move_task(id, new_status))
     except VtodoAPIError as e:
         return _err(e)
 
 
 @mcp.tool()
-def reorder_tasks(ids: list[int]) -> str:
+def reorder_tasks(ids: list[int], workspace: int | str | None = None) -> str:
     """Set the display order of a set of tasks.
 
     Pass task IDs in the order you want them to appear; the first ID becomes
     order 0, the next order 1, and so on. Tasks you don't own or that aren't
     in the list are left untouched.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
     """
     try:
-        _current_client().reorder_tasks(ids)
+        _client(workspace).reorder_tasks(ids)
         return f"Reordered {len(ids)} task(s)."
     except VtodoAPIError as e:
         return _err(e)
@@ -311,41 +375,53 @@ def reorder_tasks(ids: list[int]) -> str:
 
 
 @mcp.tool()
-def list_comments(task_id: int) -> str:
-    """List all comments on a task."""
+def list_comments(task_id: int, workspace: int | str | None = None) -> str:
+    """List all comments on a task.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
     try:
-        return _ok(_current_client().list_comments(task_id))
+        return _ok(_client(workspace).list_comments(task_id))
     except VtodoAPIError as e:
         return _err(e)
 
 
 @mcp.tool()
-def add_comment(task_id: int, body: str) -> str:
-    """Add a comment to a task without editing it."""
+def add_comment(task_id: int, body: str, workspace: int | str | None = None) -> str:
+    """Add a comment to a task without editing it.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
     try:
-        return _ok(_current_client().add_comment(task_id, body))
+        return _ok(_client(workspace).add_comment(task_id, body))
     except VtodoAPIError as e:
         return _err(e)
 
 
 @mcp.tool()
-def delete_comment(comment_id: int) -> str:
-    """Delete a task comment by its ID."""
+def delete_comment(comment_id: int, workspace: int | str | None = None) -> str:
+    """Delete a task comment by its ID.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
     try:
-        _current_client().delete_comment(comment_id)
+        _client(workspace).delete_comment(comment_id)
         return f"Comment {comment_id} deleted."
     except VtodoAPIError as e:
         return _err(e)
 
 
 @mcp.tool()
-def list_activity(task_id: int) -> str:
+def list_activity(task_id: int, workspace: int | str | None = None) -> str:
     """List a task's change history, oldest first: who (actor), where from
     (source: web, api, mcp, system), what (action, field) and the old/new
     values. Note text and comment bodies are not included, only that they
-    changed."""
+    changed.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
     try:
-        return _ok(_current_client().list_activity(task_id))
+        return _ok(_client(workspace).list_activity(task_id))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -354,10 +430,13 @@ def list_activity(task_id: int) -> str:
 
 
 @mcp.tool()
-def list_statuses() -> str:
-    """List your task statuses."""
+def list_statuses(workspace: int | str | None = None) -> str:
+    """List your task statuses.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
     try:
-        return _ok(_current_client().list_statuses())
+        return _ok(_client(workspace).list_statuses())
     except VtodoAPIError as e:
         return _err(e)
 
@@ -367,10 +446,14 @@ def create_status(
     name: str,
     color: str | None = None,
     is_done: bool | None = None,
+    workspace: int | str | None = None,
 ) -> str:
-    """Create a new status. color is a hex string e.g. #ff0000."""
+    """Create a new status. color is a hex string e.g. #ff0000.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
     try:
-        return _ok(_current_client().create_status(name, color=color, is_done=is_done))
+        return _ok(_client(workspace).create_status(name, color=color, is_done=is_done))
     except VtodoAPIError as e:
         return _err(e)
 
@@ -381,8 +464,12 @@ def update_status(
     name: str | None = None,
     color: str | None = None,
     is_done: bool | None = None,
+    workspace: int | str | None = None,
 ) -> str:
-    """Update one or more fields on an existing status (identified by slug)."""
+    """Update one or more fields on an existing status (identified by slug).
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
     fields: dict[str, Any] = {}
     if name is not None:
         fields["name"] = name
@@ -391,30 +478,35 @@ def update_status(
     if is_done is not None:
         fields["is_done"] = is_done
     try:
-        return _ok(_current_client().update_status(slug, **fields))
+        return _ok(_client(workspace).update_status(slug, **fields))
     except VtodoAPIError as e:
         return _err(e)
 
 
 @mcp.tool()
-def delete_status(slug: str) -> str:
-    """Delete a status column by its slug."""
+def delete_status(slug: str, workspace: int | str | None = None) -> str:
+    """Delete a status column by its slug.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
     try:
-        _current_client().delete_status(slug)
+        _client(workspace).delete_status(slug)
         return f"Status '{slug}' deleted."
     except VtodoAPIError as e:
         return _err(e)
 
 
 @mcp.tool()
-def reorder_statuses(ids: list[int]) -> str:
+def reorder_statuses(ids: list[int], workspace: int | str | None = None) -> str:
     """Set the display order of a set of status columns.
 
     Pass status IDs in the order you want them to appear. Reordering statuses
     you don't own is rejected.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
     """
     try:
-        _current_client().reorder_statuses(ids)
+        _client(workspace).reorder_statuses(ids)
         return f"Reordered {len(ids)} status(es)."
     except VtodoAPIError as e:
         return _err(e)
