@@ -1438,6 +1438,11 @@ hr {
   color: var(--accent-warm);
 }
 
+.meta-pill--assignee {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
 .meta-pill--danger {
   background: var(--danger-soft);
   border-color: rgba(187, 77, 62, 0.16);
@@ -1958,6 +1963,34 @@ hr {
   background: var(--surface-muted);
   transform: none;
   box-shadow: none;
+}
+
+.assignee-picker-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.assignee-picker-option.is-active {
+  background: var(--surface-muted);
+}
+
+.assignee-picker-empty {
+  color: var(--text-subtle);
+  cursor: default;
+}
+
+.assignee-agent-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 0.68rem;
+  line-height: 1.3;
+  opacity: 0.75;
 }
 
 .checkbox-field {

@@ -359,6 +359,210 @@
     });
   }
 
+  // Assignee picker: a single-select combobox over the people and agents who
+  // can be assigned in the workspace (rendered as JSON next to the field).
+  function initAssigneePicker(container) {
+    if (container.dataset.assigneePickerInitialized) {
+      return;
+    }
+    container.dataset.assigneePickerInitialized = "true";
+
+    var fieldId = container.dataset.fieldId;
+    var hidden = document.getElementById(fieldId);
+    var search = container.querySelector("[data-assignee-search]");
+    var chipSlot = container.querySelector("[data-assignee-chip]");
+    var list = container.querySelector("[data-assignee-options]");
+    var optionsScript = document.getElementById(fieldId + "-options");
+    if (!hidden || !search || !chipSlot || !list) {
+      return;
+    }
+
+    var options = [];
+    try {
+      options = JSON.parse(optionsScript ? optionsScript.textContent : "[]") || [];
+    } catch (e) {
+      options = [];
+    }
+    var matches = [];
+    var activeIndex = -1;
+
+    function label(option) {
+      return option.name + (option.me ? " (you)" : "");
+    }
+
+    function selected() {
+      var id = parseInt(hidden.value, 10);
+      return options.find(function (option) { return option.id === id; }) || null;
+    }
+
+    function renderChip() {
+      chipSlot.innerHTML = "";
+      var option = selected();
+      if (!option) {
+        if (hidden.value) {
+          // Someone who can no longer be assigned here. Keep the value until
+          // it is changed, but say so rather than showing nothing.
+          var stale = document.createElement("span");
+          stale.className = "field-help";
+          stale.textContent = "Someone who has left this workspace";
+          chipSlot.appendChild(stale);
+        }
+        search.placeholder = "Search people and agents…";
+        return;
+      }
+      var chip = document.createElement("span");
+      chip.className = "tag-chip";
+
+      var text = document.createElement("span");
+      text.className = "tag-chip-label";
+      text.textContent = label(option);
+      chip.appendChild(text);
+
+      if (option.agent) {
+        var badge = document.createElement("span");
+        badge.className = "assignee-agent-badge";
+        badge.textContent = "agent";
+        chip.appendChild(badge);
+      }
+
+      var remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "tag-chip-remove";
+      remove.setAttribute("aria-label", "Unassign " + option.name);
+      remove.textContent = "×";
+      remove.addEventListener("click", function () {
+        choose(null);
+        search.focus();
+      });
+      chip.appendChild(remove);
+      chipSlot.appendChild(chip);
+      search.placeholder = "Change…";
+    }
+
+    function close() {
+      list.hidden = true;
+      list.innerHTML = "";
+      search.setAttribute("aria-expanded", "false");
+      search.removeAttribute("aria-activedescendant");
+      activeIndex = -1;
+    }
+
+    function choose(option) {
+      hidden.value = option ? String(option.id) : "";
+      search.value = "";
+      close();
+      renderChip();
+    }
+
+    function highlight(index) {
+      var items = list.querySelectorAll("[role=option]");
+      if (!items.length) {
+        return;
+      }
+      activeIndex = (index + items.length) % items.length;
+      items.forEach(function (item, i) {
+        var on = i === activeIndex;
+        item.classList.toggle("is-active", on);
+        item.setAttribute("aria-selected", on ? "true" : "false");
+        if (on) {
+          search.setAttribute("aria-activedescendant", item.id);
+          item.scrollIntoView({ block: "nearest" });
+        }
+      });
+    }
+
+    function open() {
+      var query = search.value.trim().toLowerCase();
+      var current = selected();
+      matches = options.filter(function (option) {
+        if (current && option.id === current.id) {
+          return false;
+        }
+        return !query || option.name.toLowerCase().indexOf(query) !== -1;
+      });
+
+      list.innerHTML = "";
+      activeIndex = -1;
+      if (!matches.length) {
+        var empty = document.createElement("li");
+        empty.className = "tag-input-suggestion assignee-picker-empty";
+        empty.textContent = query ? "No one matches “" + search.value.trim() + "”" : "No one else can be assigned here";
+        list.appendChild(empty);
+      }
+      matches.forEach(function (option, i) {
+        var item = document.createElement("li");
+        item.id = fieldId + "-option-" + option.id;
+        item.className = "tag-input-suggestion assignee-picker-option";
+        item.setAttribute("role", "option");
+        item.setAttribute("aria-selected", "false");
+
+        var name = document.createElement("span");
+        name.textContent = label(option);
+        item.appendChild(name);
+        if (option.agent) {
+          var badge = document.createElement("span");
+          badge.className = "assignee-agent-badge";
+          badge.textContent = "agent";
+          item.appendChild(badge);
+        }
+
+        // mousedown so the field doesn't blur (and close the list) first.
+        item.addEventListener("mousedown", function (event) {
+          event.preventDefault();
+          choose(option);
+        });
+        item.addEventListener("mousemove", function () {
+          if (activeIndex !== i) {
+            highlight(i);
+          }
+        });
+        list.appendChild(item);
+      });
+      list.hidden = false;
+      search.setAttribute("aria-expanded", "true");
+      if (query && matches.length) {
+        highlight(0);
+      }
+    }
+
+    search.addEventListener("focus", open);
+    search.addEventListener("input", open);
+    search.addEventListener("blur", close);
+    search.addEventListener("keydown", function (event) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        if (list.hidden) {
+          open();
+        }
+        highlight(activeIndex + (event.key === "ArrowDown" ? 1 : -1));
+        return;
+      }
+      if (event.key === "Enter") {
+        // Never submit the form from the search box.
+        event.preventDefault();
+        if (activeIndex >= 0 && matches[activeIndex]) {
+          choose(matches[activeIndex]);
+        }
+        return;
+      }
+      if (event.key === "Escape" && !list.hidden) {
+        event.stopPropagation();
+        close();
+        return;
+      }
+      if (event.key === "Backspace" && !search.value && hidden.value) {
+        choose(null);
+        open();
+      }
+    });
+
+    renderChip();
+  }
+
+  function initAssigneePickers(root) {
+    (root || document).querySelectorAll("[data-assignee-picker]").forEach(initAssigneePicker);
+  }
+
   function flushTagInputFields(event) {
     document.querySelectorAll("[data-tag-input]").forEach(function (container) {
       var els = getTagInputElements(container);
@@ -461,6 +665,7 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     syncThemeLabel();
+    initAssigneePickers(document);
 
     var confirmElements = getConfirmModalElements();
     if (confirmElements.cancelButton) {
@@ -813,6 +1018,7 @@
 
   document.addEventListener("htmx:afterSettle", function (event) {
     initTagInputs(event.target);
+    initAssigneePickers(event.target);
 
     if (event.target.id === "task-panel-content") {
       var panel = document.getElementById("task-panel");

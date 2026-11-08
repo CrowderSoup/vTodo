@@ -18,7 +18,7 @@ def visible_tasks_qs(user):
 
 def board_tasks_qs(board):
     """Tasks on this board's workspace."""
-    return Task.objects.filter(workspace_id=board.workspace_id)
+    return Task.objects.filter(workspace_id=board.workspace_id).select_related("assignee")
 
 
 def get_task_or_404(user, pk):
