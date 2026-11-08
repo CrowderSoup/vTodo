@@ -131,6 +131,7 @@ def test_every_task_and_status_tool_takes_a_workspace():
         "move_task", "reorder_tasks", "list_comments", "add_comment",
         "delete_comment", "list_activity", "list_statuses", "create_status",
         "update_status", "delete_status", "reorder_statuses",
+        "list_assignees", "claim_task", "release_task", "claim_next_task",
     ]
     for name in names:
         params = inspect.signature(getattr(server, name)).parameters

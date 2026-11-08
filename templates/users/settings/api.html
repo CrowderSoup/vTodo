@@ -40,5 +40,33 @@
       {% include "users/_device_tokens.html" %}
     </div>
   </section>
+
+  <section class="settings-card settings-card--wide surface-panel">
+    <div>
+      <h2 class="card-title">Agents</h2>
+      <p class="card-subtitle">
+        An agent is a sub-account that works for you through the API. It can be assigned tasks, and it claims them with a lease so two workers never pick up the same task. It acts in your workspaces as a member at most. It can't change statuses or sign in to the website.
+      </p>
+    </div>
+
+    <form hx-post="{% url 'users:agent-create' %}"
+          hx-target="#agent-list"
+          hx-swap="innerHTML"
+          hx-on::after-request="this.reset()"
+          class="inline-form">
+      {% csrf_token %}
+      <div class="form-field">
+        <label class="field-label" for="agent-name">Agent name</label>
+        <input id="agent-name" type="text" name="name" maxlength="255" placeholder="Coder" required>
+      </div>
+      <div class="form-field">
+        <button type="submit" class="btn-primary">Add agent</button>
+      </div>
+    </form>
+
+    <div id="agent-list">
+      {% include "users/_agents.html" %}
+    </div>
+  </section>
 </div>
 {% endblock %}

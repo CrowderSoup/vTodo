@@ -1,0 +1,42 @@
+{% if new_token %}
+<div class="settings-empty-state">
+  <p class="field-help">Token for <strong>{{ new_token_agent }}</strong>. Copy it now: it won't be shown again.</p>
+  <div class="token-shell">
+    <code class="token-value">{{ new_token }}</code>
+  </div>
+  <p class="token-hint">Send it as <code>Authorization: Token {{ new_token }}</code></p>
+</div>
+{% endif %}
+{% if agent_error %}
+<p class="field-help" role="alert">{{ agent_error }}</p>
+{% endif %}
+{% for agent in agents %}
+<div class="config-row">
+  <div class="config-main">
+    <div class="config-title">
+      <span>{{ agent.display_name|default:agent.username }}</span>
+    </div>
+    <p class="field-help">
+      Added {{ agent.date_joined|date:"M j, Y" }}
+      · {% if agent.last_used_at %}last used {{ agent.last_used_at|timesince }} ago{% else %}not used yet{% endif %}
+      · user id {{ agent.pk }}
+    </p>
+  </div>
+  <button class="btn-secondary"
+          hx-post="{% url 'users:agent-token' agent.pk %}"
+          hx-target="#agent-list"
+          hx-swap="innerHTML"
+          hx-confirm="Replace the token for &ldquo;{{ agent.display_name }}&rdquo;? The old one stops working."
+          title="Replace this agent's token">New token</button>
+  <button class="btn-danger btn-icon"
+          hx-post="{% url 'users:agent-delete' agent.pk %}"
+          hx-target="#agent-list"
+          hx-swap="innerHTML"
+          hx-confirm="Delete &ldquo;{{ agent.display_name }}&rdquo;? Its token stops working and its tasks are unassigned."
+          title="Delete this agent">×</button>
+</div>
+{% empty %}
+<div class="settings-empty-state">
+  <p class="field-help">No agents yet.</p>
+</div>
+{% endfor %}

@@ -186,10 +186,57 @@ class SettingsCalendarView(LoginRequiredMixin, View):
         return render(request, "users/settings/calendar.html", context)
 
 
+def _agents(user):
+    from django.db.models import Max
+
+    from apps.users.agents import agents_of
+
+    return agents_of(user).annotate(last_used_at=Max("device_tokens__last_used_at"))
+
+
 class SettingsApiView(LoginRequiredMixin, View):
     def get(self, request):
-        context = {"active_tab": "api", "devices": request.user.device_tokens.all()}
+        context = {
+            "active_tab": "api",
+            "devices": request.user.device_tokens.all(),
+            "agents": _agents(request.user),
+        }
         return render(request, "users/settings/api.html", context)
+
+
+class AgentCreateView(LoginRequiredMixin, View):
+    def post(self, request):
+        from django.core.exceptions import ValidationError
+
+        from apps.users.agents import create_agent
+
+        context = {}
+        try:
+            agent, raw = create_agent(parent=request.user, name=request.POST.get("name", ""))
+        except ValidationError as exc:
+            context["agent_error"] = exc.messages[0]
+        else:
+            context.update(new_token=raw, new_token_agent=agent)
+        context["agents"] = _agents(request.user)
+        return render(request, "users/_agents.html", context)
+
+
+class AgentTokenView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        from apps.users.agents import agents_of, reissue_agent_token
+
+        agent = get_object_or_404(agents_of(request.user), pk=pk)
+        raw = reissue_agent_token(agent)
+        context = {"new_token": raw, "new_token_agent": agent, "agents": _agents(request.user)}
+        return render(request, "users/_agents.html", context)
+
+
+class AgentDeleteView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        from apps.users.agents import agents_of
+
+        agents_of(request.user).filter(pk=pk).delete()
+        return render(request, "users/_agents.html", {"agents": _agents(request.user)})
 
 
 class DeviceTokenRevokeView(LoginRequiredMixin, View):

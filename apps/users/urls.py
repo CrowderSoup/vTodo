@@ -19,4 +19,7 @@ urlpatterns = [
     path("api-token/", views.ApiTokenView.as_view(), name="api-token"),
     path("api-token/regenerate/", views.ApiTokenRegenerateView.as_view(), name="api-token-regenerate"),
     path("devices/<int:pk>/revoke/", views.DeviceTokenRevokeView.as_view(), name="device-revoke"),
+    path("agents/create/", views.AgentCreateView.as_view(), name="agent-create"),
+    path("agents/<int:pk>/token/", views.AgentTokenView.as_view(), name="agent-token"),
+    path("agents/<int:pk>/delete/", views.AgentDeleteView.as_view(), name="agent-delete"),
 ]

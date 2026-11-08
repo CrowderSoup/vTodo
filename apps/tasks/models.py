@@ -82,6 +82,26 @@ class Task(models.Model):
 
     is_archived = models.BooleanField(default=False)
 
+    # Who should do it: a person in the workspace, or one of their agents.
+    assignee = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_tasks",
+    )
+    # A lease: who is working on it right now, and until when. Past
+    # claim_expires_at the claim has lapsed and anyone may take it. Advisory:
+    # it does not stop other people editing the task.
+    claimed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    claim_expires_at = models.DateTimeField(null=True, blank=True)
+
     RECURRENCE_FROM_COMPLETION = "completion"
     RECURRENCE_FROM_DUE_DATE = "due_date"
     RECURRENCE_FROM_CHOICES = [
@@ -104,6 +124,16 @@ class Task(models.Model):
 
     def __str__(self):
         return self.title
+
+    def active_claim_holder_id(self, now=None):
+        """Who holds an unexpired claim on this task, or None."""
+        from django.utils import timezone
+
+        if self.claimed_by_id is None or self.claim_expires_at is None:
+            return None
+        if self.claim_expires_at <= (now or timezone.now()):
+            return None
+        return self.claimed_by_id
 
     def spawn_recurrence(self, completion_date):
         """Create the next recurrence of this task in backlog. Returns the new task or None.
@@ -212,6 +242,8 @@ class TaskActivity(models.Model):
     DELETED = "deleted"
     COMMENTED = "commented"
     COMMENT_DELETED = "comment_deleted"
+    CLAIMED = "claimed"
+    RELEASED = "released"
     ACTION_CHOICES = [
         (CREATED, "Created"),
         (UPDATED, "Updated"),
@@ -221,6 +253,8 @@ class TaskActivity(models.Model):
         (DELETED, "Deleted"),
         (COMMENTED, "Commented"),
         (COMMENT_DELETED, "Comment deleted"),
+        (CLAIMED, "Claimed"),
+        (RELEASED, "Released"),
     ]
 
     # Who created the row. The workspace owns it, so it outlives this person.

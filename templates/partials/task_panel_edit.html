@@ -35,6 +35,16 @@
       <input id="task-panel-due" type="date" name="due_date" value="{{ task.due_date|date:'Y-m-d' }}">
     </div>
 
+    <div class="form-field">
+      <label class="field-label" for="task-panel-assignee">Assigned to</label>
+      <select id="task-panel-assignee" name="assignee">
+        <option value="">Nobody</option>
+        {% for person in assignees %}
+        <option value="{{ person.pk }}" {% if person.pk == task.assignee_id %}selected{% endif %}>{{ person.display_name|default:person.username }}{% if person.is_agent %} (agent){% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+
     <div class="form-grid form-grid--two">
       <div class="form-field">
         <label class="field-label" for="task-panel-recurrence-days">Repeat every</label>

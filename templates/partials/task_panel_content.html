@@ -22,6 +22,12 @@
     {% if task.recurrence_days %}
     <span class="meta-pill">Repeats every {{ task.recurrence_days }} day{{ task.recurrence_days|pluralize }}</span>
     {% endif %}
+    {% if task.assignee %}
+    <span class="meta-pill">Assigned to {{ task.assignee.display_name|default:task.assignee.username }}</span>
+    {% endif %}
+    {% if claim_holder %}
+    <span class="meta-pill meta-pill--warm" title="Claimed until {{ task.claim_expires_at|date:'N j, Y g:i a' }}">{{ claim_holder.display_name|default:claim_holder.username }} is working on this</span>
+    {% endif %}
     {% if task.completed_at %}
     <span class="meta-pill meta-pill--success">Completed {{ task.completed_at|date:"M j, Y" }}</span>
     {% endif %}

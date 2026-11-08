@@ -8,7 +8,12 @@ PERSONAL_WORKSPACE_NAME = "Personal"
 
 
 def ensure_personal_workspace(user):
-    """The user's personal workspace, creating it and the owner membership."""
+    """The user's personal workspace, creating it and the owner membership.
+
+    An agent has none of its own, so this is its parent's.
+    """
+    if getattr(user, "is_agent", False):
+        return ensure_personal_workspace(user.parent)
     workspace, _created = Workspace.objects.get_or_create(
         owner=user,
         kind=Workspace.KIND_PERSONAL,

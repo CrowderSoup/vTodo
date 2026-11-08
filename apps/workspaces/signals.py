@@ -11,7 +11,7 @@ from apps.workspaces.services import (
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def create_personal_workspace(sender, instance, created, raw=False, **kwargs):
-    if raw or not created:
+    if raw or not created or instance.is_agent:
         return
     ensure_personal_workspace(instance)
 

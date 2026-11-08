@@ -59,6 +59,8 @@ class VtodoClient:
         status: str | None = None,
         tags: list[str] | None = None,
         exclude_tags: list[str] | None = None,
+        assignee: str | None = None,
+        claimable: bool = False,
     ) -> list[dict]:
         params: dict[str, Any] = {}
         if status:
@@ -67,6 +69,10 @@ class VtodoClient:
             params["tags"] = tags
         if exclude_tags:
             params["exclude_tags"] = exclude_tags
+        if assignee:
+            params["assignee"] = assignee
+        if claimable:
+            params["claimable"] = "true"
         return self._request("GET", "/tasks/", params=params).json()
 
     def reorder_tasks(self, order: list[int]) -> None:
@@ -86,6 +92,7 @@ class VtodoClient:
         tags: list[str] | None = None,
         recurrence_days: int | None = None,
         recurrence_from: str | None = None,
+        assignee: int | None = None,
     ) -> dict:
         payload: dict[str, Any] = {"title": title}
         if notes is not None:
@@ -104,6 +111,8 @@ class VtodoClient:
             payload["recurrence_days"] = recurrence_days
         if recurrence_from is not None:
             payload["recurrence_from"] = recurrence_from
+        if assignee is not None:
+            payload["assignee"] = assignee
         return self._request("POST", "/tasks/", json=payload).json()
 
     def update_task(self, task_id: int, **fields: Any) -> dict:
@@ -111,6 +120,19 @@ class VtodoClient:
 
     def delete_task(self, task_id: int) -> None:
         self._request("DELETE", f"/tasks/{task_id}/")
+
+    def claim_task(self, task_id: int, lease_seconds: int | None = None) -> dict:
+        payload = {} if lease_seconds is None else {"lease_seconds": lease_seconds}
+        return self._request("POST", f"/tasks/{task_id}/claim/", json=payload).json()
+
+    def release_task(self, task_id: int) -> dict:
+        return self._request("POST", f"/tasks/{task_id}/release/").json()
+
+    def claim_next_task(self, lease_seconds: int | None = None) -> dict | None:
+        """The claimed task, or None when nothing assigned is waiting."""
+        payload = {} if lease_seconds is None else {"lease_seconds": lease_seconds}
+        r = self._request("POST", "/tasks/claim-next/", json=payload)
+        return None if r.status_code == 204 else r.json()
 
     def move_task(self, task_id: int, new_status: str) -> dict:
         return self._request("POST", f"/tasks/{task_id}/move/", json={"new_status": new_status}).json()
@@ -162,3 +184,6 @@ class VtodoClient:
 
     def list_workspaces(self) -> list[dict]:
         return self._request("GET", "/workspaces/").json()
+
+    def list_assignees(self) -> list[dict]:
+        return self._request("GET", "/assignees/").json()
