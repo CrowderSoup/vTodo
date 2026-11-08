@@ -42,7 +42,7 @@
   <p class="task-card-notes">{{ task.notes|truncatechars:120 }}</p>
   {% endif %}
 
-  {% if task.due_date or task.recurrence_days %}
+  {% if task.due_date or task.recurrence_days or task.assignee_id %}
   <div class="meta-row">
     {% if task.due_date %}
     <span class="meta-pill{% if not task.completed_at %}{% if task.due_date < today %} meta-pill--danger{% elif task.due_date == today %} meta-pill--warm{% endif %}{% else %} meta-pill--success{% endif %}">
@@ -51,6 +51,9 @@
     {% endif %}
     {% if task.recurrence_days %}
     <span class="meta-pill">Repeats every {{ task.recurrence_days }} day{{ task.recurrence_days|pluralize }}</span>
+    {% endif %}
+    {% if task.assignee %}
+    <span class="meta-pill meta-pill--assignee" title="Assigned to {{ task.assignee.display_name|default:task.assignee.username }}">@{{ task.assignee.display_name|default:task.assignee.username }}</span>
     {% endif %}
   </div>
   {% endif %}

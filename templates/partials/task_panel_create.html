@@ -43,6 +43,11 @@
       <input id="task-panel-create-due" type="date" name="due_date" value="{{ due_date_value }}">
     </div>
 
+    <div class="form-field">
+      <label class="field-label" for="task-panel-create-assignee-field">Assigned to</label>
+      {% include "partials/_assignee_picker.html" with field_id="task-panel-create-assignee" selected_id=assignee_value options=assignee_options %}
+    </div>
+
     <div class="form-grid form-grid--two">
       <div class="form-field">
         <label class="field-label" for="task-panel-create-recurrence-days">Repeat every</label>

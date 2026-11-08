@@ -1,0 +1,18 @@
+{% with options_id=field_id|add:"-options" listbox_id=field_id|add:"-listbox" %}
+<div class="tag-input assignee-picker" data-assignee-picker data-field-id="{{ field_id }}">
+  <div class="tag-input-chips" data-assignee-chip></div>
+  <input type="text"
+         id="{{ field_id }}-field"
+         class="tag-input-field"
+         data-assignee-search
+         role="combobox"
+         aria-autocomplete="list"
+         aria-expanded="false"
+         aria-controls="{{ listbox_id }}"
+         placeholder="Search people and agents…"
+         autocomplete="off">
+  <ul class="tag-input-suggestions" id="{{ listbox_id }}" role="listbox" data-assignee-options hidden></ul>
+</div>
+<input type="hidden" name="assignee" id="{{ field_id }}" value="{{ selected_id|default_if_none:'' }}">
+{{ options|json_script:options_id }}
+{% endwith %}

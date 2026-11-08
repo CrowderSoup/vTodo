@@ -100,7 +100,8 @@ def test_assign_from_the_task_panel(client):
     client.force_login(user)
 
     edit = client.get(reverse("boards:task-panel-edit", args=[task.pk]))
-    assert b"Coder (agent)" in edit.content
+    assert b"data-assignee-picker" in edit.content
+    assert b'"name": "Coder"' in edit.content
 
     data = {"title": "T", "notes": "", "tags": "", "recurrence_from": "completion"}
     response = client.post(reverse("boards:task-panel-update", args=[task.pk]), {**data, "assignee": agent.pk})
@@ -122,3 +123,76 @@ def test_assign_from_the_task_panel(client):
     client.post(reverse("boards:task-panel-update", args=[task.pk]), {**data, "assignee": ""})
     task.refresh_from_db()
     assert task.assignee is None
+
+
+def _options(response, field_id):
+    import json
+
+    match = re.search(
+        rf'<script id="{field_id}-options" type="application/json">(.*?)</script>',
+        response.content.decode(),
+        re.S,
+    )
+    return json.loads(match.group(1))
+
+
+@pytest.mark.django_db
+def test_picker_offers_writers_and_agents_with_you_first(client):
+    from apps.workspaces.models import Membership
+    from apps.workspaces.services import create_shared_workspace
+    from apps.workspaces.access import SESSION_KEY
+
+    owner = User.objects.create_user(display_name="Owner")
+    shared = create_shared_workspace(user=owner, name="Family")
+    me = User.objects.create_user(display_name="Me")
+    viewer = User.objects.create_user(display_name="Viewer")
+    Membership.objects.create(workspace=shared, user=me, role=Membership.ROLE_MEMBER)
+    Membership.objects.create(workspace=shared, user=viewer, role=Membership.ROLE_VIEWER)
+    agent, _raw = create_agent(parent=owner, name="Coder")
+    task = Task.objects.create(user=owner, workspace=shared, title="T", status="todo")
+    client.force_login(me)
+    session = client.session
+    session[SESSION_KEY] = shared.pk
+    session.save()
+
+    options = _options(client.get(reverse("boards:task-panel-edit", args=[task.pk])), "task-panel-assignee")
+
+    assert options[0] == {"id": me.pk, "name": "Me", "agent": False, "me": True}
+    assert {o["name"] for o in options} == {"Me", "Owner", "Coder"}
+    assert next(o for o in options if o["name"] == "Coder")["agent"] is True
+
+    create = client.get(reverse("boards:task-panel-create"))
+    assert _options(create, "task-panel-create-assignee") == options
+
+
+@pytest.mark.django_db
+def test_assign_when_creating_a_task(client):
+    user = User.objects.create_user()
+    agent, _raw = create_agent(parent=user, name="Coder")
+    stranger = User.objects.create_user()
+    client.force_login(user)
+
+    response = client.post(reverse("boards:task-panel-create"), {"title": "New", "assignee": agent.pk})
+    assert response.status_code == 200
+    assert Task.objects.get(title="New").assignee == agent
+
+    bad = client.post(reverse("boards:task-panel-create"), {"title": "Bad", "assignee": stranger.pk})
+    assert bad.status_code == 422
+    assert b"Pick someone who can work in this workspace." in bad.content
+    assert not Task.objects.filter(title="Bad").exists()
+
+    client.post(reverse("boards:task-panel-create"), {"title": "Nobody", "assignee": ""})
+    assert Task.objects.get(title="Nobody").assignee is None
+
+
+@pytest.mark.django_db
+def test_board_cards_show_the_assignee(client):
+    user = User.objects.create_user()
+    agent, _raw = create_agent(parent=user, name="Coder")
+    Task.objects.create(user=user, workspace=Workspace.objects.get(owner=user), title="T",
+                        status="todo", assignee=agent)
+    client.force_login(user)
+
+    board = client.get(reverse("boards:board"))
+
+    assert b"@Coder" in board.content

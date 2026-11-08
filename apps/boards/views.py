@@ -264,6 +264,41 @@ def _resolve_task_create_selection(user, board, statuses, lane_param=""):
     return "", "your board", _resolve_status_slug("", statuses)
 
 
+def _assignee_options(user, workspace):
+    """Who the picker offers: everyone who can change this workspace's
+    tasks, and their agents. The person picking comes first."""
+    people = sorted(assignable_users(workspace), key=lambda u: u.pk != user.pk)
+    return [
+        {
+            "id": person.pk,
+            "name": person.display_name or person.username,
+            "agent": person.is_agent,
+            "me": person.pk == user.pk,
+        }
+        for person in people
+    ]
+
+
+class _BadAssignee(Exception):
+    pass
+
+
+def _posted_assignee(request, workspace):
+    """(sent, user): whether the form sent an assignee, and who. An empty
+    value unassigns. Raises _BadAssignee for anyone who can't be assigned."""
+    if "assignee" not in request.POST:
+        return False, None
+    raw = request.POST.get("assignee", "").strip()
+    if not raw:
+        return True, None
+    if not raw.isdigit():
+        raise _BadAssignee
+    assignee = assignable_users(workspace).filter(pk=int(raw)).first()
+    if assignee is None:
+        raise _BadAssignee
+    return True, assignee
+
+
 def _task_render_context(user, task):
     statuses, done_slug, active_slug = _status_context_for(user)
     return {
@@ -309,6 +344,8 @@ def _task_panel_create_context(user, board, lane_param="", form_values=None, for
         "due_date_value": form_values.get("due_date", ""),
         "tags_value": form_values.get("tags", ""),
         "known_tags": known_tags_for_board(board),
+        "assignee_options": _assignee_options(user, board.workspace),
+        "assignee_value": form_values.get("assignee"),
         "recurrence_days_value": form_values.get("recurrence_days", ""),
         "recurrence_from_value": form_values.get("recurrence_from", Task.RECURRENCE_FROM_COMPLETION),
         "form_error": form_error,
@@ -859,6 +896,7 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
             "tags": request.POST.get("tags", ""),
             "recurrence_days": request.POST.get("recurrence_days", "").strip(),
             "recurrence_from": request.POST.get("recurrence_from", Task.RECURRENCE_FROM_COMPLETION),
+            "assignee": request.POST.get("assignee", "").strip() or None,
         }
         context = _task_panel_create_context(
             request.user,
@@ -869,6 +907,13 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
 
         if not form_values["title"]:
             context["form_error"] = "Add a title before creating the task."
+            return render(request, "partials/task_panel_create.html", context, status=422)
+
+        try:
+            _sent, assignee = _posted_assignee(request, board.workspace)
+        except _BadAssignee:
+            context["form_error"] = "Pick someone who can work in this workspace."
+            context["assignee_value"] = None
             return render(request, "partials/task_panel_create.html", context, status=422)
 
         tags = [tag.strip() for tag in form_values["tags"].split(",") if tag.strip()]
@@ -888,6 +933,7 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
                 tags=tags,
                 recurrence_days=recurrence_days,
                 recurrence_from=recurrence_from,
+                assignee=assignee,
             )
             activity.record_created(task, actor=request.user, source=TaskActivity.SOURCE_WEB)
 
@@ -901,7 +947,7 @@ class TaskPanelEditView(LoginRequiredMixin, View):
         task = get_task_or_404(request.user, pk)
         context = _task_render_context(request.user, task)
         context["known_tags"] = known_tags_for_board(context["board"])
-        context["assignees"] = assignable_users(task.workspace)
+        context["assignee_options"] = _assignee_options(request.user, task.workspace)
         return render(request, "partials/task_panel_edit.html", context)
 
 
@@ -932,16 +978,11 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
 
         # Only the panel form sends an assignee. Leave it alone when absent.
         update_fields = ["title", "notes", "due_date", "tags", "recurrence_days", "recurrence_from", "updated_at"]
-        assignee_set = "assignee" in request.POST
+        try:
+            assignee_set, assignee = _posted_assignee(request, task.workspace)
+        except _BadAssignee:
+            return HttpResponse(status=422)
         if assignee_set:
-            raw_assignee = request.POST.get("assignee", "").strip()
-            assignee = None
-            if raw_assignee:
-                if not raw_assignee.isdigit():
-                    return HttpResponse(status=422)
-                assignee = assignable_users(task.workspace).filter(pk=int(raw_assignee)).first()
-                if assignee is None:
-                    return HttpResponse(status=422)
             update_fields.append("assignee")
 
         board = _board_for_task(task)
