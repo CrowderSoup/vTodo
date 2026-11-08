@@ -50,6 +50,9 @@ data class TaskDraft(
     // The task as the phone last saw it when this draft was opened. Saving
     // sends only what differs from it.
     val baseline: TaskWrite,
+    val workspaceId: Long = 0,
+    val workspaceName: String = "",
+    val workspaceKind: String = "",
 )
 
 data class NewTaskDraft(
@@ -455,6 +458,9 @@ private fun OpenTask.toDraft() = TaskDraft(
         recurrenceDays = recurrenceDays,
         recurrenceFrom = normalizeRecurrenceFrom(recurrenceFrom),
     ),
+    workspaceId = workspaceId,
+    workspaceName = workspaceName,
+    workspaceKind = workspaceKind,
 )
 
 private data class Schedule(

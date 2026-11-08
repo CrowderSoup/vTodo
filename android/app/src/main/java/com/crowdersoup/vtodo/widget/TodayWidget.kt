@@ -45,6 +45,7 @@ import com.crowdersoup.vtodo.brand.Brand
 import com.crowdersoup.vtodo.today.TodayTask
 import com.crowdersoup.vtodo.today.dueLabel
 import com.crowdersoup.vtodo.today.recurrenceLabel
+import com.crowdersoup.vtodo.today.workspaceLabel
 import java.time.LocalDate
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -191,6 +192,7 @@ private fun TaskRow(task: TodayTask, today: LocalDate) {
                 style = TextStyle(color = labelColor, fontSize = 12.sp),
             )
             val meta = listOfNotNull(
+                workspaceLabel(task.workspaceKind, task.workspaceName),
                 task.statusName.takeIf { it.isNotBlank() },
                 task.tags.takeIf { it.isNotEmpty() }?.joinToString(", "),
                 task.recurrenceDays?.takeIf { it >= 1 }?.let(::recurrenceLabel),

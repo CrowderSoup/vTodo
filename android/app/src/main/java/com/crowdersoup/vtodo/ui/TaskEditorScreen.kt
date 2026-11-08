@@ -51,7 +51,9 @@ import com.crowdersoup.vtodo.today.RECURRENCE_FROM_COMPLETION
 import com.crowdersoup.vtodo.today.RECURRENCE_FROM_DUE_DATE
 import com.crowdersoup.vtodo.today.addTags
 import com.crowdersoup.vtodo.today.normalizeTags
+import com.crowdersoup.vtodo.today.statusesForWorkspace
 import com.crowdersoup.vtodo.today.tagSuggestions
+import com.crowdersoup.vtodo.today.workspaceLabel
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -104,6 +106,9 @@ fun TaskEditorScreen(state: AppUiState, viewModel: AppViewModel) {
             state.message?.let { note ->
                 Text(text = note, color = MaterialTheme.colorScheme.error)
             }
+            if (!creating && draft != null) {
+                workspaceLabel(draft.workspaceKind, draft.workspaceName)?.let { WorkspaceBadge(it) }
+            }
             OutlinedTextField(
                 value = title,
                 onValueChange = { value ->
@@ -147,7 +152,7 @@ fun TaskEditorScreen(state: AppUiState, viewModel: AppViewModel) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    state.statuses.forEach { status ->
+                    statusesForWorkspace(state.statuses, draft.workspaceId).forEach { status ->
                         StatusChip(
                             name = status.name.ifBlank { status.slug },
                             colorHex = status.color,

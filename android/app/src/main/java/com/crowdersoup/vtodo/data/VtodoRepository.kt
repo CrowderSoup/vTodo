@@ -155,7 +155,9 @@ class VtodoRepository(
         val changes = taskPayload(body, baseline.toBody())
         return attempt {
             withSession { session ->
-                if (changes.isNotEmpty()) api.patchTask(session, taskId, changes)
+                if (changes.isNotEmpty()) {
+                    api.patchTask(session, taskId, changes, taskWorkspaceId(taskId))
+                }
                 refreshAfterWrite(session)
             }
         }
@@ -163,13 +165,15 @@ class VtodoRepository(
 
     suspend fun deleteTask(taskId: Long): Result<Unit> = attempt {
         withSession { session ->
-            api.deleteTask(session, taskId)
+            api.deleteTask(session, taskId, taskWorkspaceId(taskId))
             refreshAfterWrite(session)
         }
     }
 
     suspend fun complete(taskId: Long): Result<Unit> {
-        val done = database.statusDao().all()
+        val task = database.taskDao().get(taskId)
+            ?: return Result.failure(IllegalStateException("That task isn't on this phone yet. Refresh and try again."))
+        val done = database.statusDao().forWorkspace(task.workspaceId)
             .filter { it.isDone }
             .minByOrNull { it.sortOrder }
             ?: return Result.failure(IllegalStateException("Add a completed status on the website first."))
@@ -180,19 +184,19 @@ class VtodoRepository(
         var previous: TaskEntity? = null
         val result = attempt {
             withSession { session ->
-                val status = database.statusDao().all().firstOrNull { it.slug == statusSlug }
+                val existing = database.taskDao().get(taskId)
+                    ?: throw IllegalStateException("That task isn't on this phone yet. Refresh and try again.")
+                val status = database.statusDao().forWorkspace(existing.workspaceId)
+                    .firstOrNull { it.slug == statusSlug }
                     ?: throw IllegalStateException("That status is not on this phone yet. Refresh and try again.")
-                previous = database.taskDao().get(taskId)
-                val existing = previous
-                if (existing != null) {
-                    val completedAt = if (status.isDone) {
-                        existing.completedAt ?: Instant.now().toString()
-                    } else {
-                        null
-                    }
-                    database.taskDao().updateStatus(taskId, status.slug, completedAt)
+                previous = existing
+                val completedAt = if (status.isDone) {
+                    existing.completedAt ?: Instant.now().toString()
+                } else {
+                    null
                 }
-                api.moveTask(session, taskId, status.slug)
+                database.taskDao().updateStatus(taskId, status.slug, completedAt)
+                api.moveTask(session, taskId, status.slug, existing.workspaceId.takeIf { it > 0L })
                 refreshAfterWrite(session)
             }
         }
@@ -298,14 +302,39 @@ class VtodoRepository(
         )
     }
 
+    /** Callers hold [mutex]. Zero means the task was synced before workspaces were known. */
+    private suspend fun taskWorkspaceId(taskId: Long): Long? {
+        return database.taskDao().get(taskId)?.workspaceId?.takeIf { it > 0L }
+    }
+
+    /**
+     * Personal tasks, plus tasks assigned in shared workspaces. Statuses are
+     * stored per workspace because the same slug can mean different things on
+     * each board. A server that doesn't send workspace ids yet keeps the old
+     * single status list.
+     */
     private suspend fun pull(session: Session) {
         val tasks = api.fetchTasks(session)
-        val statuses = api.fetchStatuses(session)
+        val workspaces = try {
+            api.fetchWorkspaces(session)
+        } catch (e: VtodoApiException) {
+            if (e.httpCode == 404) emptyList() else throw e
+        }
+        val tagged = tasks.any { (it.workspaceId ?: 0L) > 0L } && workspaces.isNotEmpty()
+        val entities = if (tagged) tasks.map { it.toEntity() } else tasks.map { it.toEntity().unscoped() }
+        val statuses = if (!tagged) {
+            api.fetchStatuses(session).map { it.toEntity(0L) }
+        } else {
+            val ids = LinkedHashSet<Long>()
+            workspaces.firstOrNull { it.kind == "personal" }?.id?.let { ids.add(it) }
+            entities.map { it.workspaceId }.filter { it > 0L }.forEach { ids.add(it) }
+            ids.flatMap { id -> api.fetchStatuses(session, id).map { it.toEntity(id) } }
+        }
         database.withTransaction {
             database.taskDao().clear()
             database.statusDao().clear()
-            database.taskDao().insertAll(tasks.map { it.toEntity() })
-            database.statusDao().insertAll(statuses.map { it.toEntity() })
+            database.taskDao().insertAll(entities)
+            database.statusDao().insertAll(statuses)
         }
     }
 
@@ -316,6 +345,8 @@ class VtodoRepository(
             database.taskDao().updateStatus(taskId, previous.status, previous.completedAt)
         }
     }
+
+    private fun TaskEntity.unscoped() = copy(workspaceId = 0, workspaceName = "", workspaceKind = "")
 
     private companion object {
         const val SIGNED_OUT_BY_SERVER =

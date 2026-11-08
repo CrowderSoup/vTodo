@@ -2,7 +2,7 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.urls import reverse
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
@@ -40,6 +40,7 @@ from apps.tasks.models import Task, TaskActivity, TaskComment, TaskStatus
 from apps.tasks.selectors import (
     InvalidStatusError,
     default_status_slug,
+    inbox_tasks_qs,
     move_task,
     visible_statuses_qs,
     visible_tasks_qs,
@@ -146,6 +147,16 @@ class TaskStatusViewSet(viewsets.ModelViewSet):
                 bool,
                 description="Only tasks nobody holds a live claim on.",
             ),
+            OpenApiParameter(
+                "mine",
+                bool,
+                description=(
+                    "The caller's personal tasks, plus tasks assigned to them in shared "
+                    "workspaces they belong to. Other tasks in those workspaces are left "
+                    "out. Ignores X-Workspace-Id. With open=true, a done status is decided "
+                    "per task's workspace. The Android app syncs with mine=true and open=true."
+                ),
+            ),
         ],
     ),
 )
@@ -155,7 +166,12 @@ class TaskViewSet(viewsets.ModelViewSet):
     permission_classes = WORKSPACE_PERMISSIONS
 
     def get_queryset(self):
-        qs = visible_tasks_qs(self.request.user).select_related("assignee", "claimed_by")
+        mine = self.request.query_params.get("mine") in ("1", "true")
+        if mine:
+            qs = inbox_tasks_qs(self.request.user)
+        else:
+            qs = visible_tasks_qs(self.request.user)
+        qs = qs.select_related("assignee", "claimed_by", "workspace")
         assignee = self.request.query_params.get("assignee", "").strip().lower()
         if assignee == "me":
             qs = qs.filter(assignee=self.request.user)
@@ -171,8 +187,18 @@ class TaskViewSet(viewsets.ModelViewSet):
                 Q(claimed_by__isnull=True) | Q(claim_expires_at__isnull=True) | Q(claim_expires_at__lte=now)
             )
         if self.request.query_params.get("open") in ("1", "true"):
-            done_slugs = visible_statuses_qs(self.request.user).filter(is_done=True).values("slug")
-            qs = qs.filter(is_archived=False, completed_at__isnull=True).exclude(status__in=done_slugs)
+            qs = qs.filter(is_archived=False, completed_at__isnull=True)
+            if mine:
+                # A slug can mean "done" in one workspace and not in another.
+                done_here = TaskStatus.objects.filter(
+                    workspace_id=OuterRef("workspace_id"),
+                    slug=OuterRef("status"),
+                    is_done=True,
+                )
+                qs = qs.exclude(Exists(done_here))
+            else:
+                done_slugs = visible_statuses_qs(self.request.user).filter(is_done=True).values("slug")
+                qs = qs.exclude(status__in=done_slugs)
         status_slug = self.request.query_params.get("status")
         if status_slug:
             qs = qs.filter(status=status_slug)

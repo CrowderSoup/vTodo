@@ -1,8 +1,9 @@
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
-from apps.workspaces.access import workspace_for
+from apps.workspaces.access import memberships_for, workspace_for
 
 from .models import Task, TaskStatus
 
@@ -14,6 +15,31 @@ class InvalidStatusError(Exception):
 def visible_tasks_qs(user):
     """Tasks on the workspace the user is acting in."""
     return Task.objects.filter(workspace=workspace_for(user))
+
+
+def inbox_tasks_qs(user):
+    """Personal tasks, plus tasks assigned to the user in shared workspaces.
+
+    The rest of a shared workspace stays on that workspace's board. The
+    Android app uses this so a person sees work assigned to them without
+    opening every shared board.
+    """
+    from apps.workspaces.models import Workspace
+
+    memberships = memberships_for(user)
+    personal_ids = [
+        membership.workspace_id
+        for membership in memberships
+        if membership.workspace.kind == Workspace.KIND_PERSONAL
+    ]
+    shared_ids = [
+        membership.workspace_id
+        for membership in memberships
+        if membership.workspace.kind == Workspace.KIND_SHARED
+    ]
+    return Task.objects.filter(
+        Q(workspace_id__in=personal_ids) | Q(workspace_id__in=shared_ids, assignee=user)
+    )
 
 
 def board_tasks_qs(board):

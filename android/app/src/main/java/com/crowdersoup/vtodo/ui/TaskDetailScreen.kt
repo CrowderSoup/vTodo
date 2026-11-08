@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import com.crowdersoup.vtodo.R
 import com.crowdersoup.vtodo.today.dueChipLabel
 import com.crowdersoup.vtodo.today.recurrenceLabel
+import com.crowdersoup.vtodo.today.statusesForWorkspace
+import com.crowdersoup.vtodo.today.workspaceLabel
 import java.time.LocalDate
 import java.util.Locale
 
@@ -73,6 +75,7 @@ fun TaskDetailScreen(state: AppUiState, viewModel: AppViewModel) {
                 Text(text = note, color = MaterialTheme.colorScheme.error)
             }
             Text(text = draft.title, style = MaterialTheme.typography.headlineSmall)
+            workspaceLabel(draft.workspaceKind, draft.workspaceName)?.let { WorkspaceBadge(it) }
             val repeatDays = draft.recurrenceDays.toIntOrNull()?.takeIf { it >= 1 }
             if (due != null || repeatDays != null) {
                 FlowRow(
@@ -92,7 +95,7 @@ fun TaskDetailScreen(state: AppUiState, viewModel: AppViewModel) {
             }
             SectionLabel(stringResource(R.string.status))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                state.statuses.forEach { item ->
+                statusesForWorkspace(state.statuses, draft.workspaceId).forEach { item ->
                     StatusChip(
                         name = item.name.ifBlank { item.slug },
                         colorHex = item.color,

@@ -31,11 +31,15 @@ data class TaskEntity(
     val tags: String,
     val recurrenceDays: Int? = null,
     val recurrenceFrom: String? = null,
+    val workspaceId: Long = 0,
+    val workspaceName: String = "",
+    val workspaceKind: String = "",
 )
 
-@Entity(tableName = "statuses")
+@Entity(tableName = "statuses", primaryKeys = ["workspaceId", "slug"])
 data class StatusEntity(
-    @PrimaryKey val slug: String,
+    val workspaceId: Long,
+    val slug: String,
     val id: Long,
     val name: String,
     val sortOrder: Int,
@@ -56,6 +60,9 @@ fun TaskDto.toEntity() = TaskEntity(
     tags = tagsToJson(tags),
     recurrenceDays = recurrenceDays,
     recurrenceFrom = recurrenceFrom.ifBlank { RECURRENCE_FROM_COMPLETION },
+    workspaceId = workspaceId ?: 0L,
+    workspaceName = workspaceName,
+    workspaceKind = workspaceKind,
 )
 
 fun TaskEntity.toRecord() = TaskRecord(
@@ -71,9 +78,13 @@ fun TaskEntity.toRecord() = TaskRecord(
     tags = tagsFromJson(tags),
     recurrenceDays = recurrenceDays,
     recurrenceFrom = normalizeRecurrenceFrom(recurrenceFrom.orEmpty()),
+    workspaceId = workspaceId,
+    workspaceName = workspaceName,
+    workspaceKind = workspaceKind,
 )
 
-fun StatusDto.toEntity() = StatusEntity(
+fun StatusDto.toEntity(workspaceId: Long) = StatusEntity(
+    workspaceId = workspaceId,
     slug = slug,
     id = id,
     name = name,
@@ -88,6 +99,7 @@ fun StatusEntity.toRecord() = StatusRecord(
     sortOrder = sortOrder,
     isDone = isDone,
     color = color,
+    workspaceId = workspaceId,
 )
 
 @Dao
@@ -122,6 +134,9 @@ interface StatusDao {
     @Query("SELECT * FROM statuses")
     suspend fun all(): List<StatusEntity>
 
+    @Query("SELECT * FROM statuses WHERE workspaceId = :workspaceId")
+    suspend fun forWorkspace(workspaceId: Long): List<StatusEntity>
+
     @Query("DELETE FROM statuses")
     suspend fun clear()
 
@@ -140,7 +155,7 @@ internal fun tagsFromJson(raw: String): List<String> {
 
 @Database(
     entities = [TaskEntity::class, StatusEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class VtodoDatabase : RoomDatabase() {

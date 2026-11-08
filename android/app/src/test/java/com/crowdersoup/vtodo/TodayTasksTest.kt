@@ -16,6 +16,8 @@ import com.crowdersoup.vtodo.today.parseDueInput
 import com.crowdersoup.vtodo.today.parseRecurrenceDays
 import com.crowdersoup.vtodo.today.recurrenceLabel
 import com.crowdersoup.vtodo.today.statusColorArgb
+import com.crowdersoup.vtodo.today.statusesForWorkspace
+import com.crowdersoup.vtodo.today.workspaceLabel
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.time.LocalDate
@@ -153,6 +155,61 @@ class TodayTasksTest {
     }
 
     @Test
+    fun selectKeepsAssignedWorkspaceTasksApartFromPersonalOnes() {
+        val statuses = listOf(
+            StatusRecord("todo", "Personal To Do", 0, false, "#111111", workspaceId = 1),
+            StatusRecord("done", "Personal Done", 1, true, workspaceId = 1),
+            StatusRecord("todo", "Shared To Do", 0, true, "#222222", workspaceId = 2),
+            StatusRecord("done", "Shared Done", 1, false, "#abcdef", workspaceId = 2),
+        )
+        val tasks = listOf(
+            record(1, "Personal open", dueDate = "2026-10-23", workspaceId = 1, workspaceKind = "personal"),
+            record(2, "Personal done", dueDate = "2026-10-23", status = "done", workspaceId = 1),
+            record(
+                3,
+                "Shared still open",
+                dueDate = "2026-10-23",
+                status = "done",
+                workspaceId = 2,
+                workspaceName = " Household ",
+                workspaceKind = "shared",
+            ),
+            record(
+                4,
+                "Shared finished",
+                dueDate = "2026-10-22",
+                status = "todo",
+                workspaceId = 2,
+                workspaceName = "Household",
+                workspaceKind = "shared",
+            ),
+            record(
+                5,
+                "Shared later",
+                dueDate = null,
+                status = "done",
+                workspaceId = 2,
+                workspaceName = "Household",
+                workspaceKind = "shared",
+            ),
+        )
+
+        val todayTasks = TodayTasks.select(tasks, statuses, today)
+        val open = OpenTasks.select(tasks, statuses)
+
+        assertEquals(listOf(1L, 3L), todayTasks.map { it.id })
+        assertEquals("Shared Done", todayTasks[1].statusName)
+        assertEquals("#abcdef", todayTasks[1].statusColor)
+        assertEquals("Household", workspaceLabel(todayTasks[1].workspaceKind, todayTasks[1].workspaceName))
+        assertEquals("#111111", todayTasks[0].statusColor)
+        assertEquals(null, workspaceLabel(todayTasks[0].workspaceKind, todayTasks[0].workspaceName))
+        assertEquals(listOf(1L, 3L, 5L), open.map { it.id })
+        assertEquals("Household", open[2].workspaceName)
+        assertEquals(listOf("todo", "done"), statusesForWorkspace(statuses, 2).map { it.slug })
+        assertEquals(null, workspaceLabel("shared", " "))
+    }
+
+    @Test
     fun selectKeepsRecurrenceOnOpenAndTodayTasks() {
         val task = record(
             1,
@@ -183,6 +240,9 @@ class TodayTasksTest {
         tags: List<String> = emptyList(),
         recurrenceDays: Int? = null,
         recurrenceFrom: String = "completion",
+        workspaceId: Long = 0,
+        workspaceName: String = "",
+        workspaceKind: String = "",
     ) = TaskRecord(
         id,
         title,
@@ -195,5 +255,8 @@ class TodayTasksTest {
         tags = tags,
         recurrenceDays = recurrenceDays,
         recurrenceFrom = recurrenceFrom,
+        workspaceId = workspaceId,
+        workspaceName = workspaceName,
+        workspaceKind = workspaceKind,
     )
 }

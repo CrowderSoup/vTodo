@@ -41,6 +41,9 @@ data class TaskDto(
     val tags: List<String> = emptyList(),
     @SerialName("recurrence_days") val recurrenceDays: Int? = null,
     @SerialName("recurrence_from") val recurrenceFrom: String = "completion",
+    @SerialName("workspace") val workspaceId: Long? = null,
+    @SerialName("workspace_name") val workspaceName: String = "",
+    @SerialName("workspace_kind") val workspaceKind: String = "",
 )
 
 data class TaskBody(
@@ -51,6 +54,13 @@ data class TaskBody(
     val tags: List<String>,
     val recurrenceDays: Int?,
     val recurrenceFrom: String,
+)
+
+@Serializable
+data class WorkspaceDto(
+    val id: Long,
+    val name: String = "",
+    val kind: String = "",
 )
 
 @Serializable
@@ -91,17 +101,29 @@ class VtodoApi(
     private val json = Json { ignoreUnknownKeys = true }
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
 
-    /** Only open tasks: the app never shows archived or completed ones. */
-    suspend fun fetchTasks(session: Session): List<TaskDto> = fetchList(session, "/api/v1/tasks/?open=true")
+    /**
+     * Open personal tasks, plus open tasks assigned to this user in shared
+     * workspaces. The rest of a shared workspace is not included.
+     */
+    suspend fun fetchTasks(session: Session): List<TaskDto> =
+        fetchList(session, "/api/v1/tasks/?open=true&mine=true")
 
-    suspend fun fetchStatuses(session: Session): List<StatusDto> = fetchList(session, "/api/v1/statuses/")
+    suspend fun fetchWorkspaces(session: Session): List<WorkspaceDto> =
+        fetchList(session, "/api/v1/workspaces/")
+
+    suspend fun fetchStatuses(session: Session, workspaceId: Long? = null): List<StatusDto> =
+        fetchList(session, "/api/v1/statuses/", workspaceId)
 
     /**
      * Reads a list endpoint whether the server returns a plain array (today)
      * or DRF's paginated {"results": [...], "next": url} shape, so turning on
      * pagination on the server doesn't break the app.
      */
-    private suspend inline fun <reified T> fetchList(session: Session, path: String): List<T> {
+    private suspend inline fun <reified T> fetchList(
+        session: Session,
+        path: String,
+        workspaceId: Long? = null,
+    ): List<T> {
         val items = ArrayList<T>()
         var url: String? = session.baseUrl + path
         var pages = 0
@@ -109,7 +131,7 @@ class VtodoApi(
             if (++pages > MAX_PAGES) {
                 throw VtodoApiException(null, "The server sent more pages than the app expected.")
             }
-            val page = decode<JsonElement>(call(authorized(session, url).get().build()))
+            val page = decode<JsonElement>(call(authorized(session, url, workspaceId).get().build()))
             when (page) {
                 is JsonArray -> {
                     items += decodeElement<List<T>>(page)
@@ -176,37 +198,41 @@ class VtodoApi(
         )
     }
 
-    suspend fun patchTask(session: Session, taskId: Long, changes: JsonObject) {
+    suspend fun patchTask(session: Session, taskId: Long, changes: JsonObject, workspaceId: Long?) {
         call(
-            request(session, "/api/v1/tasks/$taskId/")
+            request(session, "/api/v1/tasks/$taskId/", workspaceId)
                 .patch(changes.toString().toRequestBody(jsonMedia))
                 .build(),
         )
     }
 
-    suspend fun deleteTask(session: Session, taskId: Long) {
-        call(request(session, "/api/v1/tasks/$taskId/").delete().build())
+    suspend fun deleteTask(session: Session, taskId: Long, workspaceId: Long?) {
+        call(request(session, "/api/v1/tasks/$taskId/", workspaceId).delete().build())
     }
 
-    suspend fun moveTask(session: Session, taskId: Long, newStatus: String) {
+    suspend fun moveTask(session: Session, taskId: Long, newStatus: String, workspaceId: Long?) {
         val payload = json.encodeToString(MoveRequest(newStatus))
         call(
-            request(session, "/api/v1/tasks/$taskId/move/")
+            request(session, "/api/v1/tasks/$taskId/move/", workspaceId)
                 .post(payload.toRequestBody(jsonMedia))
                 .build(),
         )
     }
 
-    private fun request(session: Session, path: String): Request.Builder {
-        return authorized(session, session.baseUrl + path)
+    private fun request(session: Session, path: String, workspaceId: Long? = null): Request.Builder {
+        return authorized(session, session.baseUrl + path, workspaceId)
     }
 
-    private fun authorized(session: Session, url: String): Request.Builder {
-        return Request.Builder()
+    private fun authorized(session: Session, url: String, workspaceId: Long? = null): Request.Builder {
+        val builder = Request.Builder()
             .url(url)
             .header("Accept", "application/json")
             .header("User-Agent", "vtodo-android")
             .header("Authorization", "Token ${session.token}")
+        if (workspaceId != null && workspaceId > 0L) {
+            builder.header("X-Workspace-Id", workspaceId.toString())
+        }
+        return builder
     }
 
     private fun anonymous(baseUrl: String, path: String): Request.Builder {

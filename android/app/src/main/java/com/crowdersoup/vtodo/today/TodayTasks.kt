@@ -21,6 +21,9 @@ data class TaskRecord(
     val tags: List<String> = emptyList(),
     val recurrenceDays: Int? = null,
     val recurrenceFrom: String = RECURRENCE_FROM_COMPLETION,
+    val workspaceId: Long = 0,
+    val workspaceName: String = "",
+    val workspaceKind: String = "",
 )
 
 data class StatusRecord(
@@ -29,6 +32,7 @@ data class StatusRecord(
     val sortOrder: Int,
     val isDone: Boolean,
     val color: String = "",
+    val workspaceId: Long = 0,
 )
 
 data class OpenTask(
@@ -44,6 +48,9 @@ data class OpenTask(
     val tags: List<String> = emptyList(),
     val recurrenceDays: Int? = null,
     val recurrenceFrom: String = RECURRENCE_FROM_COMPLETION,
+    val workspaceId: Long = 0,
+    val workspaceName: String = "",
+    val workspaceKind: String = "",
 )
 
 data class TodayTask(
@@ -56,12 +63,15 @@ data class TodayTask(
     val statusColor: String = "",
     val tags: List<String> = emptyList(),
     val recurrenceDays: Int? = null,
+    val workspaceId: Long = 0,
+    val workspaceName: String = "",
+    val workspaceKind: String = "",
 )
 
 object TodayTasks {
     fun select(tasks: List<TaskRecord>, statuses: List<StatusRecord>, today: LocalDate): List<TodayTask> {
-        val doneSlugs = statuses.filter { it.isDone }.map { it.slug }.toSet()
-        return tasks.mapNotNull { task -> toTodayTask(task, statuses, doneSlugs, today) }
+        val doneKeys = doneKeys(statuses)
+        return tasks.mapNotNull { task -> toTodayTask(task, statuses, doneKeys, today) }
             .sortedWith(
                 compareBy<TodayTask> { it.dueDate }
                     .thenBy { it.dueTime != null }
@@ -74,10 +84,10 @@ object TodayTasks {
     private fun toTodayTask(
         task: TaskRecord,
         statuses: List<StatusRecord>,
-        doneSlugs: Set<String>,
+        doneKeys: Set<Pair<Long, String>>,
         today: LocalDate,
     ): TodayTask? {
-        if (task.isArchived || !task.completedAt.isNullOrBlank() || task.status in doneSlugs) {
+        if (task.isArchived || !task.completedAt.isNullOrBlank() || task.isDone(doneKeys)) {
             return null
         }
         val due = task.dueDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return null
@@ -85,7 +95,7 @@ object TodayTasks {
         val time = task.dueTime?.takeIf { it.isNotBlank() }?.let {
             runCatching { LocalTime.parse(it) }.getOrNull()
         }
-        val status = statuses.firstOrNull { it.slug == task.status }
+        val status = statusFor(task, statuses)
         return TodayTask(
             id = task.id,
             title = task.title,
@@ -96,15 +106,18 @@ object TodayTasks {
             statusColor = status?.color.orEmpty(),
             tags = task.tags,
             recurrenceDays = task.recurrenceDays?.takeIf { it >= 1 },
+            workspaceId = task.workspaceId,
+            workspaceName = task.workspaceName,
+            workspaceKind = task.workspaceKind,
         )
     }
 }
 
 object OpenTasks {
     fun select(tasks: List<TaskRecord>, statuses: List<StatusRecord>): List<OpenTask> {
-        val done = statuses.filter { it.isDone }.map { it.slug }.toSet()
+        val done = doneKeys(statuses)
         return tasks.mapNotNull { task ->
-            if (task.isArchived || !task.completedAt.isNullOrBlank() || task.status in done) {
+            if (task.isArchived || !task.completedAt.isNullOrBlank() || task.isDone(done)) {
                 null
             } else {
                 from(task, statuses)
@@ -113,7 +126,7 @@ object OpenTasks {
     }
 
     fun from(task: TaskRecord, statuses: List<StatusRecord>): OpenTask {
-        val status = statuses.firstOrNull { it.slug == task.status }
+        val status = statusFor(task, statuses)
         return OpenTask(
             id = task.id,
             title = task.title,
@@ -127,6 +140,9 @@ object OpenTasks {
             tags = task.tags,
             recurrenceDays = task.recurrenceDays?.takeIf { it >= 1 },
             recurrenceFrom = normalizeRecurrenceFrom(task.recurrenceFrom),
+            workspaceId = task.workspaceId,
+            workspaceName = task.workspaceName,
+            workspaceKind = task.workspaceKind,
         )
     }
 
@@ -136,6 +152,28 @@ object OpenTasks {
         .thenBy { it.dueTime ?: LocalTime.MIN }
         .thenBy { it.sortOrder }
         .thenBy { it.id }
+}
+
+fun statusesForWorkspace(statuses: List<StatusRecord>, workspaceId: Long): List<StatusRecord> {
+    return statuses.filter { it.workspaceId == workspaceId }.sortedBy { it.sortOrder }
+}
+
+/** The shared workspace name to show on a task, or null for a personal task. */
+fun workspaceLabel(kind: String, name: String): String? {
+    val trimmed = name.trim()
+    return trimmed.takeIf { kind == "shared" && trimmed.isNotEmpty() }
+}
+
+private fun doneKeys(statuses: List<StatusRecord>): Set<Pair<Long, String>> {
+    return statuses.filter { it.isDone }.map { it.workspaceId to it.slug }.toSet()
+}
+
+private fun statusFor(task: TaskRecord, statuses: List<StatusRecord>): StatusRecord? {
+    return statuses.firstOrNull { it.workspaceId == task.workspaceId && it.slug == task.status }
+}
+
+private fun TaskRecord.isDone(doneKeys: Set<Pair<Long, String>>): Boolean {
+    return (workspaceId to status) in doneKeys
 }
 
 fun parseDueInput(text: String): Result<LocalDate?> {

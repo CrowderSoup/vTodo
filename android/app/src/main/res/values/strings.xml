@@ -48,6 +48,7 @@
     <string name="remove">Remove</string>
     <string name="cancel">Cancel</string>
     <string name="status">Status</string>
+    <string name="workspace_badge">Workspace %1$s</string>
     <string name="save">Save</string>
     <string name="back">Back</string>
     <string name="refresh">Refresh</string>

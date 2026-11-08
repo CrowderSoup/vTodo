@@ -17,7 +17,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.crowdersoup.vtodo.R
 import com.crowdersoup.vtodo.today.statusColorArgb
 
 @Composable
@@ -52,6 +56,21 @@ fun StatusChip(
             color = MaterialTheme.colorScheme.onSurface,
         )
     }
+}
+
+@Composable
+fun WorkspaceBadge(name: String) {
+    val description = stringResource(R.string.workspace_badge, name)
+    Text(
+        text = name,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSecondaryContainer,
+        modifier = Modifier
+            .semantics { contentDescription = description }
+            .clip(RoundedCornerShape(999.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    )
 }
 
 @Composable

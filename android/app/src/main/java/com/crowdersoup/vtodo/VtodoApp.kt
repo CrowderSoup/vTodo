@@ -37,13 +37,43 @@ private val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
+private val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE tasks ADD COLUMN workspaceId INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE tasks ADD COLUMN workspaceName TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE tasks ADD COLUMN workspaceKind TEXT NOT NULL DEFAULT ''")
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS statuses_new (
+                workspaceId INTEGER NOT NULL,
+                slug TEXT NOT NULL,
+                id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                sortOrder INTEGER NOT NULL,
+                isDone INTEGER NOT NULL,
+                color TEXT NOT NULL,
+                PRIMARY KEY(workspaceId, slug)
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            INSERT INTO statuses_new (workspaceId, slug, id, name, sortOrder, isDone, color)
+            SELECT 0, slug, id, name, sortOrder, isDone, color FROM statuses
+            """.trimIndent(),
+        )
+        db.execSQL("DROP TABLE statuses")
+        db.execSQL("ALTER TABLE statuses_new RENAME TO statuses")
+    }
+}
+
 class AppGraph(context: Application) {
     val sessionStore = SessionStore(context)
     val database: VtodoDatabase = Room.databaseBuilder(
         context,
         VtodoDatabase::class.java,
         "vtodo.db",
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
     val repository = VtodoRepository(
         database,
         VtodoApi(),

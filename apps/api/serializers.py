@@ -33,6 +33,9 @@ class TaskSerializer(serializers.ModelSerializer):
         queryset=User.objects.all(), allow_null=True, required=False
     )
     assignee_name = serializers.SerializerMethodField()
+    workspace = serializers.IntegerField(source="workspace_id", read_only=True)
+    workspace_name = serializers.CharField(source="workspace.name", read_only=True)
+    workspace_kind = serializers.CharField(source="workspace.kind", read_only=True)
     # Only a live claim is shown. A lapsed one reads as unclaimed.
     claimed_by = serializers.SerializerMethodField()
     claimed_by_name = serializers.SerializerMethodField()
@@ -61,8 +64,18 @@ class TaskSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "completed_at",
+            "workspace",
+            "workspace_name",
+            "workspace_kind",
         ]
-        read_only_fields = ["created_at", "updated_at", "completed_at"]
+        read_only_fields = [
+            "created_at",
+            "updated_at",
+            "completed_at",
+            "workspace",
+            "workspace_name",
+            "workspace_kind",
+        ]
 
     def validate_assignee(self, value):
         if value is None:

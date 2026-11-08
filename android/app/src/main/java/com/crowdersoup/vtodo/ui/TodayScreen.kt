@@ -34,6 +34,7 @@ import com.crowdersoup.vtodo.R
 import com.crowdersoup.vtodo.today.dueLabel
 import com.crowdersoup.vtodo.today.openDateLabel
 import com.crowdersoup.vtodo.today.recurrenceLabel
+import com.crowdersoup.vtodo.today.workspaceLabel
 import java.time.LocalDate
 import java.util.Locale
 
@@ -119,6 +120,7 @@ private fun TodayList(state: AppUiState, today: LocalDate, viewModel: AppViewMod
                     title = task.title,
                     subtitle = dueLabel(task, today, Locale.getDefault()),
                     overdue = task.dueDate < today,
+                    workspaceName = workspaceLabel(task.workspaceKind, task.workspaceName),
                     statusName = task.statusName,
                     statusColor = task.statusColor,
                     tags = task.tags,
@@ -146,6 +148,7 @@ private fun OpenList(state: AppUiState, today: LocalDate, viewModel: AppViewMode
                     title = task.title,
                     subtitle = openDateLabel(task, today, Locale.getDefault()),
                     overdue = task.dueDate != null && task.dueDate < today,
+                    workspaceName = workspaceLabel(task.workspaceKind, task.workspaceName),
                     statusName = task.statusName,
                     statusColor = task.statusColor,
                     tags = task.tags,
@@ -175,6 +178,7 @@ private fun CheckRow(
     title: String,
     subtitle: String?,
     overdue: Boolean,
+    workspaceName: String?,
     statusName: String,
     statusColor: String,
     tags: List<String>,
@@ -206,6 +210,7 @@ private fun CheckRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                workspaceName?.let { WorkspaceBadge(it) }
                 if (statusName.isNotBlank()) {
                     StatusChip(name = statusName, colorHex = statusColor, selected = true)
                 }

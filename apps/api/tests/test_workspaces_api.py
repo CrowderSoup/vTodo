@@ -160,3 +160,73 @@ def test_shared_task_is_hidden_from_personal_calls(shared):
     client = _api(shared["member"])
 
     assert client.get(reverse("task-detail", args=[shared["task"].pk])).status_code == 404
+
+
+@pytest.mark.django_db
+def test_mine_lists_personal_tasks_and_assigned_shared_tasks(shared):
+    member = shared["member"]
+    owner = shared["owner"]
+    workspace = shared["workspace"]
+    personal = Workspace.objects.get(owner=member)
+    Task.objects.create(user=member, workspace=personal, title="Mine", status="todo")
+    Task.objects.create(user=member, workspace=personal, title="Personal done", status="done")
+    assigned = Task.objects.create(
+        user=owner, workspace=workspace, title="Assigned", status="todo", assignee=member
+    )
+    Task.objects.create(
+        user=owner, workspace=workspace, title="Assigned done", status="done", assignee=member
+    )
+    Task.objects.create(
+        user=owner, workspace=workspace, title="Owner's chore", status="todo", assignee=owner
+    )
+    stranger = User.objects.create_user()
+    elsewhere = create_shared_workspace(user=stranger, name="Elsewhere")
+    Task.objects.create(
+        user=stranger, workspace=elsewhere, title="Not a member", status="todo", assignee=member
+    )
+
+    # A workspace header must not narrow this list back to one board.
+    client = _api(member, workspace)
+    response = client.get(reverse("task-list"), {"mine": "true", "open": "true"})
+
+    assert response.status_code == 200
+    rows = {row["title"]: row for row in response.data}
+    assert set(rows) == {"Mine", "Assigned"}
+    assert rows["Assigned"]["workspace"] == workspace.pk
+    assert rows["Assigned"]["workspace_name"] == "Aaron & Azure"
+    assert rows["Assigned"]["workspace_kind"] == "shared"
+    assert rows["Mine"]["workspace"] == personal.pk
+    assert rows["Mine"]["workspace_kind"] == "personal"
+    assert assigned.pk == rows["Assigned"]["id"]
+
+    owner_rows = {
+        row["title"]: row
+        for row in _api(owner).get(reverse("task-list"), {"mine": "true", "open": "true"}).data
+    }
+    assert "Assigned" not in owner_rows
+    assert "Owner's chore" in owner_rows
+    assert "Shared task" not in owner_rows
+
+
+@pytest.mark.django_db
+def test_mine_open_uses_each_workspaces_done_status(shared):
+    member = shared["member"]
+    workspace = shared["workspace"]
+    personal = Workspace.objects.get(owner=member)
+    TaskStatus.objects.filter(workspace=workspace, slug="done").update(is_done=False)
+    Task.objects.create(user=member, workspace=personal, title="Personal done", status="done")
+    Task.objects.create(
+        user=shared["owner"],
+        workspace=workspace,
+        title="Still open there",
+        status="done",
+        assignee=member,
+    )
+
+    rows = {
+        row["title"]
+        for row in _api(member).get(reverse("task-list"), {"mine": "true", "open": "true"}).data
+    }
+
+    assert "Still open there" in rows
+    assert "Personal done" not in rows
