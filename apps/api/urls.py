@@ -8,12 +8,14 @@ from .views import (
     TaskStatusViewSet,
     TaskViewSet,
     WhoAmIView,
+    WorkspaceViewSet,
 )
 
 router = DefaultRouter()
 router.register("tasks", TaskViewSet, basename="task")
 router.register("statuses", TaskStatusViewSet, basename="taskstatus")
 router.register("comments", TaskCommentViewSet, basename="taskcomment")
+router.register("workspaces", WorkspaceViewSet, basename="workspace")
 
 urlpatterns = [
     path("auth/google/", GoogleSignInView.as_view(), name="google-sign-in"),
