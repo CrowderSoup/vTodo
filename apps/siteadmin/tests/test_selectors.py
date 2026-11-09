@@ -65,3 +65,24 @@ def test_consume_signup_slot_marks_invite_accepted():
 def test_consume_signup_slot_open_mode_does_not_touch_invites():
     SiteSettings.objects.create(pk=1, signup_mode=SiteSettings.MODE_OPEN)
     assert consume_signup_slot("nobody-invited@example.com") is True
+
+
+@pytest.mark.django_db
+def test_invite_states():
+    State = SiteInvite.State
+    invite = SiteInvite.generate("new@example.com", invited_by=None)
+    assert invite.state == State.PENDING
+    assert list(SiteInvite.objects.pending()) == [invite]
+
+    invite.accept()
+    assert invite.state == State.ACCEPTED
+    assert not SiteInvite.objects.pending().exists()
+    with pytest.raises(ValueError):
+        invite.accept()
+
+    expired = SiteInvite.generate("late@example.com", invited_by=None)
+    expired.expires_at = timezone.now() - timezone.timedelta(seconds=1)
+    expired.save(update_fields=["expires_at"])
+    assert expired.state == State.EXPIRED
+    with pytest.raises(ValueError):
+        expired.accept()

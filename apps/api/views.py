@@ -2,9 +2,7 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
 from django.urls import reverse
-from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication, TokenHasScope
 from oauth2_provider.oauth2_validators import validate_resource_as_url_prefix
@@ -26,7 +24,7 @@ from apps.accounts.google_accounts import (
     UnverifiedGoogleEmail,
     sign_in_with_google_id_token,
 )
-from apps.tasks import activity
+from apps.tasks import activity, lifecycle
 from apps.tasks.activity import source_for_request
 from apps.tasks.claims import (
     ClaimConflict,
@@ -41,7 +39,6 @@ from apps.tasks.selectors import (
     InvalidStatusError,
     default_status_slug,
     move_task,
-    visible_statuses_qs,
     visible_tasks_qs,
 )
 from apps.workspaces.access import can_delete_comment, memberships_for
@@ -100,6 +97,13 @@ class TaskStatusViewSet(viewsets.ModelViewSet):
         workspace = self.request.active_workspace
         order = TaskStatus.objects.filter(workspace=workspace).count()
         serializer.save(user=self.request.user, workspace=workspace, order=order)
+
+    def perform_update(self, serializer):
+        was_done = serializer.instance.is_done
+        with transaction.atomic():
+            status_row = serializer.save()
+            if status_row.is_done != was_done:
+                lifecycle.status_redefined(status_row)
 
     @extend_schema(
         request={"application/json": {"type": "object", "properties": {"order": {"type": "array", "items": {"type": "integer"}}}}},
@@ -166,13 +170,9 @@ class TaskViewSet(viewsets.ModelViewSet):
         elif assignee:
             raise ValidationError({"assignee": ['Use a user id, "me" or "none".']})
         if self.request.query_params.get("claimable") in ("1", "true"):
-            now = timezone.now()
-            qs = qs.filter(
-                Q(claimed_by__isnull=True) | Q(claim_expires_at__isnull=True) | Q(claim_expires_at__lte=now)
-            )
+            qs = qs.claimable()
         if self.request.query_params.get("open") in ("1", "true"):
-            done_slugs = visible_statuses_qs(self.request.user).filter(is_done=True).values("slug")
-            qs = qs.filter(is_archived=False, completed_at__isnull=True).exclude(status__in=done_slugs)
+            qs = qs.open()
         status_slug = self.request.query_params.get("status")
         if status_slug:
             qs = qs.filter(status=status_slug)
@@ -196,6 +196,7 @@ class TaskViewSet(viewsets.ModelViewSet):
             task = serializer.save(
                 user=self.request.user, workspace=workspace, order=order, **extra
             )
+            lifecycle.start(task)
             activity.record_created(task, actor=self.request.user, source=source_for_request(self.request))
 
     def perform_update(self, serializer):

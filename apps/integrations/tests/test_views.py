@@ -124,3 +124,31 @@ def test_disconnect_without_connection_is_noop(logged_in_client):
     response = client.post(reverse("integrations:google-calendar-disconnect"))
 
     assert response.status_code == 302
+
+
+@pytest.mark.django_db
+def test_callback_leaves_connection_connecting_when_calendar_creation_fails(logged_in_client, monkeypatch):
+    from apps.integrations.google_calendar.client import GoogleCalendarAPIError
+
+    client, user = logged_in_client
+    session = client.session
+    session[views.STATE_SESSION_KEY] = "expected-state"
+    session.save()
+    monkeypatch.setattr(views, "exchange_code", lambda code, redirect_uri: {"refresh_token": "rt-123"})
+
+    class FailingClient:
+        def __init__(self, connection):
+            pass
+
+        def create_calendar(self, summary):
+            raise GoogleCalendarAPIError("quota")
+
+    monkeypatch.setattr(views, "GoogleCalendarClient", FailingClient)
+
+    client.get(reverse("integrations:google-calendar-callback"), {"code": "auth-code", "state": "expected-state"})
+
+    connection = GoogleCalendarConnection.objects.get(user=user)
+    assert connection.state == GoogleCalendarConnection.State.CONNECTING
+    assert not GoogleCalendarConnection.objects.syncable().exists()
+    response = client.get(reverse("users:settings-calendar"))
+    assert "Couldn't create the vTodo calendar" in response.content.decode()

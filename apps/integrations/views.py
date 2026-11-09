@@ -64,14 +64,8 @@ class GoogleCalendarCallbackView(LoginRequiredMixin, View):
             connection, _ = GoogleCalendarConnection.objects.get_or_create(
                 user=request.user, defaults={"calendar_id": ""}
             )
-            connection.set_refresh_token(refresh_token)
-            connection.is_active = True
-            connection.last_sync_error = ""
-            connection.save(update_fields=["refresh_token_encrypted", "is_active", "last_sync_error"])
-
-            client = GoogleCalendarClient(connection)
-            connection.calendar_id = client.create_calendar("vTodo")
-            connection.save(update_fields=["calendar_id"])
+            connection.connected(refresh_token)
+            connection.calendar_created(GoogleCalendarClient(connection).create_calendar("vTodo"))
         except GoogleCalendarAPIError:
             messages.error(request, "Couldn't connect to Google Calendar. Please try again.")
             return redirect(reverse("users:settings-calendar"))

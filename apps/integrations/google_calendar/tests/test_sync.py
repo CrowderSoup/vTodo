@@ -185,3 +185,23 @@ def test_inactive_connection_is_skipped(connection, fake_client):
     sync.sync_connection(connection)
 
     assert fake_client == []
+
+
+@pytest.mark.django_db
+def test_connection_states_follow_sync_outcomes(connection, fake_client):
+    State = GoogleCalendarConnection.State
+    assert connection.state == State.HEALTHY
+
+    connection.sync_failed("timeout")
+    assert connection.state == State.FAILING
+
+    sync.sync_connection(connection)
+    connection.refresh_from_db()
+    assert connection.state == State.HEALTHY
+
+    connection.token_revoked("revoked")
+    assert connection.state == State.REVOKED
+    assert not GoogleCalendarConnection.objects.syncable().exists()
+
+    connection.connected("rt-new")
+    assert connection.state == State.CONNECTING

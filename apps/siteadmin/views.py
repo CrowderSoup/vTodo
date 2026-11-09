@@ -22,7 +22,7 @@ class AdminRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
 class DashboardView(AdminRequiredMixin, View):
     def get(self, request):
         site_settings = SiteSettings.load()
-        pending_invites = [inv for inv in SiteInvite.objects.all() if inv.is_valid]
+        pending_invites = list(SiteInvite.objects.pending())
         context = {
             "site_settings": site_settings,
             "mode_choices": SiteSettings.MODE_CHOICES,
