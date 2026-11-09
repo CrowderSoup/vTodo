@@ -29,9 +29,11 @@
           <div class="config-title"><span>vTodo calendar</span></div>
           {% if connection %}
           <div class="config-description">
-            {% if not connection.is_active %}
+            {% if connection.state == "revoked" %}
               <span class="pill pill--error">Disconnected by Google — reconnect below</span>
-            {% elif connection.last_sync_error %}
+            {% elif connection.state == "connecting" %}
+              <span class="pill pill--error">Couldn't create the vTodo calendar — disconnect and connect again</span>
+            {% elif connection.state == "failing" %}
               <span class="pill pill--error">Last sync failed: {{ connection.last_sync_error|truncatechars:80 }}</span>
             {% elif connection.last_synced_at %}
               <span class="pill">Last synced {{ connection.last_synced_at|timesince }} ago</span>

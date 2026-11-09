@@ -27,10 +27,27 @@ class SiteSettings(models.Model):
         return f"Site settings (signup: {self.signup_mode})"
 
 
+class SiteInviteQuerySet(models.QuerySet):
+    def pending(self):
+        return self.filter(accepted_at__isnull=True, expires_at__gt=timezone.now())
+
+
 class SiteInvite(models.Model):
     """A single-use, expiring invite that lets one email address create a vtodo
     account while signup_mode is invite_only. Consumed automatically the next
-    time that email completes signup (see apps.siteadmin.selectors.consume_signup_slot)."""
+    time that email completes signup (see apps.siteadmin.selectors.consume_signup_slot).
+
+    PENDING ──accept()──▶ ACCEPTED
+       │
+       └──expires_at passes──▶ EXPIRED
+
+    ACCEPTED and EXPIRED are final. Only a PENDING invite can be accepted.
+    """
+
+    class State(models.TextChoices):
+        PENDING = "pending", "Pending"
+        ACCEPTED = "accepted", "Accepted"
+        EXPIRED = "expired", "Expired"
 
     email = models.EmailField()
     invited_by = models.ForeignKey(
@@ -43,6 +60,8 @@ class SiteInvite(models.Model):
     expires_at = models.DateTimeField()
     accepted_at = models.DateTimeField(null=True, blank=True)
 
+    objects = SiteInviteQuerySet.as_manager()
+
     class Meta:
         ordering = ["-created_at"]
 
@@ -52,8 +71,19 @@ class SiteInvite(models.Model):
         return cls.objects.create(email=email, invited_by=invited_by, expires_at=expires_at)
 
     @property
-    def is_valid(self) -> bool:
-        return self.accepted_at is None and timezone.now() < self.expires_at
+    def state(self):
+        if self.accepted_at is not None:
+            return self.State.ACCEPTED
+        if timezone.now() >= self.expires_at:
+            return self.State.EXPIRED
+        return self.State.PENDING
+
+    def accept(self) -> None:
+        """PENDING -> ACCEPTED"""
+        if self.state != self.State.PENDING:
+            raise ValueError(f"Can't accept a {self.state} invite.")
+        self.accepted_at = timezone.now()
+        self.save(update_fields=["accepted_at"])
 
     def __str__(self):
         return f"Site invite for {self.email}"

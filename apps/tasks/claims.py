@@ -1,9 +1,20 @@
 """Assigning tasks, and lease-based claims on them.
 
 A claim says "I'm working on this until claim_expires_at". It is how an agent
-polling for assigned work avoids two workers picking up the same task. The
-holder renews it by claiming again before it lapses. Once it lapses anyone
-can claim the task. Claims are advisory: they do not lock the task.
+polling for assigned work avoids two workers picking up the same task.
+Claims are advisory: they do not lock the task.
+
+A task's lease is in one of three states (Task.claim_state):
+
+    UNCLAIMED ──claim──▶ HELD ──time passes──▶ LAPSED
+        ▲                │  ▲                    │
+        └────release─────┘  └─claim (anyone)─────┘
+                         │
+                         └─claim (holder) renews
+
+Releasing a LAPSED claim or completing the task (apps/tasks/lifecycle.py)
+also returns it to UNCLAIMED. Only the holder can renew a HELD claim, and
+only a person may release someone else's.
 """
 
 from datetime import timedelta
@@ -13,7 +24,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.tasks import activity
-from apps.tasks.models import Task, TaskActivity, TaskStatus
+from apps.tasks.models import ClaimState, Task, TaskActivity
 
 DEFAULT_LEASE = timedelta(minutes=15)
 MIN_LEASE = timedelta(seconds=30)
@@ -63,19 +74,15 @@ def assignable_users(workspace):
     ).order_by("kind", "display_name", "pk")
 
 
-def _claimable(now):
-    return Q(claimed_by__isnull=True) | Q(claim_expires_at__isnull=True) | Q(claim_expires_at__lte=now)
-
-
 def claim_task(task, user, *, lease=DEFAULT_LEASE, source="api"):
     """Claim `task` for `user`, or renew their claim. Raises ClaimConflict
     while someone else's claim is live."""
     now = timezone.now()
     renewing = task.active_claim_holder_id(now) == user.pk
     with transaction.atomic():
+        row = Task.objects.filter(pk=task.pk)
         updated = (
-            Task.objects.filter(pk=task.pk)
-            .filter(_claimable(now) | Q(claimed_by=user))
+            (row.claimable(now) | row.filter(claimed_by=user))
             .update(claimed_by=user, claim_expires_at=now + lease)
         )
         task.refresh_from_db(fields=["claimed_by", "claim_expires_at"])
@@ -90,27 +97,22 @@ def release_task(task, user, *, source="api"):
     """Drop the claim on `task`. A person may release anyone's claim. An agent
     may only release its own."""
     now = timezone.now()
-    holder_id = task.active_claim_holder_id(now)
-    if holder_id is not None and holder_id != user.pk and user.is_agent:
+    held = task.claim_state(now) == ClaimState.HELD
+    if held and task.claimed_by_id != user.pk and user.is_agent:
         raise ClaimConflict(task)
     with transaction.atomic():
         Task.objects.filter(pk=task.pk).update(claimed_by=None, claim_expires_at=None)
         task.claimed_by = None
         task.claim_expires_at = None
-        if holder_id is not None:
+        if held:
             activity.record(task, TaskActivity.RELEASED, actor=user, source=source)
     return task
 
 
 def open_assigned_tasks(user, workspace):
     """Tasks assigned to `user` that are still to do, in board order."""
-    done_slugs = TaskStatus.objects.filter(workspace=workspace, is_done=True).values("slug")
-    return (
-        Task.objects.filter(
-            workspace=workspace, assignee=user, is_archived=False, completed_at__isnull=True
-        )
-        .exclude(status__in=done_slugs)
-        .order_by("order", "created_at", "pk")
+    return Task.objects.open().filter(workspace=workspace, assignee=user).order_by(
+        "order", "created_at", "pk"
     )
 
 
@@ -119,7 +121,7 @@ def claim_next_task(user, workspace, *, lease=DEFAULT_LEASE, source="api"):
     return None. Tasks `user` already holds are skipped, so a dispatcher that
     polls this gets each task once."""
     now = timezone.now()
-    candidates = open_assigned_tasks(user, workspace).filter(_claimable(now))
+    candidates = open_assigned_tasks(user, workspace).claimable(now)
     for task in candidates[:CLAIM_NEXT_ATTEMPTS]:
         try:
             return claim_task(task, user, lease=lease, source=source)

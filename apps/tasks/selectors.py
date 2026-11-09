@@ -82,44 +82,24 @@ def resolve_status_for_task(task):
 
 
 def move_task(user, task, new_status_slug, *, source="web"):
-    """Move a task to a new status, recording completion state.
-
-    Tracks the status a task was completed from in `previous_status` (cleared on
-    any move back out) so reopening a task can restore the column it came from
-    instead of the board's generic active status. Moving between two is_done
-    statuses (e.g. Done -> Archived) leaves completed_at/previous_status alone,
-    since the task never actually left the completed state.
+    """Move a task to a new status, completing or reopening it as the status
+    implies (see apps/tasks/lifecycle.py). Completing a recurring task spawns
+    its next occurrence, set on task.spawned_recurrence.
     """
-    task_statuses = TaskStatus.objects.filter(workspace_id=task.workspace_id)
-    valid_slugs = set(task_statuses.values_list("slug", flat=True))
-    if new_status_slug not in valid_slugs:
+    from apps.tasks import activity, lifecycle
+    from apps.tasks.models import TaskActivity
+
+    target = TaskStatus.objects.filter(workspace_id=task.workspace_id, slug=new_status_slug).first()
+    if target is None:
         raise InvalidStatusError(f"{new_status_slug!r} is not a valid status for this task.")
 
     previous_status = task.status
-    task.status = new_status_slug
-    is_done = task_statuses.filter(slug=new_status_slug, is_done=True).exists()
-    was_already_done = task.completed_at is not None
-    update_fields = ["status", "completed_at", "previous_status", "updated_at"]
-
-    if is_done:
-        if not was_already_done:
-            task.completed_at = timezone.now()
-            task.previous_status = previous_status
-        # Finished work needs no one holding it.
-        task.claimed_by = None
-        task.claim_expires_at = None
-        update_fields += ["claimed_by", "claim_expires_at"]
-    else:
-        task.completed_at = None
-        task.previous_status = ""
-
-    from apps.tasks import activity
-    from apps.tasks.models import TaskActivity
+    transition = lifecycle.enter_status(task, new_status_slug, to_done=target.is_done)
 
     # The move, the spawned recurrence and their history rows land together or
     # not at all.
     with transaction.atomic():
-        task.save(update_fields=update_fields)
+        task.save(update_fields=lifecycle.ENTER_STATUS_FIELDS + ["updated_at"])
 
         if previous_status != new_status_slug:
             activity.record(
@@ -128,7 +108,7 @@ def move_task(user, task, new_status_slug, *, source="web"):
             )
 
         task.spawned_recurrence = None
-        if is_done and not was_already_done:
+        if transition is lifecycle.Transition.COMPLETE:
             task.spawned_recurrence = task.spawn_recurrence(
                 completion_date=timezone.localdate(task.completed_at)
             )

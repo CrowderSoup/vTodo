@@ -22,9 +22,7 @@ def user_tasks_qs(user):
 
 
 def _eligible_tasks_qs(user):
-    return user_tasks_qs(user).filter(
-        due_date__isnull=False, is_archived=False, completed_at__isnull=True,
-    )
+    return user_tasks_qs(user).open().filter(due_date__isnull=False)
 
 
 def _task_start_end(task):
@@ -120,7 +118,7 @@ def sync_connection(connection):
     """Reconcile one user's vTodo calendar. Raises on failure so the caller (the
     Celery task) can isolate failures per-connection; also records the error on
     the connection itself so it's visible in the settings UI."""
-    if not connection.is_active:
+    if connection.state not in (connection.State.HEALTHY, connection.State.FAILING):
         return
 
     client = GoogleCalendarClient(connection)
@@ -130,15 +128,10 @@ def sync_connection(connection):
         linked_task_ids = _reconcile_linked_tasks(connection, client, eligible_by_id)
         _push_new_tasks(connection, client, eligible_by_id, linked_task_ids)
     except GoogleCalendarAuthError as exc:
-        connection.is_active = False
-        connection.last_sync_error = str(exc)
-        connection.save(update_fields=["is_active", "last_sync_error"])
+        connection.token_revoked(exc)
         raise
     except GoogleCalendarAPIError as exc:
-        connection.last_sync_error = str(exc)
-        connection.save(update_fields=["last_sync_error"])
+        connection.sync_failed(exc)
         raise
 
-    connection.last_synced_at = dj_timezone.now()
-    connection.last_sync_error = ""
-    connection.save(update_fields=["last_synced_at", "last_sync_error"])
+    connection.synced()

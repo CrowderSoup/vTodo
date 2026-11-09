@@ -52,6 +52,54 @@ class TaskStatus(models.Model):
         super().save(*args, **kwargs)
 
 
+class TaskState(models.TextChoices):
+    """Where a task is in its lifecycle. See apps/tasks/lifecycle.py."""
+
+    OPEN = "open", "Open"
+    DONE = "done", "Done"
+    ARCHIVED = "archived", "Archived"
+
+
+class ClaimState(models.TextChoices):
+    """Where a task's lease is. See apps/tasks/claims.py."""
+
+    UNCLAIMED = "unclaimed", "Unclaimed"
+    HELD = "held", "Held"
+    LAPSED = "lapsed", "Lapsed"
+
+
+class TaskQuerySet(models.QuerySet):
+    def in_state(self, state):
+        if state == TaskState.ARCHIVED:
+            return self.filter(is_archived=True)
+        qs = self.filter(is_archived=False, completed_at__isnull=(state == TaskState.OPEN))
+        if state == TaskState.OPEN:
+            # lifecycle.py keeps completed_at in step with the status, but a
+            # raw ORM write can still leave a task in a done column without
+            # it. Such a task is not open.
+            in_done_status = TaskStatus.objects.filter(
+                workspace_id=models.OuterRef("workspace_id"),
+                slug=models.OuterRef("status"),
+                is_done=True,
+            )
+            qs = qs.exclude(models.Exists(in_done_status))
+        return qs
+
+    def open(self):
+        return self.in_state(TaskState.OPEN)
+
+    def claimable(self, now=None):
+        """Tasks nobody holds: never claimed, released, or lapsed."""
+        from django.utils import timezone
+
+        now = now or timezone.now()
+        return self.filter(
+            models.Q(claimed_by__isnull=True)
+            | models.Q(claim_expires_at__isnull=True)
+            | models.Q(claim_expires_at__lte=now)
+        )
+
+
 class Task(models.Model):
     # Who created the row. The workspace owns it, so it outlives this person.
     user = models.ForeignKey(
@@ -117,7 +165,11 @@ class Task(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Set exactly while the task sits in a done status. Only
+    # apps/tasks/lifecycle.py writes it.
     completed_at = models.DateTimeField(null=True, blank=True)
+
+    objects = TaskQuerySet.as_manager()
 
     class Meta:
         ordering = ["order", "created_at"]
@@ -125,13 +177,24 @@ class Task(models.Model):
     def __str__(self):
         return self.title
 
-    def active_claim_holder_id(self, now=None):
-        """Who holds an unexpired claim on this task, or None."""
+    @property
+    def state(self):
+        if self.is_archived:
+            return TaskState.ARCHIVED
+        return TaskState.DONE if self.completed_at else TaskState.OPEN
+
+    def claim_state(self, now=None):
         from django.utils import timezone
 
         if self.claimed_by_id is None or self.claim_expires_at is None:
-            return None
+            return ClaimState.UNCLAIMED
         if self.claim_expires_at <= (now or timezone.now()):
+            return ClaimState.LAPSED
+        return ClaimState.HELD
+
+    def active_claim_holder_id(self, now=None):
+        """Who holds an unexpired claim on this task, or None."""
+        if self.claim_state(now) != ClaimState.HELD:
             return None
         return self.claimed_by_id
 
@@ -145,13 +208,11 @@ class Task(models.Model):
         if not self.recurrence_days:
             return None
 
-        open_sibling = Task.objects.filter(
+        open_sibling = Task.objects.open().filter(
             workspace_id=self.workspace_id,
             title=self.title,
             recurrence_days=self.recurrence_days,
             recurrence_from=self.recurrence_from,
-            is_archived=False,
-            completed_at__isnull=True,
         ).exclude(pk=self.pk)
         if open_sibling.exists():
             return None

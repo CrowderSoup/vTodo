@@ -1,5 +1,4 @@
 from django.db import transaction
-from django.utils import timezone
 
 from .models import SiteInvite, SiteSettings
 
@@ -13,9 +12,7 @@ def signup_allowed(email: str) -> bool:
         return True
     if mode == SiteSettings.MODE_PRIVATE:
         return False
-    return SiteInvite.objects.filter(
-        email__iexact=email, accepted_at__isnull=True, expires_at__gt=timezone.now()
-    ).exists()
+    return SiteInvite.objects.pending().filter(email__iexact=email).exists()
 
 
 def consume_signup_slot(email: str) -> bool:
@@ -29,13 +26,8 @@ def consume_signup_slot(email: str) -> bool:
         return False
 
     with transaction.atomic():
-        invite = (
-            SiteInvite.objects.select_for_update()
-            .filter(email__iexact=email, accepted_at__isnull=True, expires_at__gt=timezone.now())
-            .first()
-        )
+        invite = SiteInvite.objects.select_for_update().pending().filter(email__iexact=email).first()
         if not invite:
             return False
-        invite.accepted_at = timezone.now()
-        invite.save(update_fields=["accepted_at"])
+        invite.accept()
         return True

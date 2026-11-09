@@ -34,13 +34,38 @@ class ExternalLink(models.Model):
         return f"{self.provider}:{self.external_id} -> {self.task}"
 
 
+class GoogleCalendarConnectionQuerySet(models.QuerySet):
+    def syncable(self):
+        """Connections the periodic sync should run: HEALTHY or FAILING."""
+        return self.filter(is_active=True).exclude(calendar_id="")
+
+
 class GoogleCalendarConnection(models.Model):
     """A user's connection to their own dedicated "vTodo" Google Calendar.
 
     Google's access tokens are short-lived (~1hr) and cheap to mint, so only the
     refresh token is persisted -- a fresh access token is fetched per sync run
     instead of caching one across requests.
+
+    A connection is in one of four states (`state`):
+
+        CONNECTING ──calendar_created──▶ HEALTHY ◀──synced── FAILING
+                                           │  ──sync_failed──▶  │
+                                           └──────┬─────────────┘
+                                                  │ token_revoked
+                                                  ▼
+                                               REVOKED ──connected──▶ CONNECTING
+
+    CONNECTING has a refresh token but no calendar yet. If creating the
+    calendar fails it stays there, and sync skips it until the user connects
+    again. Disconnecting deletes the row from any state.
     """
+
+    class State(models.TextChoices):
+        CONNECTING = "connecting", "Connecting"
+        HEALTHY = "healthy", "Healthy"
+        FAILING = "failing", "Failing"
+        REVOKED = "revoked", "Revoked"
 
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -55,8 +80,52 @@ class GoogleCalendarConnection(models.Model):
     last_synced_at = models.DateTimeField(null=True, blank=True)
     last_sync_error = models.TextField(blank=True, default="")
 
+    objects = GoogleCalendarConnectionQuerySet.as_manager()
+
     def __str__(self):
         return f"Google Calendar for {self.user}"
+
+    @property
+    def state(self):
+        if not self.is_active:
+            return self.State.REVOKED
+        if not self.calendar_id:
+            return self.State.CONNECTING
+        if self.last_sync_error:
+            return self.State.FAILING
+        return self.State.HEALTHY
+
+    def connected(self, raw_refresh_token: str) -> None:
+        """Google granted access (again). -> CONNECTING"""
+        self.set_refresh_token(raw_refresh_token)
+        self.is_active = True
+        self.calendar_id = ""
+        self.last_sync_error = ""
+        self.save(update_fields=["refresh_token_encrypted", "is_active", "calendar_id", "last_sync_error"])
+
+    def calendar_created(self, calendar_id: str) -> None:
+        """CONNECTING -> HEALTHY"""
+        self.calendar_id = calendar_id
+        self.save(update_fields=["calendar_id"])
+
+    def synced(self) -> None:
+        """HEALTHY or FAILING -> HEALTHY"""
+        from django.utils import timezone
+
+        self.last_synced_at = timezone.now()
+        self.last_sync_error = ""
+        self.save(update_fields=["last_synced_at", "last_sync_error"])
+
+    def sync_failed(self, error) -> None:
+        """HEALTHY or FAILING -> FAILING. Retried next cycle."""
+        self.last_sync_error = str(error)
+        self.save(update_fields=["last_sync_error"])
+
+    def token_revoked(self, error) -> None:
+        """Google rejected the refresh token for good. -> REVOKED"""
+        self.is_active = False
+        self.last_sync_error = str(error)
+        self.save(update_fields=["is_active", "last_sync_error"])
 
     def set_refresh_token(self, raw_refresh_token: str) -> None:
         self.refresh_token_encrypted = crypto.encrypt(raw_refresh_token)

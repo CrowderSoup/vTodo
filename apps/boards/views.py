@@ -14,9 +14,9 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 
-from apps.tasks import activity
+from apps.tasks import activity, lifecycle
 from apps.tasks.claims import assignable_users
-from apps.tasks.models import Task, TaskActivity, TaskComment, TaskStatus
+from apps.tasks.models import Task, TaskActivity, TaskComment, TaskState, TaskStatus
 from apps.workspaces.access import (
     active_workspace,
     can_delete_comment,
@@ -623,14 +623,14 @@ class LaneHideView(LoginRequiredMixin, View):
 
 class BoardArchiveDoneView(LoginRequiredMixin, View):
     """Archive every done task on the board, regardless of which lane (status or
-    custom column) it happens to be displayed in. completed_at (not the done-status
-    slug) is the source of truth, since a board can have more than one is_done
-    status (e.g. "Done" and "Archived") -- see move_task."""
+    custom column) it happens to be displayed in. A board can have more than one
+    is_done status (e.g. "Done" and "Shipped"), so this goes by lifecycle state,
+    not by status slug -- see apps/tasks/lifecycle.py."""
 
     def post(self, request):
         board = _board_from_post(request)
         require_write_on(request.user, board.workspace_id)
-        to_archive = board_tasks_qs(board).filter(is_archived=False, completed_at__isnull=False)
+        to_archive = board_tasks_qs(board).in_state(TaskState.DONE)
         with transaction.atomic():
             archived = list(to_archive)
             to_archive.update(is_archived=True)
@@ -735,6 +735,7 @@ class TaskCreateView(LoginRequiredMixin, View):
                 title=title,
                 status=status,
             )
+            lifecycle.start(task)
             activity.record_created(task, actor=request.user, source=TaskActivity.SOURCE_WEB)
         return render(request, "partials/task_card.html", _task_render_context(request.user, task))
 
@@ -935,6 +936,7 @@ class TaskPanelCreateView(LoginRequiredMixin, View):
                 recurrence_from=recurrence_from,
                 assignee=assignee,
             )
+            lifecycle.start(task)
             activity.record_created(task, actor=request.user, source=TaskActivity.SOURCE_WEB)
 
         return _render_task_panel_with_list_update(request, request.user, task, board, request.session)

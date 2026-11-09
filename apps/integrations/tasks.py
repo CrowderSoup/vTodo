@@ -11,7 +11,7 @@ def sync_all_google_calendar_connections():
     from apps.integrations.google_calendar.sync import sync_connection
     from apps.integrations.models import GoogleCalendarConnection
 
-    for connection in GoogleCalendarConnection.objects.filter(is_active=True):
+    for connection in GoogleCalendarConnection.objects.syncable():
         try:
             sync_connection(connection)
         except GoogleCalendarAuthError:
