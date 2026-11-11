@@ -136,6 +136,12 @@ OAUTH2_PROVIDER = {
     "REFRESH_TOKEN_EXPIRE_SECONDS": 60 * 60 * 24 * 30,
     "ROTATE_REFRESH_TOKEN": True,
     "REFRESH_TOKEN_REUSE_PROTECTION": True,
+    # Without a grace window, reuse protection treats any second use of a
+    # just-rotated refresh token as theft and revokes the whole session. MCP
+    # clients do that routinely: sessions sharing one connector all refresh
+    # when the hourly access token expires, and a client retries a refresh
+    # whose response it lost. Older replays are still caught.
+    "REFRESH_TOKEN_GRACE_PERIOD_SECONDS": 120,
     # MCP clients (e.g. Claude) self-register via RFC 7591 before any user is
     # logged in, so registration can't require an authenticated session —
     # this is the toolkit's "open registration" permission class.
