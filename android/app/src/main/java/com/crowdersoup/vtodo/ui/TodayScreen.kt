@@ -123,6 +123,7 @@ private fun TodayList(state: AppUiState, today: LocalDate, viewModel: AppViewMod
                     statusColor = task.statusColor,
                     tags = task.tags,
                     recurrenceDays = task.recurrenceDays,
+                    workspaceName = task.workspaceName,
                     enabled = task.id !in state.busy,
                     onComplete = { viewModel.complete(task.id) },
                     onOpen = { viewModel.showTask(task.id) },
@@ -150,6 +151,7 @@ private fun OpenList(state: AppUiState, today: LocalDate, viewModel: AppViewMode
                     statusColor = task.statusColor,
                     tags = task.tags,
                     recurrenceDays = task.recurrenceDays,
+                    workspaceName = task.workspaceName,
                     enabled = task.id !in state.busy,
                     onComplete = { viewModel.complete(task.id) },
                     onOpen = { viewModel.showTask(task.id) },
@@ -179,6 +181,7 @@ private fun CheckRow(
     statusColor: String,
     tags: List<String>,
     recurrenceDays: Int?,
+    workspaceName: String,
     enabled: Boolean,
     onComplete: () -> Unit,
     onOpen: () -> Unit,
@@ -206,6 +209,7 @@ private fun CheckRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                if (workspaceName.isNotBlank()) MetaChip(workspaceName)
                 if (statusName.isNotBlank()) {
                     StatusChip(name = statusName, colorHex = statusColor, selected = true)
                 }

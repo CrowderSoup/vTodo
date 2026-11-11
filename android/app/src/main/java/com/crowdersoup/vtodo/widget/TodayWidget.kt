@@ -191,6 +191,7 @@ private fun TaskRow(task: TodayTask, today: LocalDate) {
                 style = TextStyle(color = labelColor, fontSize = 12.sp),
             )
             val meta = listOfNotNull(
+                task.workspaceName.takeIf { it.isNotBlank() },
                 task.statusName.takeIf { it.isNotBlank() },
                 task.tags.takeIf { it.isNotEmpty() }?.joinToString(", "),
                 task.recurrenceDays?.takeIf { it >= 1 }?.let(::recurrenceLabel),
