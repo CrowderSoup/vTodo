@@ -31,19 +31,28 @@ data class TaskEntity(
     val tags: String,
     val recurrenceDays: Int? = null,
     val recurrenceFrom: String? = null,
+    // 0 for rows synced before the app knew about workspaces: those are all
+    // personal, and requests for them go out without a workspace header.
+    val workspaceId: Long = 0,
+    // Blank for the personal workspace.
+    val workspaceName: String = "",
 )
 
-@Entity(tableName = "statuses")
+@Entity(tableName = "statuses", primaryKeys = ["workspaceId", "slug"])
 data class StatusEntity(
-    @PrimaryKey val slug: String,
+    val slug: String,
     val id: Long,
     val name: String,
     val sortOrder: Int,
     val isDone: Boolean,
     val color: String,
+    val workspaceId: Long = 0,
 )
 
-fun TaskDto.toEntity() = TaskEntity(
+/** The X-Workspace-Id to send for a row, or null for the personal default. */
+fun workspaceHeader(workspaceId: Long): Long? = workspaceId.takeIf { it > 0 }
+
+fun TaskDto.toEntity(workspace: WorkspaceDto) = TaskEntity(
     id = id,
     title = title,
     status = status,
@@ -56,6 +65,8 @@ fun TaskDto.toEntity() = TaskEntity(
     tags = tagsToJson(tags),
     recurrenceDays = recurrenceDays,
     recurrenceFrom = recurrenceFrom.ifBlank { RECURRENCE_FROM_COMPLETION },
+    workspaceId = workspace.id,
+    workspaceName = if (workspace.isPersonal) "" else workspace.name,
 )
 
 fun TaskEntity.toRecord() = TaskRecord(
@@ -71,15 +82,18 @@ fun TaskEntity.toRecord() = TaskRecord(
     tags = tagsFromJson(tags),
     recurrenceDays = recurrenceDays,
     recurrenceFrom = normalizeRecurrenceFrom(recurrenceFrom.orEmpty()),
+    workspaceId = workspaceId,
+    workspaceName = workspaceName,
 )
 
-fun StatusDto.toEntity() = StatusEntity(
+fun StatusDto.toEntity(workspaceId: Long) = StatusEntity(
     slug = slug,
     id = id,
     name = name,
     sortOrder = order,
     isDone = isDone,
     color = color,
+    workspaceId = workspaceId,
 )
 
 fun StatusEntity.toRecord() = StatusRecord(
@@ -88,6 +102,7 @@ fun StatusEntity.toRecord() = StatusRecord(
     sortOrder = sortOrder,
     isDone = isDone,
     color = color,
+    workspaceId = workspaceId,
 )
 
 @Dao
@@ -140,7 +155,7 @@ internal fun tagsFromJson(raw: String): List<String> {
 
 @Database(
     entities = [TaskEntity::class, StatusEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class VtodoDatabase : RoomDatabase() {

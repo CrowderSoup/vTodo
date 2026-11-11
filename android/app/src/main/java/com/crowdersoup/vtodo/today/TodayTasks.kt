@@ -21,6 +21,9 @@ data class TaskRecord(
     val tags: List<String> = emptyList(),
     val recurrenceDays: Int? = null,
     val recurrenceFrom: String = RECURRENCE_FROM_COMPLETION,
+    val workspaceId: Long = 0,
+    // Blank for the personal workspace; shared ones are labelled in the UI.
+    val workspaceName: String = "",
 )
 
 data class StatusRecord(
@@ -29,6 +32,8 @@ data class StatusRecord(
     val sortOrder: Int,
     val isDone: Boolean,
     val color: String = "",
+    // Slugs are only unique within a workspace.
+    val workspaceId: Long = 0,
 )
 
 data class OpenTask(
@@ -44,6 +49,8 @@ data class OpenTask(
     val tags: List<String> = emptyList(),
     val recurrenceDays: Int? = null,
     val recurrenceFrom: String = RECURRENCE_FROM_COMPLETION,
+    val workspaceId: Long = 0,
+    val workspaceName: String = "",
 )
 
 data class TodayTask(
@@ -56,12 +63,19 @@ data class TodayTask(
     val statusColor: String = "",
     val tags: List<String> = emptyList(),
     val recurrenceDays: Int? = null,
+    val workspaceName: String = "",
 )
+
+/** The task's status in its own workspace, if this phone has it. */
+fun statusOf(task: TaskRecord, statuses: List<StatusRecord>): StatusRecord? =
+    statuses.firstOrNull { it.workspaceId == task.workspaceId && it.slug == task.status }
+
+private fun isClosed(task: TaskRecord, statuses: List<StatusRecord>): Boolean =
+    task.isArchived || !task.completedAt.isNullOrBlank() || statusOf(task, statuses)?.isDone == true
 
 object TodayTasks {
     fun select(tasks: List<TaskRecord>, statuses: List<StatusRecord>, today: LocalDate): List<TodayTask> {
-        val doneSlugs = statuses.filter { it.isDone }.map { it.slug }.toSet()
-        return tasks.mapNotNull { task -> toTodayTask(task, statuses, doneSlugs, today) }
+        return tasks.mapNotNull { task -> toTodayTask(task, statuses, today) }
             .sortedWith(
                 compareBy<TodayTask> { it.dueDate }
                     .thenBy { it.dueTime != null }
@@ -74,18 +88,15 @@ object TodayTasks {
     private fun toTodayTask(
         task: TaskRecord,
         statuses: List<StatusRecord>,
-        doneSlugs: Set<String>,
         today: LocalDate,
     ): TodayTask? {
-        if (task.isArchived || !task.completedAt.isNullOrBlank() || task.status in doneSlugs) {
-            return null
-        }
+        if (isClosed(task, statuses)) return null
         val due = task.dueDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return null
         if (due > today) return null
         val time = task.dueTime?.takeIf { it.isNotBlank() }?.let {
             runCatching { LocalTime.parse(it) }.getOrNull()
         }
-        val status = statuses.firstOrNull { it.slug == task.status }
+        val status = statusOf(task, statuses)
         return TodayTask(
             id = task.id,
             title = task.title,
@@ -96,24 +107,20 @@ object TodayTasks {
             statusColor = status?.color.orEmpty(),
             tags = task.tags,
             recurrenceDays = task.recurrenceDays?.takeIf { it >= 1 },
+            workspaceName = task.workspaceName,
         )
     }
 }
 
 object OpenTasks {
     fun select(tasks: List<TaskRecord>, statuses: List<StatusRecord>): List<OpenTask> {
-        val done = statuses.filter { it.isDone }.map { it.slug }.toSet()
         return tasks.mapNotNull { task ->
-            if (task.isArchived || !task.completedAt.isNullOrBlank() || task.status in done) {
-                null
-            } else {
-                from(task, statuses)
-            }
+            if (isClosed(task, statuses)) null else from(task, statuses)
         }.sortedWith(openOrder)
     }
 
     fun from(task: TaskRecord, statuses: List<StatusRecord>): OpenTask {
-        val status = statuses.firstOrNull { it.slug == task.status }
+        val status = statusOf(task, statuses)
         return OpenTask(
             id = task.id,
             title = task.title,
@@ -127,6 +134,8 @@ object OpenTasks {
             tags = task.tags,
             recurrenceDays = task.recurrenceDays?.takeIf { it >= 1 },
             recurrenceFrom = normalizeRecurrenceFrom(task.recurrenceFrom),
+            workspaceId = task.workspaceId,
+            workspaceName = task.workspaceName,
         )
     }
 

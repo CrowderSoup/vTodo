@@ -47,6 +47,9 @@ data class TaskDraft(
     val tags: List<String>,
     val recurrenceDays: String = "",
     val recurrenceFrom: String = RECURRENCE_FROM_COMPLETION,
+    val workspaceId: Long = 0,
+    // Blank for the personal workspace.
+    val workspaceName: String = "",
     // The task as the phone last saw it when this draft was opened. Saving
     // sends only what differs from it.
     val baseline: TaskWrite,
@@ -446,6 +449,8 @@ private fun OpenTask.toDraft() = TaskDraft(
     tags = tags,
     recurrenceDays = recurrenceDays?.toString().orEmpty(),
     recurrenceFrom = normalizeRecurrenceFrom(recurrenceFrom),
+    workspaceId = workspaceId,
+    workspaceName = workspaceName,
     baseline = TaskWrite(
         title = title,
         notes = notes,

@@ -74,11 +74,14 @@ fun TaskDetailScreen(state: AppUiState, viewModel: AppViewModel) {
             }
             Text(text = draft.title, style = MaterialTheme.typography.headlineSmall)
             val repeatDays = draft.recurrenceDays.toIntOrNull()?.takeIf { it >= 1 }
-            if (due != null || repeatDays != null) {
+            if (draft.workspaceName.isNotBlank() || due != null || repeatDays != null) {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    if (draft.workspaceName.isNotBlank()) {
+                        MetaChip(text = draft.workspaceName)
+                    }
                     if (due != null) {
                         MetaChip(
                             text = dueChipLabel(due, draft.dueTime, today, Locale.getDefault()),
@@ -92,7 +95,7 @@ fun TaskDetailScreen(state: AppUiState, viewModel: AppViewModel) {
             }
             SectionLabel(stringResource(R.string.status))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                state.statuses.forEach { item ->
+                state.statuses.filter { it.workspaceId == draft.workspaceId }.forEach { item ->
                     StatusChip(
                         name = item.name.ifBlank { item.slug },
                         colorHex = item.color,

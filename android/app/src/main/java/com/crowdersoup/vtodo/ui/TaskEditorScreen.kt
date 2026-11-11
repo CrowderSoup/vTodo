@@ -147,7 +147,7 @@ fun TaskEditorScreen(state: AppUiState, viewModel: AppViewModel) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    state.statuses.forEach { status ->
+                    state.statuses.filter { it.workspaceId == draft.workspaceId }.forEach { status ->
                         StatusChip(
                             name = status.name.ifBlank { status.slug },
                             colorHex = status.color,

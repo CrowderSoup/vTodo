@@ -155,7 +155,7 @@ class VtodoRepository(
         val changes = taskPayload(body, baseline.toBody())
         return attempt {
             withSession { session ->
-                if (changes.isNotEmpty()) api.patchTask(session, taskId, changes)
+                if (changes.isNotEmpty()) api.patchTask(session, taskId, changes, workspaceOf(taskId))
                 refreshAfterWrite(session)
             }
         }
@@ -163,14 +163,15 @@ class VtodoRepository(
 
     suspend fun deleteTask(taskId: Long): Result<Unit> = attempt {
         withSession { session ->
-            api.deleteTask(session, taskId)
+            api.deleteTask(session, taskId, workspaceOf(taskId))
             refreshAfterWrite(session)
         }
     }
 
     suspend fun complete(taskId: Long): Result<Unit> {
+        val workspaceId = database.taskDao().get(taskId)?.workspaceId ?: 0
         val done = database.statusDao().all()
-            .filter { it.isDone }
+            .filter { it.isDone && it.workspaceId == workspaceId }
             .minByOrNull { it.sortOrder }
             ?: return Result.failure(IllegalStateException("Add a completed status on the website first."))
         return move(taskId, done.slug)
@@ -180,10 +181,12 @@ class VtodoRepository(
         var previous: TaskEntity? = null
         val result = attempt {
             withSession { session ->
-                val status = database.statusDao().all().firstOrNull { it.slug == statusSlug }
-                    ?: throw IllegalStateException("That status is not on this phone yet. Refresh and try again.")
                 previous = database.taskDao().get(taskId)
                 val existing = previous
+                val workspaceId = existing?.workspaceId ?: 0
+                val status = database.statusDao().all()
+                    .firstOrNull { it.workspaceId == workspaceId && it.slug == statusSlug }
+                    ?: throw IllegalStateException("That status is not on this phone yet. Refresh and try again.")
                 if (existing != null) {
                     val completedAt = if (status.isDone) {
                         existing.completedAt ?: Instant.now().toString()
@@ -192,7 +195,7 @@ class VtodoRepository(
                     }
                     database.taskDao().updateStatus(taskId, status.slug, completedAt)
                 }
-                api.moveTask(session, taskId, status.slug)
+                api.moveTask(session, taskId, status.slug, workspaceHeader(workspaceId))
                 refreshAfterWrite(session)
             }
         }
@@ -298,14 +301,29 @@ class VtodoRepository(
         )
     }
 
+    private suspend fun workspaceOf(taskId: Long): Long? =
+        workspaceHeader(database.taskDao().get(taskId)?.workspaceId ?: 0)
+
+    /**
+     * Every open task in the personal workspace, plus the ones assigned to
+     * this user in each shared workspace. Everything is fetched before the
+     * tables are replaced, so a failure part way leaves the old copy.
+     */
     private suspend fun pull(session: Session) {
-        val tasks = api.fetchTasks(session)
-        val statuses = api.fetchStatuses(session)
+        val tasks = ArrayList<TaskEntity>()
+        val statuses = ArrayList<StatusEntity>()
+        for (workspace in api.fetchWorkspaces(session)) {
+            val fetched = api.fetchTasks(session, workspace.id, assignedToMe = !workspace.isPersonal)
+            // Nothing of ours there: its statuses would only clutter the phone.
+            if (fetched.isEmpty() && !workspace.isPersonal) continue
+            tasks += fetched.map { it.toEntity(workspace) }
+            statuses += api.fetchStatuses(session, workspace.id).map { it.toEntity(workspace.id) }
+        }
         database.withTransaction {
             database.taskDao().clear()
             database.statusDao().clear()
-            database.taskDao().insertAll(tasks.map { it.toEntity() })
-            database.statusDao().insertAll(statuses.map { it.toEntity() })
+            database.taskDao().insertAll(tasks)
+            database.statusDao().insertAll(statuses)
         }
     }
 

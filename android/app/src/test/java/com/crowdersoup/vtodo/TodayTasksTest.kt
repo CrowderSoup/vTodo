@@ -171,6 +171,32 @@ class TodayTasksTest {
         assertEquals("due_date", openTask.recurrenceFrom)
     }
 
+    @Test
+    fun statusesAreMatchedWithinTheTasksWorkspace() {
+        // Both workspaces use the slug "review"; only the shared one counts it as done.
+        val statuses = listOf(
+            StatusRecord("review", "Review", 0, isDone = false, color = "#111111", workspaceId = 1),
+            StatusRecord("review", "Shipped", 0, isDone = true, color = "#222222", workspaceId = 2),
+        )
+        val tasks = listOf(
+            record(1, "Mine", dueDate = "2026-10-23", status = "review").copy(workspaceId = 1),
+            record(2, "Shared done", dueDate = "2026-10-23", status = "review")
+                .copy(workspaceId = 2, workspaceName = "CPU"),
+            record(3, "Shared open", dueDate = "2026-10-23", status = "todo")
+                .copy(workspaceId = 2, workspaceName = "CPU"),
+        )
+
+        val selected = TodayTasks.select(tasks, statuses, today)
+
+        assertEquals(listOf(1L, 3L), selected.map { it.id })
+        assertEquals("Review", selected[0].statusName)
+        assertEquals("", selected[0].workspaceName)
+        assertEquals("CPU", selected[1].workspaceName)
+        val open = OpenTasks.select(tasks, statuses)
+        assertEquals(listOf(1L, 3L), open.map { it.id })
+        assertEquals(2L, open.single { it.id == 3L }.workspaceId)
+    }
+
     private fun record(
         id: Long,
         title: String,
