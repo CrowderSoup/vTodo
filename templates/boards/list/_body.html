@@ -1,0 +1,82 @@
+<div class="list-toolbar">
+  <form class="list-layout-form"
+        hx-post="{% url 'boards:list-layout' %}"
+        hx-target="#task-list-content"
+        hx-swap="innerHTML"
+        hx-trigger="change, submit">
+    <input type="hidden" name="board_id" value="{{ board.pk }}">
+    <label class="list-control">
+      <span class="list-control-label">Group by</span>
+      <select name="group" aria-label="Group by">
+        {% for value, label in group_options %}
+        <option value="{{ value }}" {% if layout.group == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="list-control">
+      <span class="list-control-label">Sort by</span>
+      <select name="sort" aria-label="Sort by">
+        {% for value, label in sort_options %}
+        <option value="{{ value }}" {% if layout.sort == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit"
+            class="btn-ghost btn-small list-sort-dir"
+            name="sort_dir"
+            value="{% if layout.sort_desc %}asc{% else %}desc{% endif %}"
+            title="{% if layout.sort_desc %}Descending: click for ascending{% else %}Ascending: click for descending{% endif %}"
+            aria-label="{% if layout.sort_desc %}Sorted descending{% else %}Sorted ascending{% endif %}">
+      {% if layout.sort_desc %}↓{% else %}↑{% endif %}
+    </button>
+  </form>
+
+  {# Belongs to the filter bar's form: "show done" is a filter, sort and group aren't. #}
+  <label class="list-show-done">
+    <input type="checkbox"
+           name="show_done"
+           value="1"
+           form="board-filter-form"
+           {% if layout.show_done %}checked{% endif %}
+           hx-post="{% url 'boards:board-filter' %}"
+           hx-include="#board-filter-form"
+           hx-target="#task-list-content"
+           hx-swap="innerHTML">
+    Show done
+  </label>
+</div>
+
+{% if visible_task_count %}
+{% for group in groups %}
+<section class="list-group{% if group.collapsed %} is-collapsed{% endif %}"
+         id="{{ group.dom_id }}"
+         {% if group.color %}style="--group-accent: {{ group.color }};"{% endif %}>
+  {% if grouped %}
+  <h2 class="list-group-heading">
+    <button class="list-group-toggle"
+            type="button"
+            aria-expanded="{% if group.collapsed %}false{% else %}true{% endif %}"
+            hx-post="{% url 'boards:list-group-toggle' %}"
+            hx-vals='{"key": "{{ group.key|escapejs }}", "board_id": "{{ board.pk }}"}'
+            hx-target="#task-list-content"
+            hx-swap="innerHTML">
+      <span class="list-group-caret" aria-hidden="true">▾</span>
+      <span class="list-group-label">{{ group.label }}</span>
+      <span class="column-badge">{{ group.tasks|length }}</span>
+    </button>
+  </h2>
+  {% endif %}
+  {% if not group.collapsed %}
+  <ul class="list-rows">
+    {% for task in group.tasks %}
+    {% include "partials/task_row.html" %}
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endfor %}
+{% elif total_task_count %}
+<div class="task-empty list-empty">No tasks match your filters.</div>
+{% else %}
+<div class="task-empty list-empty">No tasks yet.{% if can_write_workspace %} Add one with “New task”.{% endif %}</div>
+{% endif %}

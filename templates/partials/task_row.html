@@ -1,0 +1,62 @@
+<li class="task-row{% if task.completed_at %} task-row--done{% elif task.due_date and task.due_date < today %} task-row--overdue{% endif %}"
+    data-task-id="{{ task.pk }}">
+  {% if can_write_workspace %}
+  {% if task.completed_at %}
+  <button class="task-row-check is-checked"
+          type="button"
+          title="Move back to active"
+          aria-label="“{{ task.title }}” is done. Move back to active"
+          hx-post="{% url 'boards:task-move' task.pk %}"
+          hx-vals='{"new_status": "{{ task.previous_status|default:task.active_slug|escapejs }}"}'
+          hx-swap="none">✓</button>
+  {% else %}
+  <button class="task-row-check"
+          type="button"
+          title="Mark complete"
+          aria-label="Mark “{{ task.title }}” complete"
+          hx-post="{% url 'boards:task-move' task.pk %}"
+          hx-vals='{"new_status": "{{ task.done_slug|escapejs }}"}'
+          hx-swap="none"></button>
+  {% endif %}
+  {% else %}
+  <span class="task-row-check{% if task.completed_at %} is-checked{% endif %}" aria-hidden="true">{% if task.completed_at %}✓{% endif %}</span>
+  {% endif %}
+
+  <div class="task-row-main">
+    <button class="task-row-title"
+            type="button"
+            hx-get="{% url 'boards:task-panel' task.pk %}"
+            hx-target="#task-panel-content"
+            hx-swap="innerHTML"
+            hx-on::after-request="openTaskPanel()">{{ task.title }}</button>
+
+    <div class="task-row-meta">
+      <span class="task-card-id">#{{ task.pk }}</span>
+      {% if layout.group != "status" and task.status_obj %}
+      <span class="task-row-status"{% if task.status_obj.color %} style="--status-color: {{ task.status_obj.color }};"{% endif %}>{{ task.status_obj.name }}</span>
+      {% endif %}
+      {% if task.assignee and layout.group != "assignee" %}
+      <span class="meta-pill meta-pill--assignee" title="Assigned to {{ task.assignee.display_name|default:task.assignee.username }}">@{{ task.assignee.display_name|default:task.assignee.username }}</span>
+      {% endif %}
+      {% if task.recurrence_days %}
+      <span class="task-row-repeat" title="Repeats every {{ task.recurrence_days }} day{{ task.recurrence_days|pluralize }}">↻ {{ task.recurrence_days }}d</span>
+      {% endif %}
+      {% for tag in task.tags %}
+      <button class="tag-pill"
+              type="button"
+              title="Filter to tasks tagged “{{ tag }}”"
+              hx-post="{% url 'boards:board-filter-add-tag' %}"
+              hx-target="#task-list-content"
+              hx-swap="innerHTML"
+              hx-vals='{"tag": "{{ tag|escapejs }}", "board_id": "{{ board.pk }}"}'>{{ tag }}</button>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if task.due_date %}
+  <span class="task-row-due meta-pill{% if not task.completed_at %}{% if task.due_date < today %} meta-pill--danger{% elif task.due_date == today %} meta-pill--warm{% endif %}{% else %} meta-pill--success{% endif %}"
+        title="Due {{ task.due_date|date:'l, F j, Y' }}{% if task.due_time %} at {{ task.due_time|time:'g:i A' }}{% endif %}">
+    {% if task.due_date == today %}Today{% else %}{{ task.due_date|date:"M j" }}{% endif %}{% if task.due_time %} · {{ task.due_time|time:"g:i A" }}{% endif %}
+  </span>
+  {% endif %}
+</li>

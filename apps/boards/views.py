@@ -109,10 +109,38 @@ def _with_affected_lanes(context, dom_ids):
     return context
 
 
+def _is_list_page(request):
+    from .views_list import is_list_page
+
+    return is_list_page(request)
+
+
+def _render_list_update(request, board, task=None):
+    """The list page's answer to a change made there: the whole list again, out
+    of band, plus the task panel when the change came from it. The list is
+    sorted and grouped, so one task changing can move it anywhere."""
+    from .views_list import build_list_context
+
+    context = build_list_context(request.user, board, request.session)
+    if task is None:
+        return render(request, "boards/list/_list_update.html", context)
+    context.update(_task_panel_context(request.user, task))
+    return render(request, "partials/task_panel_list_response.html", context)
+
+
 def _render_filter_response(request, user, board, session, sync_search=False):
     """Filter-bar response partials. These re-render the list and the filter bar
     (active pills, saved-view select). A move does not come through here: it
     redraws only the lanes whose membership changed."""
+    if _is_list_page(request):
+        from .views_list import render_list_body
+
+        response = render_list_body(request, board)
+        if sync_search:
+            response["HX-Trigger-After-Swap"] = json.dumps({
+                "boardSearchSync": {"q": board_filter_for(board, session).q},
+            })
+        return response
     is_calendar, year, month = _calendar_params_from_request(request)
     if is_calendar:
         from .views_calendar import _build_calendar_context
@@ -132,6 +160,8 @@ def _render_task_panel_with_list_update(request, user, task, board, session):
     """Panel response for actions that still replace the whole list (creating a
     task) or the calendar body. A status change from the panel's dropdown uses
     TaskMoveView, which redraws only the lanes that changed."""
+    if _is_list_page(request):
+        return _render_list_update(request, board, task)
     context = _task_panel_context(user, task)
     is_calendar, year, month = _calendar_params_from_request(request)
     if is_calendar:
@@ -313,6 +343,7 @@ def filter_bar_context(task_filter, hidden_lane_summaries, saved_filters, ignore
             "due": task_filter.due,
             "q": task_filter.q,
             "hidden_lanes": hidden_lane_summaries,
+            "hidden_lane_keys": list(task_filter.hidden_lanes),
             "show_done": task_filter.show_done,
         },
         "active_filter_count": task_filter.active_count(ignore=ignore),
@@ -660,6 +691,14 @@ class TaskMoveView(LoginRequiredMixin, View):
         task = get_task_or_404(request.user, pk)
         new_status = request.POST.get("new_status", "")
         board = _board_for_task(task)
+        panel_target = request.headers.get("HX-Target") == "task-panel-content"
+        if _is_list_page(request):
+            try:
+                move_task(request.user, task, new_status)
+            except InvalidStatusError:
+                return HttpResponse(status=422)
+            return _render_list_update(request, board, task if panel_target else None)
+
         is_calendar, year, month = _calendar_params_from_request(request)
         before_ids = set()
         if not is_calendar:
@@ -671,7 +710,6 @@ class TaskMoveView(LoginRequiredMixin, View):
         except InvalidStatusError:
             return HttpResponse(status=422)
 
-        panel_target = request.headers.get("HX-Target") == "task-panel-content"
         if is_calendar:
             if panel_target:
                 return _render_task_panel_with_list_update(
@@ -700,6 +738,11 @@ class TaskDeleteView(LoginRequiredMixin, View):
         ensure_can_write(request)
         task = get_task_or_404(request.user, pk)
         board = _board_for_task(task)
+        if _is_list_page(request):
+            with transaction.atomic():
+                activity.record_deleted(task, actor=request.user, source=TaskActivity.SOURCE_WEB)
+                task.delete()
+            return _render_list_update(request, board)
         is_calendar, year, month = _calendar_params_from_request(request)
         if is_calendar:
             deleted_pk = task.pk
@@ -869,7 +912,7 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
         board = _board_for_task(task)
         is_calendar, _, _ = _calendar_params_from_request(request)
         before_ids = set()
-        if not is_calendar:
+        if not is_calendar and not _is_list_page(request):
             before = _build_board_context(request.user, board, request.session)
             before_ids = _lane_dom_ids_containing(before["lanes"], [task.pk])
 
@@ -887,6 +930,8 @@ class TaskPanelUpdateView(LoginRequiredMixin, View):
             task.save(update_fields=update_fields)
             activity.record_changes(task, before, actor=request.user, source=TaskActivity.SOURCE_WEB)
 
+        if _is_list_page(request):
+            return _render_list_update(request, board, task)
         context = _task_panel_context(request.user, task)
         if is_calendar:
             return render(request, "partials/task_panel_update_response.html", context)

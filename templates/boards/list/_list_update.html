@@ -1,0 +1,5 @@
+<div id="task-list-content" class="task-list-view" hx-swap-oob="innerHTML">
+  {% include "boards/list/_body.html" %}
+</div>
+<div id="archive-done-slot" hx-swap-oob="innerHTML">{% include "boards/_archive_done_button.html" %}</div>
+<span id="hidden-count-slot" hx-swap-oob="innerHTML">{% include "boards/_hidden_hint.html" %}</span>

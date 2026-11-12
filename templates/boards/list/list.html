@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block body_class %}page-list{% endblock %}
+{% block title %}List — vtodo{% endblock %}
+
+{% block content %}
+<section class="page-shell page-shell--narrow">
+  <div id="task-list-content" class="task-list-view">
+    {% include "boards/list/_body.html" %}
+  </div>
+
+  {% if can_write_workspace %}
+  <button class="board-fab"
+          type="button"
+          title="Add task"
+          aria-label="Add task"
+          hx-get="{% url 'boards:task-panel-create' %}"
+          hx-target="#task-panel-content"
+          hx-swap="innerHTML"
+          hx-on::after-request="openTaskPanel()">
+    <span class="board-fab-mark">+</span>
+    <span class="board-fab-label">New task</span>
+  </button>
+  {% endif %}
+</section>
+{% endblock %}
