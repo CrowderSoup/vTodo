@@ -69,7 +69,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         (VIEW_CALENDAR, "Calendar"),
     ]
     VIEW_URL_NAMES = {
-        VIEW_LIST: "boards:list",
+        VIEW_LIST: "list:list",
         VIEW_BOARD: "boards:board",
         VIEW_CALENDAR: "calendar:calendar",
     }

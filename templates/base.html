@@ -46,7 +46,7 @@
 
         <div class="nav-collapsible-menu">
           <div class="nav-links">
-            <a class="nav-link {% if request.resolver_match.view_name == 'boards:list' %}is-active{% endif %}" href="{% url 'boards:list' %}">List</a>
+            <a class="nav-link {% if request.resolver_match.view_name == 'list:list' %}is-active{% endif %}" href="{% url 'list:list' %}">List</a>
             <a class="nav-link {% if request.resolver_match.view_name == 'boards:board' %}is-active{% endif %}" href="{% url 'boards:board' %}">Board</a>
             <a class="nav-link {% if request.resolver_match.namespace == 'calendar' %}is-active{% endif %}" href="{% url 'calendar:calendar' %}">Calendar</a>
           </div>

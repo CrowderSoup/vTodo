@@ -21,7 +21,7 @@ def list_page(page, login, transactional_db):
         task = Task.objects.create(user=user, title=title, tags=tags, status=status)
         lifecycle.start(task)
     login(user)
-    page.goto(reverse("boards:list"))
+    page.goto(reverse("list:list"))
     page.wait_for_function("window.htmx !== undefined")
     return page
 

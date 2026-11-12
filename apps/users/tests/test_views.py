@@ -288,12 +288,12 @@ def test_new_people_open_to_the_list(logged_in_client):
     response = client.get(reverse("home"))
 
     assert response.status_code == 302
-    assert response["Location"] == reverse("boards:list")
+    assert response["Location"] == reverse("list:list")
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(("view", "url_name"), [
-    ("list", "boards:list"),
+    ("list", "list:list"),
     ("board", "boards:board"),
     ("calendar", "calendar:calendar"),
 ])
