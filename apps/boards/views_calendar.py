@@ -10,13 +10,9 @@ from django.views import View
 from apps.tasks.selectors import board_tasks_qs, get_task_or_404, reschedule_task
 from apps.workspaces.access import ensure_can_write
 
+from .filtering import board_filter_for
 from .selectors import resolve_board
-from .views import (
-    _board_filter_for,
-    _hidden_lane_context,
-    _matching_saved_filter_name,
-    _status_context_for,
-)
+from .views import _hidden_lane_context, _status_context_for, filter_bar_context
 
 DAY_OVERFLOW_THRESHOLD = 3
 
@@ -42,24 +38,18 @@ def _normalize_year_month(year_param, month_param):
 def _build_calendar_context(user, board, year, month, session=None):
     today = timezone.localdate()
 
-    board_filter = _board_filter_for(board, session)
-    filter_tags = board_filter.get("tags", [])
-    exclude_tags = board_filter.get("exclude_tags", [])
-    hidden_lane_keys = set(board_filter.get("hidden_lanes", []))
-    hidden_lane_matchers, hidden_lane_summaries = _hidden_lane_context(user, board, hidden_lane_keys)
-    # board's "due" session filter is deliberately never read here -- month
-    # navigation is the calendar's equivalent of that filter.
+    # The board's due-date filter and search don't apply here: month navigation
+    # is the calendar's due-date filter, and the calendar has no search box.
+    task_filter = board_filter_for(board, session).replace(due="", q="")
+    hidden_lane_matchers, hidden_lane_summaries = _hidden_lane_context(
+        user, board, set(task_filter.hidden_lanes)
+    )
 
     cal = calendar_module.Calendar(firstweekday=6)  # Sunday-start weeks
     weeks = cal.monthdatescalendar(year, month)
     grid_start, grid_end = weeks[0][0], weeks[-1][-1]
 
-    all_tasks = list(board_tasks_qs(board).filter(is_archived=False))
-
-    if filter_tags:
-        all_tasks = [t for t in all_tasks if all(tag in t.tags for tag in filter_tags)]
-    if exclude_tags:
-        all_tasks = [t for t in all_tasks if not any(tag in t.tags for tag in exclude_tags)]
+    all_tasks = task_filter.apply(board_tasks_qs(board).filter(is_archived=False), today)
     if hidden_lane_matchers:
         all_tasks = [t for t in all_tasks if not any(matches(t) for matches in hidden_lane_matchers)]
 
@@ -101,14 +91,6 @@ def _build_calendar_context(user, board, year, month, session=None):
     prev_year, prev_month = _shift_month(year, month, -1)
     next_year, next_month = _shift_month(year, month, 1)
 
-    active_filter = {
-        "tags": filter_tags,
-        "exclude_tags": exclude_tags,
-        "due": "",
-        "hidden_lanes": hidden_lane_summaries,
-    }
-    saved_filters = list(board.saved_filters.all())
-
     return {
         "board": board,
         "year": year,
@@ -126,14 +108,7 @@ def _build_calendar_context(user, board, year, month, session=None):
         "next_month": next_month,
         "today_year": today.year,
         "today_month": today.month,
-        "active_filter": active_filter,
-        "active_filter_count": (
-            len(filter_tags) + len(exclude_tags) + len(hidden_lane_keys)
-        ),
-        "saved_filters": saved_filters,
-        "active_saved_filter_name": _matching_saved_filter_name(
-            saved_filters, filter_tags, exclude_tags, "", hidden_lane_keys
-        ),
+        **filter_bar_context(task_filter, hidden_lane_summaries, list(board.saved_filters.all())),
         "hide_due_filter": True,
     }
 

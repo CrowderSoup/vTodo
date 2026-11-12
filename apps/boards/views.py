@@ -2,7 +2,6 @@ import json
 import re
 import markdown as md
 import nh3
-from datetime import timedelta
 from urllib.parse import parse_qs, urlparse
 
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -36,25 +35,18 @@ from apps.tasks.selectors import (
     visible_tasks_qs,
 )
 
+from .filtering import (
+    TaskFilter,
+    board_filter_for,
+    lane_key,
+    parse_lane_key,
+    save_board_filter,
+    task_matches_column,
+)
 from .models import Board, Column, SavedFilter
 from .selectors import resolve_board, user_can_access_board
 
 TASK_CHECKBOX_PATTERN = re.compile(r"<(?P<tag>li|p)>\[(?P<state>[xX ])\]\s*(?P<body>.*?)</(?P=tag)>", re.DOTALL)
-
-
-def _lane_key(kind, pk):
-    """A board lane is either a TaskStatus (the default, implicit lane) or a Column
-    (an opt-in custom/filtered lane). Both are addressed uniformly -- for reorder,
-    hide, archive, and create-in-lane -- via a "kind:pk" key, since status and column
-    primary keys come from different tables and can collide."""
-    return f"{kind}:{pk}"
-
-
-def _parse_lane_key(key):
-    kind, _, pk = (key or "").partition(":")
-    if kind not in ("status", "column") or not pk.isdigit():
-        return None, None
-    return kind, int(pk)
 
 
 def _board_for_task(task):
@@ -150,50 +142,6 @@ def _render_task_panel_with_list_update(request, user, task, board, session):
     return render(request, "partials/task_panel_board_response.html", context)
 
 
-def _task_matches_column(task, filter_config):
-    statuses = filter_config.get("statuses", [])
-    tags = filter_config.get("tags", [])
-    due = filter_config.get("due")
-
-    if statuses and task.status not in statuses:
-        return False
-    if tags and not any(t in task.tags for t in tags):
-        return False
-    if due == "overdue":
-        today = timezone.localdate()
-        if not task.due_date or task.due_date >= today:
-            return False
-    elif due == "today":
-        if task.due_date != timezone.localdate():
-            return False
-    elif due == "this_week":
-        today = timezone.localdate()
-        end = today + timedelta(days=7)
-        if not task.due_date or task.due_date < today or task.due_date > end:
-            return False
-    return True
-
-
-def _matching_saved_filter_name(saved_filters, tags, exclude_tags, due, hidden_lanes=None, q=""):
-    """The name of the SavedFilter (if any) whose filter_config exactly matches the
-    given filter values -- used to highlight the active saved view in the filter
-    bar's select. hidden_lanes is a set/list of lane keys (the calendar has no
-    lanes of its own, but mirrors the board's collapsed-lane state, so it passes
-    the same keys too; callers with none simply omit it)."""
-    hidden_lanes = sorted(hidden_lanes or [])
-    for sf in saved_filters:
-        sf_config = sf.filter_config
-        if (
-            sorted(sf_config.get("tags", [])) == sorted(tags)
-            and sorted(sf_config.get("exclude_tags", [])) == sorted(exclude_tags)
-            and sf_config.get("due", "") == due
-            and sf_config.get("q", "").strip() == q
-            and sorted(sf_config.get("hidden_lanes", [])) == hidden_lanes
-        ):
-            return sf.name
-    return None
-
-
 def _hidden_lane_context(user, board, hidden_lane_keys):
     """(matchers, summaries) for the given collapsed/hidden lane keys on this board.
     matchers are per-lane task predicates for callers (e.g. the calendar) that need
@@ -205,14 +153,14 @@ def _hidden_lane_context(user, board, hidden_lane_keys):
     matchers = []
     summaries = []
     for status in statuses:
-        key = _lane_key("status", status.pk)
+        key = lane_key("status", status.pk)
         if key in hidden_lane_keys:
             matchers.append(lambda t, slug=status.slug: t.status == slug)
             summaries.append({"dom_id": key, "label": status.name})
     for column in board.columns.all():
-        key = _lane_key("column", column.pk)
+        key = lane_key("column", column.pk)
         if key in hidden_lane_keys:
-            matchers.append(lambda t, cfg=column.filter_config: _task_matches_column(t, cfg))
+            matchers.append(lambda t, cfg=column.filter_config: task_matches_column(t, cfg))
             summaries.append({"dom_id": key, "label": column.label})
     return matchers, summaries
 
@@ -233,16 +181,16 @@ def _resolve_status_slug(status, statuses):
 
 def _resolve_task_create_selection(user, board, statuses, lane_param=""):
     """Returns (lane_key, lane_name, status_slug) for a new task via the create panel."""
-    kind, pk = _parse_lane_key(lane_param)
+    kind, pk = parse_lane_key(lane_param)
     if kind == "status":
         status = next((s for s in statuses if s.pk == pk), None)
         if status:
-            return _lane_key("status", status.pk), status.name, status.slug
+            return lane_key("status", status.pk), status.name, status.slug
     elif kind == "column":
         column = board.columns.filter(pk=pk).first()
         if column:
             return (
-                _lane_key("column", column.pk),
+                lane_key("column", column.pk),
                 column.label,
                 column.default_status(user),
             )
@@ -254,12 +202,12 @@ def _resolve_task_create_selection(user, board, statuses, lane_param=""):
         status_slug = _resolve_status_slug(default.slug, statuses)
         status = next((s for s in statuses if s.slug == status_slug), None)
         if status:
-            return _lane_key("status", status.pk), status.name, status.slug
+            return lane_key("status", status.pk), status.name, status.slug
         return "", "your board", status_slug
 
     if statuses:
         first = statuses[0]
-        return _lane_key("status", first.pk), first.name, first.slug
+        return lane_key("status", first.pk), first.name, first.slug
 
     return "", "your board", _resolve_status_slug("", statuses)
 
@@ -352,17 +300,22 @@ def _task_panel_create_context(user, board, lane_param="", form_values=None, for
     }
 
 
-def _board_filter_for(board, session):
-    """This board's slice of the session's task filters."""
-    all_filters = (session.get("board_filter") or {}) if session else {}
-    return all_filters.get(str(board.pk), {})
-
-
-def _set_board_filter(request, board, board_filter):
-    all_filters = request.session.get("board_filter") or {}
-    all_filters[str(board.pk)] = board_filter
-    request.session["board_filter"] = all_filters
-    request.session.modified = True
+def filter_bar_context(task_filter, hidden_lane_summaries, saved_filters):
+    """What the filter bar needs: the active filters as pills, the count on the
+    Filters button, and which saved view (if any) is the current filter."""
+    saved = task_filter.matching_saved_filter(saved_filters)
+    return {
+        "active_filter": {
+            "tags": list(task_filter.tags),
+            "exclude_tags": list(task_filter.exclude_tags),
+            "due": task_filter.due,
+            "q": task_filter.q,
+            "hidden_lanes": hidden_lane_summaries,
+        },
+        "active_filter_count": task_filter.active_count,
+        "saved_filters": saved_filters,
+        "active_saved_filter_name": saved.name if saved else None,
+    }
 
 
 def _column_subtitle(filter_config):
@@ -382,32 +335,11 @@ def _column_subtitle(filter_config):
 def _build_board_context(user, board, session=None):
     today = timezone.localdate()
 
-    board_filter = _board_filter_for(board, session)
-    filter_tags = board_filter.get("tags", [])
-    exclude_tags = board_filter.get("exclude_tags", [])
-    filter_due = board_filter.get("due", "").strip()
-    filter_q = board_filter.get("q", "").strip()
-    hidden_lane_keys = set(board_filter.get("hidden_lanes", []))
+    task_filter = board_filter_for(board, session)
+    hidden_lane_keys = set(task_filter.hidden_lanes)
 
     all_tasks = list(board_tasks_qs(board).filter(is_archived=False).order_by("order", "created_at"))
-    tasks = list(all_tasks)
-
-    if filter_tags:
-        tasks = [t for t in tasks if all(tag in t.tags for tag in filter_tags)]
-    if exclude_tags:
-        tasks = [t for t in tasks if not any(tag in t.tags for tag in exclude_tags)]
-    if filter_due:
-        if filter_due == "overdue":
-            tasks = [t for t in tasks if t.due_date and t.due_date < today]
-        elif filter_due == "today":
-            tasks = [t for t in tasks if t.due_date == today]
-        elif filter_due == "this_week":
-            end = today + timedelta(days=7)
-            tasks = [t for t in tasks if t.due_date and today <= t.due_date <= end]
-
-    if filter_q:
-        query = filter_q.lower()
-        tasks = [t for t in tasks if query in t.title.lower() or query in t.notes.lower()]
+    tasks = task_filter.apply(all_tasks, today)
 
     statuses, done_slug, active_slug = _status_context_for(user)
 
@@ -420,7 +352,7 @@ def _build_board_context(user, board, session=None):
     hidden_lane_summaries = []
 
     for status in statuses:
-        key = _lane_key("status", status.pk)
+        key = lane_key("status", status.pk)
         lane_tasks = [t for t in tasks if t.status == status.slug]
         for t in lane_tasks:
             t.done_slug, t.active_slug = done_slug, active_slug
@@ -442,8 +374,8 @@ def _build_board_context(user, board, session=None):
             hidden_lane_summaries.append(lane)
 
     for column in board.columns.all():
-        key = _lane_key("column", column.pk)
-        lane_tasks = [t for t in tasks if _task_matches_column(t, column.filter_config)]
+        key = lane_key("column", column.pk)
+        lane_tasks = [t for t in tasks if task_matches_column(t, column.filter_config)]
         for t in lane_tasks:
             t.done_slug, t.active_slug = done_slug, active_slug
         lane = {
@@ -470,9 +402,6 @@ def _build_board_context(user, board, session=None):
     )
 
     saved_filters = list(board.saved_filters.all())
-    active_saved_filter_name = _matching_saved_filter_name(
-        saved_filters, filter_tags, exclude_tags, filter_due, hidden_lane_keys, q=filter_q
-    )
     for number, lane in enumerate(lanes, start=1):
         lane["number"] = number
 
@@ -482,15 +411,7 @@ def _build_board_context(user, board, session=None):
         "statuses": statuses,
         "done_slug": done_slug,
         "active_slug": active_slug,
-        "active_filter": {
-            "tags": filter_tags,
-            "exclude_tags": exclude_tags,
-            "due": filter_due,
-            "q": filter_q,
-            "hidden_lanes": hidden_lane_summaries,
-        },
-        "saved_filters": saved_filters,
-        "active_saved_filter_name": active_saved_filter_name,
+        **filter_bar_context(task_filter, hidden_lane_summaries, saved_filters),
         "show_task_search": True,
         "today": today,
         "total_task_count": len(all_tasks),
@@ -499,10 +420,6 @@ def _build_board_context(user, board, session=None):
         "done_task_count": sum(1 for task in all_tasks if task.completed_at),
         "due_today_count": sum(1 for task in tasks if task.due_date == today and not task.completed_at),
         "overdue_count": sum(1 for task in tasks if task.due_date and task.due_date < today and not task.completed_at),
-        "active_filter_count": (
-            len(filter_tags) + len(exclude_tags) + len(hidden_lane_keys)
-            + (1 if filter_due else 0) + (1 if filter_q else 0)
-        ),
     }
 
 
@@ -516,18 +433,7 @@ class BoardView(LoginRequiredMixin, View):
 class BoardFilterView(LoginRequiredMixin, View):
     def post(self, request):
         board = _board_from_post(request)
-        tags = request.POST.getlist("tags")
-        exclude_tags = request.POST.getlist("exclude_tags")
-        due = request.POST.get("due", "").strip()
-        q = request.POST.get("q", "").strip()
-        hidden_lanes = request.POST.getlist("hidden_lanes")
-        _set_board_filter(request, board, {
-            "tags": tags,
-            "exclude_tags": exclude_tags,
-            "due": due,
-            "q": q,
-            "hidden_lanes": hidden_lanes,
-        })
+        save_board_filter(request, board, TaskFilter.from_post(request.POST))
         return _render_filter_response(
             request, request.user, board, request.session, sync_search="q" not in request.POST
         )
@@ -538,21 +444,8 @@ class BoardFilterAddTagView(LoginRequiredMixin, View):
 
     def post(self, request):
         board = _board_from_post(request)
-        tag = request.POST.get("tag", "").strip()
-        board_filter = _board_filter_for(board, request.session)
-        current_tags = board_filter.get("tags", [])
-        exclude_tags = [t for t in board_filter.get("exclude_tags", []) if t != tag]
-        due = board_filter.get("due", "")
-        hidden_lanes = board_filter.get("hidden_lanes", [])
-        if tag and tag not in current_tags:
-            current_tags = current_tags + [tag]
-        _set_board_filter(request, board, {
-            "tags": current_tags,
-            "exclude_tags": exclude_tags,
-            "due": due,
-            "q": board_filter.get("q", ""),
-            "hidden_lanes": hidden_lanes,
-        })
+        task_filter = board_filter_for(board, request.session)
+        save_board_filter(request, board, task_filter.including_tag(request.POST.get("tag", "")))
         return _render_filter_response(request, request.user, board, request.session)
 
 
@@ -561,21 +454,8 @@ class BoardFilterExcludeTagView(LoginRequiredMixin, View):
 
     def post(self, request):
         board = _board_from_post(request)
-        tag = request.POST.get("tag", "").strip()
-        board_filter = _board_filter_for(board, request.session)
-        current_tags = [t for t in board_filter.get("tags", []) if t != tag]
-        exclude_tags = board_filter.get("exclude_tags", [])
-        due = board_filter.get("due", "")
-        hidden_lanes = board_filter.get("hidden_lanes", [])
-        if tag and tag not in exclude_tags:
-            exclude_tags = exclude_tags + [tag]
-        _set_board_filter(request, board, {
-            "tags": current_tags,
-            "exclude_tags": exclude_tags,
-            "due": due,
-            "q": board_filter.get("q", ""),
-            "hidden_lanes": hidden_lanes,
-        })
+        task_filter = board_filter_for(board, request.session)
+        save_board_filter(request, board, task_filter.excluding_tag(request.POST.get("tag", "")))
         return _render_filter_response(request, request.user, board, request.session)
 
 
@@ -583,7 +463,7 @@ def _resolve_lane_and_board(user, lane_key):
     """Returns (board, label, matches_fn) for a lane key, 404ing if the lane doesn't
     exist or the user can't access its scope. matches_fn(task) says whether a task
     belongs in this lane, for hide/archive actions."""
-    kind, pk = _parse_lane_key(lane_key)
+    kind, pk = parse_lane_key(lane_key)
     if kind == "status":
         status = get_object_or_404(TaskStatus, pk=pk)
         if not Membership.objects.filter(workspace_id=status.workspace_id, user=user).exists():
@@ -597,7 +477,7 @@ def _resolve_lane_and_board(user, lane_key):
         return (
             column.board,
             column.label,
-            (lambda t: _task_matches_column(t, column.filter_config)),
+            (lambda t: task_matches_column(t, column.filter_config)),
         )
     raise Http404()
 
@@ -610,13 +490,8 @@ class LaneHideView(LoginRequiredMixin, View):
 
     def post(self, request, lane_key):
         board, _label, _matches = _resolve_lane_and_board(request.user, lane_key)
-        board_filter = _board_filter_for(board, request.session)
-        hidden = board_filter.get("hidden_lanes", [])
-        if lane_key in hidden:
-            hidden = [key for key in hidden if key != lane_key]
-        else:
-            hidden = hidden + [lane_key]
-        _set_board_filter(request, board, {**board_filter, "hidden_lanes": hidden})
+        task_filter = board_filter_for(board, request.session)
+        save_board_filter(request, board, task_filter.toggling_lane(lane_key))
         context = _build_board_context(request.user, board, request.session)
         return render(request, "boards/_filter_response.html", context)
 
@@ -1150,7 +1025,7 @@ class SavedFilterLoadView(LoginRequiredMixin, View):
         if not user_can_access_board(request.user, saved_filter.board):
             raise Http404()
         board = saved_filter.board
-        _set_board_filter(request, board, saved_filter.filter_config)
+        save_board_filter(request, board, TaskFilter.from_config(saved_filter.filter_config))
         return _render_filter_response(request, request.user, board, request.session, sync_search=True)
 
 
@@ -1161,11 +1036,10 @@ class SavedFilterSaveView(LoginRequiredMixin, View):
         name = request.POST.get("name", "").strip()
         if not name:
             return _render_filter_response(request, request.user, board, request.session)
-        filter_config = _board_filter_for(board, request.session)
         SavedFilter.objects.update_or_create(
             board=board,
             name=name,
-            defaults={"filter_config": filter_config},
+            defaults={"filter_config": board_filter_for(board, request.session).to_config()},
         )
         return _render_filter_response(request, request.user, board, request.session)
 

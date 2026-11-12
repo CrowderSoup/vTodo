@@ -287,7 +287,7 @@ def test_task_matches_column_overdue_uses_users_local_today():
     from unittest.mock import patch
     from zoneinfo import ZoneInfo
 
-    from apps.boards.views import _task_matches_column
+    from apps.boards.filtering import task_matches_column
 
     user = User.objects.create_user(timezone="America/Chicago")
     # 9pm on Jan 1 in America/Chicago (UTC-6) is already Jan 2 in UTC.
@@ -295,9 +295,9 @@ def test_task_matches_column_overdue_uses_users_local_today():
     task = Task.objects.create(user=user, title="Due tonight", status="todo", due_date=date(2026, 1, 1))
 
     with timezone.override(ZoneInfo("America/Chicago")):
-        with patch("apps.boards.views.timezone.now", return_value=now_utc):
-            assert _task_matches_column(task, {"due": "overdue"}) is False
-            assert _task_matches_column(task, {"due": "today"}) is True
+        with patch("apps.boards.filtering.timezone.now", return_value=now_utc):
+            assert task_matches_column(task, {"due": "overdue"}) is False
+            assert task_matches_column(task, {"due": "today"}) is True
 
 
 @pytest.mark.django_db
