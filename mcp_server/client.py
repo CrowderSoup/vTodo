@@ -137,6 +137,10 @@ class VtodoClient:
     def move_task(self, task_id: int, new_status: str) -> dict:
         return self._request("POST", f"/tasks/{task_id}/move/", json={"new_status": new_status}).json()
 
+    def export_tasks(self) -> str:
+        """The workspace's tasks as an iCalendar (.ics) document."""
+        return self._request("GET", "/tasks/export/").text
+
     # ── Statuses ───────────────────────────────────────────────────────────
 
     def list_statuses(self) -> list[dict]:

@@ -123,6 +123,16 @@ class SettingsGeneralView(LoginRequiredMixin, View):
         return redirect(reverse("users:settings"))
 
 
+class TaskExportView(LoginRequiredMixin, View):
+    """Download the active workspace's tasks as an iCalendar (.ics) file."""
+
+    def get(self, request):
+        from apps.tasks.ical import export_response
+        from apps.workspaces.access import active_workspace
+
+        return export_response(active_workspace(request))
+
+
 def _saved_filters_with_labels(board):
     from apps.boards.filtering import parse_lane_key
     from apps.tasks.models import TaskStatus
