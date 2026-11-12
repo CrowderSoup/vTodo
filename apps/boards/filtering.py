@@ -87,8 +87,12 @@ LAYOUT_FIELDS = ("sort", "sort_dir", "group", "collapsed_groups")
 # The fields each view doesn't use. They don't count toward its Filters badge
 # or toward which saved view is selected. The board shows done tasks in their
 # own lane; the calendar's month is its due-date filter, and it has no search.
+# Only the board and the calendar act on collapsed lanes (the calendar leaves
+# their tasks out).
 BOARD_IGNORES = LAYOUT_FIELDS + ("show_done",)
 CALENDAR_IGNORES = BOARD_IGNORES + ("due", "q")
+# The list has its own collapsible groups instead of the board's lanes.
+LIST_IGNORES = ("hidden_lanes",)
 
 
 @dataclass(frozen=True)

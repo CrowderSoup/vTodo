@@ -2878,3 +2878,339 @@ textarea:has(+ .EasyMDEContainer) {
     font-size: 0.62rem;
   }
 }
+
+/* List view */
+
+.page-list .page-shell {
+  padding-bottom: 5.5rem;
+}
+
+.task-list-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+}
+
+.list-layout-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.list-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.list-control-label {
+  color: var(--text-subtle);
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.list-control select {
+  width: auto;
+  min-height: 2.1rem;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.88rem;
+}
+
+.list-sort-dir {
+  min-width: 2.1rem;
+  min-height: 2.1rem;
+  padding: 0.2rem 0.5rem;
+  font-weight: 700;
+}
+
+.list-show-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.1rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--text-soft);
+  font-size: 0.86rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.list-show-done:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+/* The chip is the control: the native box stays focusable but unseen. */
+.list-show-done {
+  position: relative;
+}
+
+.list-show-done input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+}
+
+.list-show-done::before {
+  content: "";
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface-strong);
+}
+
+.list-show-done:has(input:checked)::before {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--surface-strong);
+}
+
+.list-show-done:has(input:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.list-group {
+  --group-accent: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.list-group-heading {
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid var(--group-accent);
+}
+
+.list-group.is-collapsed .list-group-heading {
+  border-bottom: 0;
+}
+
+.list-group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  width: 100%;
+  min-height: auto;
+  padding: 0.6rem 0.85rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-align: left;
+}
+
+.list-group-toggle:hover {
+  background: var(--surface-muted);
+  transform: none;
+  box-shadow: none;
+}
+
+.list-group-caret {
+  color: var(--text-subtle);
+  transition: transform 150ms ease;
+}
+
+.list-group.is-collapsed .list-group-caret {
+  transform: rotate(-90deg);
+}
+
+.list-group-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.task-row:first-child {
+  border-top: 0;
+}
+
+.task-row:hover {
+  background: var(--surface-strong);
+}
+
+.task-row-check {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  min-height: auto;
+  margin-top: 0.08rem;
+  padding: 0;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface-strong);
+  box-shadow: none;
+  color: transparent;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+button.task-row-check:hover {
+  border-color: var(--success);
+  color: var(--success);
+  transform: none;
+  box-shadow: none;
+}
+
+.task-row-check.is-checked {
+  border-color: var(--success);
+  background: var(--success);
+  color: var(--bg-elevated);
+}
+
+.task-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.task-row-title {
+  display: block;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  text-align: left;
+  font-size: 0.97rem;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.task-row-title:hover {
+  color: var(--accent-strong);
+  transform: none;
+  box-shadow: none;
+}
+
+.task-row--done .task-row-title {
+  color: var(--text-subtle);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-strong);
+}
+
+.task-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.32rem;
+}
+
+.task-row-meta:empty {
+  display: none;
+}
+
+.task-row-status {
+  --status-color: var(--text-subtle);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--text-soft);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.task-row-status::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--status-color);
+}
+
+.task-row-repeat {
+  color: var(--text-subtle);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.task-row-due {
+  flex: none;
+  margin-top: 0.05rem;
+  white-space: nowrap;
+}
+
+.list-empty {
+  padding: 2rem 1rem;
+}
+
+@media (max-width: 640px) {
+  .list-toolbar {
+    align-items: stretch;
+  }
+
+  .list-layout-form {
+    width: 100%;
+  }
+
+  .list-control {
+    flex: 1 1 8rem;
+  }
+
+  .list-control select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .task-row {
+    flex-wrap: wrap;
+    padding: 0.65rem 0.75rem;
+  }
+
+  .task-row-due {
+    order: 3;
+    margin-left: 2.1rem;
+  }
+}

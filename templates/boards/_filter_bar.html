@@ -43,7 +43,14 @@
           hx-swap="innerHTML"
           hx-trigger="change">
       <input type="hidden" name="board_id" value="{{ board.pk }}">
-      <input type="hidden" name="show_done" value="{% if active_filter.show_done %}1{% else %}0{% endif %}">
+      {# The list's "Show done" checkbox (form="board-filter-form") follows this and wins when ticked. Elsewhere this carries the current value. #}
+      <input type="hidden" name="show_done" value="{% if list_view or not active_filter.show_done %}0{% else %}1{% endif %}">
+      {% if list_view %}
+      {# The list doesn't collapse lanes, but keeps the board's collapsed lanes as they are. #}
+      {% for key in active_filter.hidden_lane_keys %}
+      <input type="hidden" name="hidden_lanes" value="{{ key }}">
+      {% endfor %}
+      {% endif %}
 
       {% if not hide_due_filter %}
       <div class="filter-group">
@@ -81,7 +88,7 @@
       {% endif %}
     </form>
 
-    {% if active_filter.tags or active_filter.exclude_tags or active_filter.due or active_filter.q or active_filter.hidden_lanes %}
+    {% if active_filter_count %}
     <div class="board-filter-actions">
       {% if can_admin_workspace %}
       <button class="btn-ghost btn-small" type="button" data-open-modal="save-filter-modal">Save view</button>
@@ -91,6 +98,12 @@
             hx-target="#task-list-content"
             hx-swap="innerHTML">
         <input type="hidden" name="board_id" value="{{ board.pk }}">
+        {% if list_view %}
+        {# The list doesn't show the board's collapsed lanes, so it leaves them alone. #}
+        {% for key in active_filter.hidden_lane_keys %}
+        <input type="hidden" name="hidden_lanes" value="{{ key }}">
+        {% endfor %}
+        {% endif %}
         <button type="submit" class="btn-ghost btn-small">Clear filters</button>
       </form>
     </div>
