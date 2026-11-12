@@ -5,10 +5,13 @@ from django.views.generic import RedirectView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from oauth2_provider.urls import metadata_urlpatterns as oauth2_metadata_urlpatterns
 
+from apps.users.views import HomeView
+
 urlpatterns = [
     path("up/", lambda request: HttpResponse("OK")),
     path("", RedirectView.as_view(url="/login/", permanent=False)),
     path("login/", include("apps.accounts.urls", namespace="accounts")),
+    path("home/", HomeView.as_view(), name="home"),
     path("accounts/", include("allauth.urls")),
     path("board/", include("apps.boards.urls", namespace="boards")),
     path("calendar/", include("apps.boards.urls_calendar", namespace="calendar")),

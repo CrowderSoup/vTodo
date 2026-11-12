@@ -38,6 +38,14 @@ def _default_status_id(user, workspace):
     return None
 
 
+class HomeView(LoginRequiredMixin, View):
+    """Where sign-in and the logo land: the person's chosen default view."""
+
+    def get(self, request):
+        user = request.user
+        return redirect(user.VIEW_URL_NAMES.get(user.default_view, "boards:list"))
+
+
 class SettingsGeneralView(LoginRequiredMixin, View):
     def get(self, request):
         from apps.accounts.linking import settings_connection_context
@@ -52,6 +60,7 @@ class SettingsGeneralView(LoginRequiredMixin, View):
             "statuses": statuses,
             "default_status_id": _default_status_id(request.user, workspace),
             "timezones": _available_timezones(),
+            "view_choices": request.user.VIEW_CHOICES,
             "signed_in_email": primary_email(request.user),
             "active_tab": "general",
         }
@@ -82,6 +91,10 @@ class SettingsGeneralView(LoginRequiredMixin, View):
 
         update_fields = ["display_name"]
         user.display_name = display_name
+        default_view = request.POST.get("default_view", "")
+        if default_view in user.VIEW_URL_NAMES:
+            user.default_view = default_view
+            update_fields.append("default_view")
         if tzname:
             user.timezone = tzname
             update_fields.append("timezone")

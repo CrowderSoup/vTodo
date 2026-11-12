@@ -278,3 +278,64 @@ def test_status_color_update_rejects_another_users_status(logged_in_client):
     assert response.status_code == 404
     other_status.refresh_from_db()
     assert other_status.color == ""
+
+
+@pytest.mark.django_db
+def test_new_people_open_to_the_list(logged_in_client):
+    client, user = logged_in_client
+    assert user.default_view == User.VIEW_LIST
+
+    response = client.get(reverse("home"))
+
+    assert response.status_code == 302
+    assert response["Location"] == reverse("boards:list")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(("view", "url_name"), [
+    ("list", "boards:list"),
+    ("board", "boards:board"),
+    ("calendar", "calendar:calendar"),
+])
+def test_choosing_where_vtodo_opens(logged_in_client, view, url_name):
+    client, user = logged_in_client
+
+    response = client.post(reverse("users:settings"), {"display_name": "", "default_view": view})
+
+    assert response.status_code == 302
+    user.refresh_from_db()
+    assert user.default_view == view
+    assert client.get(reverse("home"))["Location"] == reverse(url_name)
+
+
+@pytest.mark.django_db
+def test_unknown_default_view_is_ignored(logged_in_client):
+    client, user = logged_in_client
+    user.default_view = User.VIEW_BOARD
+    user.save()
+
+    client.post(reverse("users:settings"), {"display_name": "", "default_view": "kanban"})
+
+    user.refresh_from_db()
+    assert user.default_view == User.VIEW_BOARD
+
+
+@pytest.mark.django_db
+def test_settings_shows_the_open_to_choice(logged_in_client):
+    client, _ = logged_in_client
+    html = client.get(reverse("users:settings")).content.decode()
+    assert 'name="default_view"' in html
+    assert '<option value="list" selected>List</option>' in html
+
+
+@pytest.mark.django_db
+def test_logo_goes_home(logged_in_client):
+    client, _ = logged_in_client
+    html = client.get(reverse("boards:board")).content.decode()
+    assert f'<a class="brand" href="{reverse("home")}">' in html
+
+
+def test_home_needs_sign_in(client):
+    response = client.get(reverse("home"))
+    assert response.status_code == 302
+    assert response["Location"].startswith(reverse("accounts:login"))

@@ -20,7 +20,7 @@ from apps.workspaces.services import (
 def _safe_next(request):
     next_url = request.POST.get("next", "")
     if not next_url.startswith("/") or next_url.startswith("//"):
-        return reverse("boards:board")
+        return reverse("home")
     return next_url
 
 
@@ -49,7 +49,7 @@ class CreateWorkspaceView(LoginRequiredMixin, View):
             return render(request, "workspaces/create.html", {"name": name.strip(), "error": message})
         request.session[SESSION_KEY] = workspace.pk
         messages.success(request, f"Created {workspace.name}.")
-        return redirect("boards:board")
+        return redirect("home")
 
 
 class MemberAddView(LoginRequiredMixin, View):
