@@ -11,6 +11,7 @@ urlpatterns = [
     path("login/", include("apps.accounts.urls", namespace="accounts")),
     path("accounts/", include("allauth.urls")),
     path("board/", include("apps.boards.urls", namespace="boards")),
+    path("list/", include("apps.boards.urls_list", namespace="list")),
     path("calendar/", include("apps.boards.urls_calendar", namespace="calendar")),
     path("settings/", include("apps.users.urls", namespace="users")),
     path("workspaces/", include("apps.workspaces.urls", namespace="workspaces")),

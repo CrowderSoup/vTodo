@@ -12,7 +12,7 @@ from apps.workspaces.access import SESSION_KEY
 from apps.workspaces.models import Membership
 from apps.workspaces.services import create_shared_workspace
 
-LIST_URL = "http://testserver/board/list/"
+LIST_URL = "http://testserver/list/"
 FROM_LIST = {"HTTP_HX_REQUEST": "true", "HTTP_HX_CURRENT_URL": LIST_URL}
 
 
@@ -58,21 +58,21 @@ def test_list_shows_open_tasks_then_done_ones(logged_in, user):
     _task(user, "Second", order=2)
     _task(user, "First", order=1)
 
-    response = logged_in.get(reverse("boards:list"))
+    response = logged_in.get(reverse("list:list"))
 
     assert response.status_code == 200
     assert _rows(response) == [["First", "Second", "Finished"]]
     html = response.content.decode()
     assert 'class="task-row task-row--done"' in html
     assert "Show done" in html
-    assert 'href="/board/list/"' in html
+    assert 'href="/list/"' in html
 
 
 @pytest.mark.django_db
 def test_list_leaves_out_archived_tasks(logged_in, user):
     _task(user, "Kept")
     _task(user, "Archived", is_archived=True)
-    assert _rows(logged_in.get(reverse("boards:list"))) == [["Kept"]]
+    assert _rows(logged_in.get(reverse("list:list"))) == [["Kept"]]
 
 
 @pytest.mark.django_db
@@ -118,7 +118,7 @@ def test_changing_sort_and_group(logged_in, user, board):
     _task(user, "Bare")
 
     response = logged_in.post(
-        reverse("boards:list-layout"), {"board_id": board.pk, "sort": "due", "group": "tag"}, **FROM_LIST,
+        reverse("list:layout"), {"board_id": board.pk, "sort": "due", "group": "tag"}, **FROM_LIST,
     )
 
     assert response.status_code == 200
@@ -128,7 +128,7 @@ def test_changing_sort_and_group(logged_in, user, board):
     assert (stored["sort"], stored["sort_dir"], stored["group"]) == ("due", "asc", "tag")
 
     response = logged_in.post(
-        reverse("boards:list-layout"), {"board_id": board.pk, "sort_dir": "desc"}, **FROM_LIST,
+        reverse("list:layout"), {"board_id": board.pk, "sort_dir": "desc"}, **FROM_LIST,
     )
     assert _rows(response) == [["Later", "Soon"], ["Soon"], ["Bare"]]
     assert 'value="asc"' in response.content.decode()  # the button now offers ascending
@@ -141,7 +141,7 @@ def test_layout_change_keeps_filters(logged_in, user, board):
     _set_filter(logged_in, board, {"tags": ["home"]})
 
     response = logged_in.post(
-        reverse("boards:list-layout"), {"board_id": board.pk, "group": "status"}, **FROM_LIST,
+        reverse("list:layout"), {"board_id": board.pk, "group": "status"}, **FROM_LIST,
     )
 
     assert _rows(response) == [["Home"]]
@@ -154,7 +154,7 @@ def test_collapsing_a_group(logged_in, user, board):
     _set_filter(logged_in, board, {"group": "status"})
 
     response = logged_in.post(
-        reverse("boards:list-group-toggle"), {"board_id": board.pk, "key": "status:todo"}, **FROM_LIST,
+        reverse("list:group-toggle"), {"board_id": board.pk, "key": "status:todo"}, **FROM_LIST,
     )
 
     group = response.context["groups"][0]
@@ -163,14 +163,14 @@ def test_collapsing_a_group(logged_in, user, board):
     assert "task-row" not in response.content.decode()
 
     response = logged_in.post(
-        reverse("boards:list-group-toggle"), {"board_id": board.pk, "key": "status:todo"}, **FROM_LIST,
+        reverse("list:group-toggle"), {"board_id": board.pk, "key": "status:todo"}, **FROM_LIST,
     )
     assert response.context["groups"][0]["collapsed"] is False
 
 
 @pytest.mark.django_db
 def test_group_toggle_rejects_junk(logged_in, board):
-    response = logged_in.post(reverse("boards:list-group-toggle"), {"board_id": board.pk, "key": "nope"})
+    response = logged_in.post(reverse("list:group-toggle"), {"board_id": board.pk, "key": "nope"})
     assert response.status_code == 404
 
 
@@ -264,7 +264,7 @@ def test_creating_from_the_list(logged_in, user):
 @pytest.mark.django_db
 def test_list_filter_keeps_the_boards_collapsed_lanes(logged_in, user, board):
     _set_filter(logged_in, board, {"hidden_lanes": ["status:1"]})
-    response = logged_in.get(reverse("boards:list"))
+    response = logged_in.get(reverse("list:list"))
     html = response.content.decode()
     assert '<input type="hidden" name="hidden_lanes" value="status:1">' in html
     # Collapsed lanes don't apply to the list, so they aren't an active filter here.
@@ -274,7 +274,7 @@ def test_list_filter_keeps_the_boards_collapsed_lanes(logged_in, user, board):
 @pytest.mark.django_db
 def test_clear_filters_on_the_list_keeps_the_boards_collapsed_lanes(logged_in, user, board):
     _set_filter(logged_in, board, {"tags": ["home"], "hidden_lanes": ["status:1"]})
-    html = logged_in.get(reverse("boards:list")).content.decode()
+    html = logged_in.get(reverse("list:list")).content.decode()
     clear_form = html[:html.index("Clear filters")]
     clear_form = clear_form[clear_form.rindex("<form"):]
     assert 'name="hidden_lanes" value="status:1"' in clear_form
@@ -289,12 +289,12 @@ def test_clear_filters_on_the_list_keeps_the_boards_collapsed_lanes(logged_in, u
 
 @pytest.mark.django_db
 def test_empty_states(logged_in, user, board):
-    response = logged_in.get(reverse("boards:list"))
+    response = logged_in.get(reverse("list:list"))
     assert "No tasks yet." in response.content.decode()
 
     _task(user, "Home", tags=["home"])
     _set_filter(logged_in, board, {"tags": ["work"]})
-    response = logged_in.get(reverse("boards:list"))
+    response = logged_in.get(reverse("list:list"))
     assert "No tasks match your filters." in response.content.decode()
 
 
@@ -310,7 +310,7 @@ def test_viewers_see_the_list_without_controls(client):
     session = client.session
     session[SESSION_KEY] = shared.pk
     session.save()
-    response = client.get(reverse("boards:list"))
+    response = client.get(reverse("list:list"))
 
     html = response.content.decode()
     assert "Shared task" in html
@@ -320,5 +320,5 @@ def test_viewers_see_the_list_without_controls(client):
 
 @pytest.mark.django_db
 def test_list_requires_login(client):
-    response = client.get(reverse("boards:list"))
+    response = client.get(reverse("list:list"))
     assert response.status_code == 302
