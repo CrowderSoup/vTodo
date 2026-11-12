@@ -4,6 +4,8 @@ from types import SimpleNamespace
 from django.http import QueryDict
 
 from apps.boards.filtering import (
+    BOARD_IGNORES,
+    CALENDAR_IGNORES,
     TaskFilter,
     board_filter_for,
     due_matches,
@@ -21,7 +23,7 @@ def _task(title="Task", notes="", tags=(), due_date=None, status="todo"):
 def test_empty_filter_matches_everything():
     tasks = [_task(), _task(tags=["home"], due_date=TODAY)]
     assert TaskFilter().apply(tasks, TODAY) == tasks
-    assert TaskFilter().active_count == 0
+    assert TaskFilter().active_count() == 0
 
 
 def test_tags_must_all_match_and_excluded_tags_must_all_be_absent():
@@ -73,21 +75,67 @@ def test_from_config_drops_junk():
 
 def test_config_round_trip():
     task_filter = TaskFilter(
-        tags=("a",), exclude_tags=("b",), due="today", q="x", hidden_lanes=("status:1",)
+        tags=("a",), exclude_tags=("b",), due="today", q="x", hidden_lanes=("status:1",),
+        show_done=False, sort="due", sort_dir="desc", group="status", collapsed_groups=("status:done",),
     )
     assert TaskFilter.from_config(task_filter.to_config()) == task_filter
 
 
-def test_from_post_reads_the_filter_bar_form():
+def test_old_configs_get_the_default_layout():
+    task_filter = TaskFilter.from_config({"tags": ["home"]})
+    assert (task_filter.show_done, task_filter.sort, task_filter.sort_dir, task_filter.group) == (
+        True, "manual", "asc", "none",
+    )
+    junk = TaskFilter.from_config({"sort": "colour", "sort_dir": "up", "group": "mood", "show_done": "no"})
+    assert (junk.sort, junk.sort_dir, junk.group, junk.show_done) == ("manual", "asc", "none", True)
+
+
+def test_layout_form_changes_only_what_it_sends():
+    before = TaskFilter(tags=("home",), sort="due", group="tag", collapsed_groups=("tag:a",))
+    post = QueryDict(mutable=True)
+    post["sort_dir"] = "desc"
+    after = before.with_layout_from(post)
+    assert after == before.replace(sort_dir="desc")
+
+
+def test_changing_the_grouping_forgets_collapsed_groups():
+    before = TaskFilter(group="tag", collapsed_groups=("tag:a",))
+    post = QueryDict(mutable=True)
+    post["group"] = "status"
+    assert before.with_layout_from(post) == TaskFilter(group="status")
+
+
+def test_toggling_a_group():
+    task_filter = TaskFilter().toggling_group("tag:home")
+    assert task_filter.collapsed_groups == ("tag:home",)
+    assert task_filter.toggling_group("tag:home").collapsed_groups == ()
+
+
+def test_filter_bar_form_replaces_the_filters_and_keeps_the_layout():
     post = QueryDict(mutable=True)
     post.setlist("tags", ["home"])
     post.setlist("exclude_tags", ["work"])
     post.setlist("hidden_lanes", ["status:2"])
     post["due"] = "overdue"
     post["q"] = "milk"
-    assert TaskFilter.from_post(post) == TaskFilter(
-        tags=("home",), exclude_tags=("work",), due="overdue", q="milk", hidden_lanes=("status:2",)
+    before = TaskFilter(tags=("old",), q="old", sort="due", group="tag", collapsed_groups=("tag:a",))
+    assert before.with_filters_from(post) == TaskFilter(
+        tags=("home",), exclude_tags=("work",), due="overdue", q="milk", hidden_lanes=("status:2",),
+        sort="due", group="tag", collapsed_groups=("tag:a",),
     )
+
+
+def test_show_done_from_the_filter_bar():
+    def posted(*values):
+        post = QueryDict(mutable=True)
+        post.setlist("show_done", list(values))
+        return TaskFilter(show_done=False).with_filters_from(post).show_done
+
+    assert posted() is True  # Clear filters sends nothing: back to showing them
+    assert posted("0") is False  # hidden input carrying the current value
+    assert posted("1") is True
+    assert posted("0", "1") is True  # hidden "0" then the ticked checkbox
+
 
 
 def test_including_and_excluding_a_tag_move_it_between_lists():
@@ -104,11 +152,21 @@ def test_toggling_a_lane():
     assert task_filter.toggling_lane("status:1").hidden_lanes == ()
 
 
-def test_active_count():
+def test_active_count_counts_filters_but_not_layout():
     task_filter = TaskFilter(
-        tags=("a", "b"), exclude_tags=("c",), due="today", q="x", hidden_lanes=("status:1",)
+        tags=("a", "b"), exclude_tags=("c",), due="today", q="x", hidden_lanes=("status:1",),
+        show_done=False, sort="title", group="tag",
     )
-    assert task_filter.active_count == 6
+    assert task_filter.active_count() == 7
+    assert task_filter.active_count(ignore=CALENDAR_IGNORES) == 4
+
+
+def test_saved_filter_matching_ignores_fields_the_view_does_not_use():
+    saved = [SimpleNamespace(name="Week", filter_config={"due": "this_week", "group": "due"})]
+    current = TaskFilter(group="tag")
+    assert current.matching_saved_filter(saved) is None
+    assert current.matching_saved_filter(saved, ignore=CALENDAR_IGNORES).name == "Week"
+    assert TaskFilter(due="this_week").matching_saved_filter(saved, ignore=BOARD_IGNORES).name == "Week"
 
 
 def test_saved_filter_matches_regardless_of_order():

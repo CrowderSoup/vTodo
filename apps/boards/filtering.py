@@ -71,6 +71,26 @@ def _clean_list(values):
     return tuple(seen)
 
 
+# How the list orders and groups tasks. These are layout, not filters: they
+# hide nothing, so they don't count toward the Filters badge, and clearing the
+# filters leaves them alone. The board and calendar ignore them.
+SORT_MANUAL = "manual"
+SORT_CHOICES = (SORT_MANUAL, "due", "status", "assignee", "title", "created", "updated")
+SORT_ASC = "asc"
+SORT_DESC = "desc"
+GROUP_NONE = "none"
+GROUP_CHOICES = (GROUP_NONE, "status", "assignee", "due", "tag")
+
+FILTER_FIELDS = ("tags", "exclude_tags", "due", "q", "hidden_lanes", "show_done")
+LAYOUT_FIELDS = ("sort", "sort_dir", "group", "collapsed_groups")
+
+# The fields each view doesn't use. They don't count toward its Filters badge
+# or toward which saved view is selected. The board shows done tasks in their
+# own lane; the calendar's month is its due-date filter, and it has no search.
+BOARD_IGNORES = LAYOUT_FIELDS + ("show_done",)
+CALENDAR_IGNORES = BOARD_IGNORES + ("due", "q")
+
+
 @dataclass(frozen=True)
 class TaskFilter:
     tags: tuple = ()
@@ -78,6 +98,13 @@ class TaskFilter:
     due: str = ""
     q: str = ""
     hidden_lanes: tuple = ()
+    # Done tasks show (at the bottom of the list) unless this is turned off.
+    show_done: bool = True
+    sort: str = SORT_MANUAL
+    sort_dir: str = SORT_ASC
+    group: str = GROUP_NONE
+    # The list's collapsed groups, as "<group>:<value>" keys (see listing.py).
+    collapsed_groups: tuple = ()
 
     @classmethod
     def from_config(cls, config):
@@ -85,6 +112,8 @@ class TaskFilter:
         unknown is dropped rather than trusted."""
         config = config if isinstance(config, dict) else {}
         due = str(config.get("due") or "").strip()
+        sort = config.get("sort")
+        group = config.get("group")
         return cls(
             tags=_clean_list(config.get("tags")),
             exclude_tags=_clean_list(config.get("exclude_tags")),
@@ -93,18 +122,43 @@ class TaskFilter:
             hidden_lanes=tuple(
                 key for key in _clean_list(config.get("hidden_lanes")) if parse_lane_key(key)[0]
             ),
+            show_done=config.get("show_done") is not False,
+            sort=sort if sort in SORT_CHOICES else SORT_MANUAL,
+            sort_dir=SORT_DESC if config.get("sort_dir") == SORT_DESC else SORT_ASC,
+            group=group if group in GROUP_CHOICES else GROUP_NONE,
+            collapsed_groups=_clean_list(config.get("collapsed_groups")),
         )
 
-    @classmethod
-    def from_post(cls, post):
-        """A filter from the filter bar's form."""
-        return cls.from_config({
+    def with_filters_from(self, post):
+        """The filter bar's form applied to this filter. The form carries every
+        filter, so a filter it leaves out is off; the layout is kept.
+
+        `show_done` is a hidden "0" followed by a "1" checkbox where the list
+        shows it, and a hidden input with the current value elsewhere. No value
+        at all (Clear filters) means on."""
+        show_done = post.getlist("show_done")
+        posted = TaskFilter.from_config({
             "tags": post.getlist("tags"),
             "exclude_tags": post.getlist("exclude_tags"),
             "due": post.get("due", ""),
             "q": post.get("q", ""),
             "hidden_lanes": post.getlist("hidden_lanes"),
+            "show_done": not show_done or show_done[-1] != "0",
         })
+        return self.replace(**{name: getattr(posted, name) for name in FILTER_FIELDS})
+
+    def with_layout_from(self, post):
+        """The list's sort and group controls applied to this filter. A field
+        the form doesn't send is kept. Changing the grouping forgets which
+        groups were collapsed, since those were groups of another kind."""
+        config = self.to_config()
+        for name in ("sort", "sort_dir", "group"):
+            if name in post:
+                config[name] = post.get(name)
+        updated = TaskFilter.from_config(config)
+        if updated.group != self.group:
+            updated = updated.replace(collapsed_groups=())
+        return updated
 
     def to_config(self):
         return {
@@ -113,6 +167,11 @@ class TaskFilter:
             "due": self.due,
             "q": self.q,
             "hidden_lanes": list(self.hidden_lanes),
+            "show_done": self.show_done,
+            "sort": self.sort,
+            "sort_dir": self.sort_dir,
+            "group": self.group,
+            "collapsed_groups": list(self.collapsed_groups),
         }
 
     def replace(self, **changes):
@@ -144,18 +203,29 @@ class TaskFilter:
             return self.replace(hidden_lanes=tuple(k for k in self.hidden_lanes if k != key))
         return self.replace(hidden_lanes=self.hidden_lanes + (key,))
 
-    @property
-    def active_count(self):
-        """How many filters are on, for the badge on the Filters button."""
-        return (
-            len(self.tags) + len(self.exclude_tags) + len(self.hidden_lanes)
-            + bool(self.due) + bool(self.q)
-        )
+    def toggling_group(self, key):
+        """Collapse the list group if it's open, open it if it's collapsed."""
+        if key in self.collapsed_groups:
+            return self.replace(collapsed_groups=tuple(k for k in self.collapsed_groups if k != key))
+        return self.replace(collapsed_groups=self.collapsed_groups + (key,))
+
+    def active_count(self, ignore=()):
+        """How many filters are on, for the badge on the Filters button.
+        `ignore` names the fields the view at hand doesn't apply."""
+        counts = {
+            "tags": len(self.tags),
+            "exclude_tags": len(self.exclude_tags),
+            "hidden_lanes": len(self.hidden_lanes),
+            "due": int(bool(self.due)),
+            "q": int(bool(self.q)),
+            "show_done": int(not self.show_done),
+        }
+        return sum(count for name, count in counts.items() if name not in ignore)
 
     def matches(self, task, today):
         """Whether a task passes the tag, due and search filters. Collapsed lanes
-        are left to the caller: on the board a collapsed lane still shows its
-        count, and only the views that know the lanes can tell which a task is in."""
+        and done tasks are left to the caller: on the board a collapsed lane still
+        shows its count, and only the list hides done tasks."""
         if self.tags and not all(tag in task.tags for tag in self.tags):
             return False
         if self.exclude_tags and any(tag in task.tags for tag in self.exclude_tags):
@@ -172,20 +242,28 @@ class TaskFilter:
         today = today or timezone.localdate()
         return [task for task in tasks if self.matches(task, today)]
 
+    def without(self, fields):
+        """This filter with `fields` set back to their defaults."""
+        defaults = TaskFilter()
+        return self.replace(**{name: getattr(defaults, name) for name in fields})
+
     def _identity(self):
         # Order doesn't make two filters different.
-        return (
-            sorted(self.tags), sorted(self.exclude_tags), self.due, self.q, sorted(self.hidden_lanes),
+        return tuple(
+            sorted(value) if isinstance(value, tuple) else value
+            for value in (getattr(self, name) for name in FILTER_FIELDS + LAYOUT_FIELDS)
         )
 
     def same_as(self, other):
         return self._identity() == other._identity()
 
-    def matching_saved_filter(self, saved_filters):
+    def matching_saved_filter(self, saved_filters, ignore=()):
         """The SavedFilter whose config is this filter, if any: the saved-view
-        select shows it as chosen."""
+        select shows it as chosen. Fields in `ignore` (ones the view at hand
+        doesn't use) don't count on either side."""
+        mine = self.without(ignore)
         for saved in saved_filters:
-            if self.same_as(TaskFilter.from_config(saved.filter_config)):
+            if mine.same_as(TaskFilter.from_config(saved.filter_config).without(ignore)):
                 return saved
         return None
 

@@ -168,6 +168,61 @@ def test_board_saved_view_includes_search(logged_in_client):
     assert 'value="release"' in response.content.decode()
 
 
+def _set_session_filter(client, board, config):
+    session = client.session
+    session["board_filter"] = {str(board.pk): config}
+    session.save()
+
+
+@pytest.mark.django_db
+def test_saved_view_keeps_the_list_layout(logged_in_client):
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    layout = {"sort": "due", "sort_dir": "desc", "group": "tag", "show_done": False}
+    _set_session_filter(client, board, {"tags": ["bug"], **layout})
+
+    client.post(reverse("boards:filter-save"), {"board_id": board.pk, "name": "Bugs by tag"})
+    saved_filter = board.saved_filters.get(name="Bugs by tag")
+    assert saved_filter.filter_config | layout == saved_filter.filter_config
+
+    _set_session_filter(client, board, {})
+    client.post(reverse("boards:filter-load", args=[saved_filter.pk]))
+    stored = client.session["board_filter"][str(board.pk)]
+    assert stored | layout == stored
+
+
+@pytest.mark.django_db
+def test_board_filter_bar_keeps_the_layout_and_show_done(logged_in_client):
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    _set_session_filter(client, board, {"sort": "title", "group": "status", "show_done": False})
+
+    response = client.post(reverse("boards:board-filter"), {
+        "board_id": board.pk, "tags": ["bug"], "show_done": "0",
+    })
+
+    stored = client.session["board_filter"][str(board.pk)]
+    assert (stored["tags"], stored["sort"], stored["group"], stored["show_done"]) == (
+        ["bug"], "title", "status", False,
+    )
+    # The board shows done tasks in their lane whatever show_done says, and
+    # layout isn't a filter: only the tag counts.
+    assert response.context["active_filter_count"] == 1
+    assert 'name="show_done" value="0"' in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_board_saved_view_selection_ignores_the_list_layout(logged_in_client):
+    client, user = logged_in_client
+    board = Board.objects.get(user=user)
+    board.saved_filters.create(name="Bugs", filter_config={"tags": ["bug"], "group": "tag"})
+    _set_session_filter(client, board, {"tags": ["bug"], "group": "status"})
+
+    response = client.get(reverse("boards:board"))
+
+    assert response.context["active_saved_filter_name"] == "Bugs"
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize("query", [None, "", 'release "notes" & <tasks>'])
 def test_board_saved_view_response_syncs_search(logged_in_client, query):
