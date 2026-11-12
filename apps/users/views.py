@@ -111,7 +111,7 @@ class SettingsGeneralView(LoginRequiredMixin, View):
 
 
 def _saved_filters_with_labels(board):
-    from apps.boards.views import _parse_lane_key
+    from apps.boards.filtering import parse_lane_key
     from apps.tasks.models import TaskStatus
 
     statuses_by_pk = {
@@ -122,7 +122,7 @@ def _saved_filters_with_labels(board):
     for sf in saved_filters:
         labels = []
         for key in sf.filter_config.get("hidden_lanes", []):
-            kind, pk = _parse_lane_key(key)
+            kind, pk = parse_lane_key(key)
             if kind == "status":
                 labels.append(statuses_by_pk.get(pk, ""))
             elif kind == "column":
