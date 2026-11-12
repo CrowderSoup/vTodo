@@ -1,0 +1,58 @@
+{% extends "users/settings/_base.html" %}
+
+{% block settings_title %}Import preview{% endblock %}
+
+{% block settings_content %}
+<div class="settings-grid">
+  <section class="settings-card settings-card--wide surface-panel">
+    <div>
+      <h2 class="card-title">Import {{ filename|default:"tasks" }}</h2>
+      <p class="card-subtitle">Into {{ active_workspace.name }}: <strong>{{ result.summary }}</strong>. Nothing has been imported yet.</p>
+    </div>
+
+    {% if result.warnings %}
+    <div>
+      <p class="field-label">Warnings</p>
+      <ul class="import-warnings">
+        {% for warning in result.warnings %}
+        <li class="field-help">{{ warning }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if result.tasks %}
+    <div class="settings-list">
+      {% for task in result.tasks %}
+      <div class="config-row">
+        <div class="config-main">
+          <div class="config-title">
+            <span class="pill">{% if task.action == "create" %}New{% elif task.action == "update" %}Update{% else %}Skip{% endif %}</span>
+            <span>{{ task.title }}</span>
+          </div>
+          {% if task.changes %}
+          <div class="config-description">Changes: {{ task.change_labels|join:", " }}</div>
+          {% elif task.reason %}
+          <div class="config-description">{{ task.reason|capfirst }}</div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="field-help">The file has no tasks (VTODOs) in it.</p>
+    {% endif %}
+
+    <form method="post" action="{% url 'users:task-import' %}" class="settings-actions">
+      {% csrf_token %}
+      <input type="hidden" name="confirm" value="1">
+      <input type="hidden" name="filename" value="{{ filename }}">
+      <textarea name="ics" hidden>{{ ics }}</textarea>
+      <a class="button-link btn-secondary" href="{% url 'users:settings' %}">Cancel</a>
+      {% if result.created or result.updated %}
+      <button type="submit" class="btn-primary">Import</button>
+      {% endif %}
+    </form>
+  </section>
+</div>
+{% endblock %}

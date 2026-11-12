@@ -23,6 +23,7 @@ changes a task's status, or what its status means, comes through here:
 - start():            a task was just created, possibly straight into Done.
 - enter_status():     a task moves to another status (via move_task).
 - status_redefined(): a status was flipped to or from is_done.
+- restore():          an import sets a task's status from a file.
 """
 
 import enum
@@ -95,6 +96,21 @@ def start(task):
         _complete(task, came_from="", now=task.created_at or timezone.now())
         task.save(update_fields=ENTER_STATUS_FIELDS)
     return task
+
+
+def restore(task, slug, *, to_done, completed_at=None):
+    """An import (apps/tasks/ical_import.py) puts `task` in status `slug` as
+    a file recorded it. Like status_redefined(), this restores a state rather
+    than doing the work, so the caller spawns no recurrence. A done task takes
+    the completion time from the file when it has one. Works on an unsaved
+    task too, which has no earlier column to go back to. Does not save."""
+    came_from = task.status if task.pk else ""
+    transition = enter_status(task, slug, to_done=to_done)
+    if transition is Transition.COMPLETE:
+        task.previous_status = came_from
+    if to_done and completed_at is not None:
+        task.completed_at = completed_at
+    return transition
 
 
 def status_redefined(status):

@@ -8,6 +8,11 @@
   {% csrf_token %}
 </form>
 {% endif %}
+{% if can_write_workspace %}
+<form id="task-import-form" method="post" action="{% url 'users:task-import' %}" enctype="multipart/form-data" hidden>
+  {% csrf_token %}
+</form>
+{% endif %}
 <form method="post" action="{% url 'users:settings' %}" class="settings-grid">
   {% csrf_token %}
 
@@ -90,6 +95,24 @@
     </div>
     <p class="field-help">Other task apps can import it. Done and archived tasks are included. Comments, activity, statuses and assignees are not.</p>
   </section>
+
+  {% if can_write_workspace %}
+  <section class="settings-card surface-panel">
+    <div>
+      <h2 class="card-title">Import</h2>
+      <p class="card-subtitle">Add tasks to {{ active_workspace.name }} from an iCalendar (.ics) file, such as a vTodo export or one from another task app.</p>
+    </div>
+
+    <div class="form-field">
+      <label class="field-label" for="task-import-file">.ics file</label>
+      <input type="file" id="task-import-file" name="file" accept=".ics,text/calendar" form="task-import-form" required>
+    </div>
+    <div class="settings-actions">
+      <button type="submit" class="btn-secondary" form="task-import-form">Preview import</button>
+    </div>
+    <p class="field-help">You'll see what will be added or changed before anything is imported. Tasks already imported from the same file are updated, not added twice.</p>
+  </section>
+  {% endif %}
 
   <section class="settings-card settings-card--wide surface-panel">
     <div class="settings-actions">

@@ -425,6 +425,29 @@ def export_tasks(workspace: int | str | None = None) -> str:
     except VtodoAPIError as e:
         return _err(e)
 
+
+@mcp.tool()
+def import_tasks(ics: str, dry_run: bool = True, workspace: int | str | None = None) -> str:
+    """Import tasks from an iCalendar (.ics) document of VTODOs, e.g. an
+    export from vTodo, Todoist, TickTick, Apple Reminders or Thunderbird.
+
+    Defaults to a dry run: nothing is written, and the result says how many
+    tasks would be new, updated or skipped, plus any warnings. Show that to
+    the user, then call again with dry_run=false to import.
+
+    Tasks are matched on their UID, so importing the same file twice adds
+    nothing the second time; matched tasks are updated to what the file says.
+    Repeat rules vTodo can't represent (e.g. every Monday and Wednesday) are
+    imported as one-off tasks with a warning. Completed tasks go to the done
+    column. Events and anything other than VTODOs are ignored.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
+    try:
+        return _ok(_client(workspace).import_tasks(ics, dry_run=dry_run))
+    except VtodoAPIError as e:
+        return _err(e)
+
 # ── Assignment and claim tools ─────────────────────────────────────────────────
 
 

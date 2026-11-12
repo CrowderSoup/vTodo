@@ -7,6 +7,7 @@ app_name = "users"
 urlpatterns = [
     path("", views.SettingsGeneralView.as_view(), name="settings"),
     path("export.ics", views.TaskExportView.as_view(), name="task-export"),
+    path("import/", views.TaskImportView.as_view(), name="task-import"),
     path("board/", views.SettingsBoardView.as_view(), name="settings-board"),
     path("api/", views.SettingsApiView.as_view(), name="settings-api"),
     path("calendar/", views.SettingsCalendarView.as_view(), name="settings-calendar"),
