@@ -24,7 +24,7 @@ from apps.accounts.google_accounts import (
     UnverifiedGoogleEmail,
     sign_in_with_google_id_token,
 )
-from apps.tasks import activity, lifecycle
+from apps.tasks import activity, ical, lifecycle
 from apps.tasks.activity import source_for_request
 from apps.tasks.claims import (
     ClaimConflict,
@@ -317,6 +317,16 @@ class TaskViewSet(viewsets.ModelViewSet):
         if task is None:
             return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(TaskSerializer(task).data)
+
+    @extend_schema(
+        responses={(200, "text/calendar"): {"type": "string"}},
+    )
+    @action(detail=False, methods=["get"])
+    def export(self, request):
+        """Every task in the workspace, archived and done ones included, as an
+        iCalendar (.ics) file of VTODOs. Filters on the task list don't apply.
+        Comments, activity, statuses and assignees are left out."""
+        return ical.export_response(request.active_workspace)
 
     @action(detail=True, methods=["get", "post"])
     def comments(self, request, pk=None):

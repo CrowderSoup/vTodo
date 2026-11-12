@@ -1,3 +1,4 @@
+import uuid
 from datetime import timedelta
 
 from django.conf import settings
@@ -100,6 +101,10 @@ class TaskQuerySet(models.QuerySet):
         )
 
 
+def new_ical_uid():
+    return str(uuid.uuid4())
+
+
 class Task(models.Model):
     # Who created the row. The workspace owns it, so it outlives this person.
     user = models.ForeignKey(
@@ -127,6 +132,10 @@ class Task(models.Model):
     due_time = models.TimeField(null=True, blank=True)
     duration_minutes = models.PositiveSmallIntegerField(null=True, blank=True)
     tags = models.JSONField(default=list, blank=True)
+    # The iCalendar UID this task is exported under (apps/tasks/ical.py). An
+    # import keeps the UID from the file, so importing the same file twice
+    # updates tasks instead of duplicating them.
+    ical_uid = models.CharField(max_length=255, default=new_ical_uid)
 
     is_archived = models.BooleanField(default=False)
 
@@ -173,6 +182,12 @@ class Task(models.Model):
 
     class Meta:
         ordering = ["order", "created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "ical_uid"],
+                name="task_unique_workspace_ical_uid",
+            ),
+        ]
 
     def __str__(self):
         return self.title

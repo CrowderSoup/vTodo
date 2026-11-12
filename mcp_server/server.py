@@ -408,6 +408,23 @@ def reorder_tasks(ids: list[int], workspace: int | str | None = None) -> str:
         return _err(e)
 
 
+
+@mcp.tool()
+def export_tasks(workspace: int | str | None = None) -> str:
+    """Export every task in a workspace as an iCalendar (.ics) document.
+
+    One VTODO per task, done and archived tasks included. Recurring tasks get
+    an RRULE; tasks that repeat from completion also carry
+    X-VTODO-RECUR-FROM:COMPLETION. Comments, activity, statuses and assignees
+    are left out. Returns the file's text, ready to save as a .ics file.
+
+    workspace is a workspace id or name from list_workspaces. Leave it out for Personal.
+    """
+    try:
+        return _client(workspace).export_tasks()
+    except VtodoAPIError as e:
+        return _err(e)
+
 # ── Assignment and claim tools ─────────────────────────────────────────────────
 
 
