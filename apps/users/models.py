@@ -59,6 +59,22 @@ class User(AbstractBaseUser, PermissionsMixin):
         related_name="default_for_users",
     )
 
+    # The page vTodo opens to after sign-in and from the logo (see HomeView).
+    VIEW_LIST = "list"
+    VIEW_BOARD = "board"
+    VIEW_CALENDAR = "calendar"
+    VIEW_CHOICES = [
+        (VIEW_LIST, "List"),
+        (VIEW_BOARD, "Board"),
+        (VIEW_CALENDAR, "Calendar"),
+    ]
+    VIEW_URL_NAMES = {
+        VIEW_LIST: "boards:list",
+        VIEW_BOARD: "boards:board",
+        VIEW_CALENDAR: "calendar:calendar",
+    }
+    default_view = models.CharField(max_length=16, choices=VIEW_CHOICES, default=VIEW_LIST)
+
     # IANA zone name (e.g. "America/Chicago"), used to compute "today"/overdue
     # and recurrence dates in the user's own local time instead of UTC.
     timezone = models.CharField(max_length=64, default="UTC")

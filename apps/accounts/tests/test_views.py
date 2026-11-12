@@ -17,7 +17,7 @@ def test_login_redirects_authenticated_user(client):
     client.force_login(user)
     response = client.get(reverse("accounts:login"))
     assert response.status_code == 302
-    assert response["Location"] == "/board/"
+    assert response["Location"] == "/home/"
 
 
 @pytest.mark.django_db
@@ -45,7 +45,7 @@ def test_login_ignores_unsafe_next_for_authenticated_user(client):
     client.force_login(user)
     response = client.get(reverse("accounts:login"), {"next": "https://evil.example.com/"})
     assert response.status_code == 302
-    assert response["Location"] == "/board/"
+    assert response["Location"] == "/home/"
 
 
 @pytest.mark.django_db

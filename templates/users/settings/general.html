@@ -42,6 +42,16 @@
       </select>
     </div>
     <p class="field-help">Used to figure out "today" for due dates, overdue tasks, and when recurring tasks come back.</p>
+
+    <div class="form-field">
+      <label class="field-label" for="default_view">Open to</label>
+      <select id="default_view" name="default_view">
+        {% for value, label in view_choices %}
+        <option value="{{ value }}" {% if user.default_view == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <p class="field-help">The page you land on when you sign in or click the vtodo logo.</p>
   </section>
 
   <section class="settings-card surface-panel">
