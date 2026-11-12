@@ -36,6 +36,7 @@ from apps.tasks.selectors import (
 )
 
 from .filtering import (
+    BOARD_IGNORES,
     TaskFilter,
     board_filter_for,
     lane_key,
@@ -300,10 +301,11 @@ def _task_panel_create_context(user, board, lane_param="", form_values=None, for
     }
 
 
-def filter_bar_context(task_filter, hidden_lane_summaries, saved_filters):
+def filter_bar_context(task_filter, hidden_lane_summaries, saved_filters, ignore):
     """What the filter bar needs: the active filters as pills, the count on the
-    Filters button, and which saved view (if any) is the current filter."""
-    saved = task_filter.matching_saved_filter(saved_filters)
+    Filters button, and which saved view (if any) is the current filter.
+    `ignore` names the fields this view doesn't use (see filtering.py)."""
+    saved = task_filter.matching_saved_filter(saved_filters, ignore=ignore)
     return {
         "active_filter": {
             "tags": list(task_filter.tags),
@@ -311,8 +313,9 @@ def filter_bar_context(task_filter, hidden_lane_summaries, saved_filters):
             "due": task_filter.due,
             "q": task_filter.q,
             "hidden_lanes": hidden_lane_summaries,
+            "show_done": task_filter.show_done,
         },
-        "active_filter_count": task_filter.active_count,
+        "active_filter_count": task_filter.active_count(ignore=ignore),
         "saved_filters": saved_filters,
         "active_saved_filter_name": saved.name if saved else None,
     }
@@ -411,7 +414,7 @@ def _build_board_context(user, board, session=None):
         "statuses": statuses,
         "done_slug": done_slug,
         "active_slug": active_slug,
-        **filter_bar_context(task_filter, hidden_lane_summaries, saved_filters),
+        **filter_bar_context(task_filter, hidden_lane_summaries, saved_filters, BOARD_IGNORES),
         "show_task_search": True,
         "today": today,
         "total_task_count": len(all_tasks),
@@ -433,7 +436,8 @@ class BoardView(LoginRequiredMixin, View):
 class BoardFilterView(LoginRequiredMixin, View):
     def post(self, request):
         board = _board_from_post(request)
-        save_board_filter(request, board, TaskFilter.from_post(request.POST))
+        task_filter = board_filter_for(board, request.session)
+        save_board_filter(request, board, task_filter.with_filters_from(request.POST))
         return _render_filter_response(
             request, request.user, board, request.session, sync_search="q" not in request.POST
         )

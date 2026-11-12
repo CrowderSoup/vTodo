@@ -10,7 +10,7 @@ from django.views import View
 from apps.tasks.selectors import board_tasks_qs, get_task_or_404, reschedule_task
 from apps.workspaces.access import ensure_can_write
 
-from .filtering import board_filter_for
+from .filtering import CALENDAR_IGNORES, board_filter_for
 from .selectors import resolve_board
 from .views import _hidden_lane_context, _status_context_for, filter_bar_context
 
@@ -40,7 +40,7 @@ def _build_calendar_context(user, board, year, month, session=None):
 
     # The board's due-date filter and search don't apply here: month navigation
     # is the calendar's due-date filter, and the calendar has no search box.
-    task_filter = board_filter_for(board, session).replace(due="", q="")
+    task_filter = board_filter_for(board, session).without(CALENDAR_IGNORES)
     hidden_lane_matchers, hidden_lane_summaries = _hidden_lane_context(
         user, board, set(task_filter.hidden_lanes)
     )
@@ -108,7 +108,9 @@ def _build_calendar_context(user, board, year, month, session=None):
         "next_month": next_month,
         "today_year": today.year,
         "today_month": today.month,
-        **filter_bar_context(task_filter, hidden_lane_summaries, list(board.saved_filters.all())),
+        **filter_bar_context(
+            task_filter, hidden_lane_summaries, list(board.saved_filters.all()), CALENDAR_IGNORES
+        ),
         "hide_due_filter": True,
     }
 

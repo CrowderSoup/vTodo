@@ -43,6 +43,7 @@
           hx-swap="innerHTML"
           hx-trigger="change">
       <input type="hidden" name="board_id" value="{{ board.pk }}">
+      <input type="hidden" name="show_done" value="{% if active_filter.show_done %}1{% else %}0{% endif %}">
 
       {% if not hide_due_filter %}
       <div class="filter-group">
