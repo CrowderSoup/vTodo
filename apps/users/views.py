@@ -43,7 +43,7 @@ class HomeView(LoginRequiredMixin, View):
 
     def get(self, request):
         user = request.user
-        return redirect(user.VIEW_URL_NAMES.get(user.default_view, "boards:list"))
+        return redirect(user.VIEW_URL_NAMES.get(user.default_view, "list:list"))
 
 
 class SettingsGeneralView(LoginRequiredMixin, View):
