@@ -24,7 +24,7 @@ from apps.accounts.google_accounts import (
     UnverifiedGoogleEmail,
     sign_in_with_google_id_token,
 )
-from apps.tasks import activity, ical, lifecycle
+from apps.tasks import activity, ical, ical_import, lifecycle
 from apps.tasks.activity import source_for_request
 from apps.tasks.claims import (
     ClaimConflict,
@@ -327,6 +327,53 @@ class TaskViewSet(viewsets.ModelViewSet):
         iCalendar (.ics) file of VTODOs. Filters on the task list don't apply.
         Comments, activity, statuses and assignees are left out."""
         return ical.export_response(request.active_workspace)
+
+    @extend_schema(
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {"ics": {"type": "string"}, "dry_run": {"type": "boolean"}},
+                "required": ["ics"],
+            },
+            "multipart/form-data": {
+                "type": "object",
+                "properties": {"file": {"type": "string", "format": "binary"}, "dry_run": {"type": "boolean"}},
+                "required": ["file"],
+            },
+        },
+        responses={200: {"type": "object"}},
+    )
+    @action(detail=False, methods=["post"], url_path="import", url_name="import")
+    def import_tasks(self, request):
+        """Import the VTODOs in an iCalendar (.ics) file: `ics` as text, or an
+        uploaded `file`. Tasks are matched on UID, so importing the same file
+        twice adds nothing the second time. With `dry_run`, nothing is written
+        and the response says what would happen."""
+        upload = request.FILES.get("file")
+        if upload is not None:
+            if upload.size > ical_import.MAX_BYTES:
+                raise ValidationError({"file": ["That file is too big."]})
+            try:
+                text = upload.read().decode("utf-8-sig")
+            except UnicodeDecodeError:
+                raise ValidationError({"file": ["The file isn't UTF-8 text."]})
+        else:
+            text = request.data.get("ics")
+            if not isinstance(text, str) or not text.strip():
+                raise ValidationError({"ics": ["Send the .ics text as `ics`, or upload it as `file`."]})
+        dry_run = str(request.data.get("dry_run", "")).lower() in ("1", "true")
+        try:
+            result = ical_import.import_ics(
+                text,
+                workspace=request.active_workspace,
+                user=request.user,
+                dry_run=dry_run,
+                source=source_for_request(request),
+                floating_tz=ical_import.user_zone(request.user),
+            )
+        except ical_import.IcsImportError as e:
+            raise ValidationError({"detail": str(e)})
+        return Response(result.as_dict())
 
     @action(detail=True, methods=["get", "post"])
     def comments(self, request, pk=None):

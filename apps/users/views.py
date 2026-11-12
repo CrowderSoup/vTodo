@@ -133,6 +133,73 @@ class TaskExportView(LoginRequiredMixin, View):
         return export_response(active_workspace(request))
 
 
+class TaskImportView(LoginRequiredMixin, View):
+    """Import an .ics file into the active workspace, in two steps: posting a
+    file shows a preview (a dry run), and confirming it imports. The preview
+    carries the file's text in a hidden field, so nothing is kept between the
+    two requests and the confirm step works it out again from scratch."""
+
+    def get(self, request):
+        return redirect(reverse("users:settings"))
+
+    def post(self, request):
+        from apps.tasks import ical_import
+        from apps.tasks.models import TaskActivity
+        from apps.workspaces.access import active_workspace, ensure_can_write
+
+        ensure_can_write(request)
+        workspace = active_workspace(request)
+
+        confirm = request.POST.get("confirm") == "1"
+        if confirm:
+            text = request.POST.get("ics", "")
+            filename = request.POST.get("filename", "")
+        else:
+            upload = request.FILES.get("file")
+            if upload is None:
+                messages.error(request, "Choose an .ics file to import.")
+                return redirect(reverse("users:settings"))
+            filename = upload.name
+            if upload.size > ical_import.MAX_BYTES:
+                messages.error(request, "That file is too big. The limit is 2 MB.")
+                return redirect(reverse("users:settings"))
+            try:
+                text = upload.read().decode("utf-8-sig")
+            except UnicodeDecodeError:
+                messages.error(request, "That file isn't UTF-8 text, so it can't be an .ics file.")
+                return redirect(reverse("users:settings"))
+
+        try:
+            result = ical_import.import_ics(
+                text,
+                workspace=workspace,
+                user=request.user,
+                dry_run=not confirm,
+                source=TaskActivity.SOURCE_WEB,
+                floating_tz=ical_import.user_zone(request.user),
+            )
+        except ical_import.IcsImportError as e:
+            messages.error(request, str(e))
+            return redirect(reverse("users:settings"))
+
+        if confirm:
+            messages.success(request, f"Imported {filename or 'the file'}: {result.summary}.")
+            for warning in result.warnings[:5]:
+                messages.warning(request, warning)
+            if len(result.warnings) > 5:
+                messages.warning(request, f"…and {len(result.warnings) - 5} more warnings.")
+            return redirect(reverse("users:settings"))
+
+        context = {
+            "result": result,
+            "ics": text,
+            "filename": filename,
+            "active_tab": "general",
+        }
+        context.update(_hero_stats(workspace))
+        return render(request, "users/settings/import_preview.html", context)
+
+
 def _saved_filters_with_labels(board):
     from apps.boards.filtering import parse_lane_key
     from apps.tasks.models import TaskStatus

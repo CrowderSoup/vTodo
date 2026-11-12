@@ -106,7 +106,7 @@ def test_plain_task():
 def test_bare_task_has_no_optional_properties():
     task = Task.objects.create(user=User.objects.create_user(), title="Bare", status="todo")
     todo = _only(ical.export_tasks([task]))
-    assert set(todo) == {"UID", "DTSTAMP", "SUMMARY", "STATUS"}
+    assert set(todo) == {"UID", "DTSTAMP", "CREATED", "SUMMARY", "STATUS"}
 
 
 @pytest.mark.django_db

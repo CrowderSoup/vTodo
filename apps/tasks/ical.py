@@ -92,6 +92,9 @@ def vtodo_lines(task):
         f"UID:{escape_text(task.ical_uid)}",
         # With no METHOD, DTSTAMP is when the task was last revised (3.8.7.2).
         f"DTSTAMP:{_utc(task.updated_at)}",
+        # An import keeps it, so tasks stay in order and a recurring task
+        # without a due date keeps its DTSTART.
+        f"CREATED:{_utc(task.created_at)}",
         f"SUMMARY:{escape_text(task.title)}",
     ]
     if task.notes:

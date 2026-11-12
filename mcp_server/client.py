@@ -141,6 +141,10 @@ class VtodoClient:
         """The workspace's tasks as an iCalendar (.ics) document."""
         return self._request("GET", "/tasks/export/").text
 
+    def import_tasks(self, ics: str, dry_run: bool = True) -> dict:
+        """Import an iCalendar (.ics) document; with dry_run, only a preview."""
+        return self._request("POST", "/tasks/import/", json={"ics": ics, "dry_run": dry_run}).json()
+
     # ── Statuses ───────────────────────────────────────────────────────────
 
     def list_statuses(self) -> list[dict]:
