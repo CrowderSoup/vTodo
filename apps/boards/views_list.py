@@ -43,7 +43,7 @@ def is_list_page(request):
     the board and calendar (move, delete, panel saves) answer each page with
     its own markup, the same way the calendar is told apart."""
     path = urlparse(request.headers.get("HX-Current-URL", "")).path
-    return path == reverse("boards:list")
+    return path == reverse("list:list")
 
 
 def build_list_context(user, board, session=None):
