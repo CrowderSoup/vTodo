@@ -1,6 +1,6 @@
 <div class="list-toolbar">
   <form class="list-layout-form"
-        hx-post="{% url 'boards:list-layout' %}"
+        hx-post="{% url 'list:layout' %}"
         hx-target="#task-list-content"
         hx-swap="innerHTML"
         hx-trigger="change, submit">
@@ -56,7 +56,7 @@
     <button class="list-group-toggle"
             type="button"
             aria-expanded="{% if group.collapsed %}false{% else %}true{% endif %}"
-            hx-post="{% url 'boards:list-group-toggle' %}"
+            hx-post="{% url 'list:group-toggle' %}"
             hx-vals='{"key": "{{ group.key|escapejs }}", "board_id": "{{ board.pk }}"}'
             hx-target="#task-list-content"
             hx-swap="innerHTML">

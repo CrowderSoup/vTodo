@@ -1,14 +1,11 @@
 from django.urls import path
 
-from . import views, views_list
+from . import views
 
 app_name = "boards"
 
 urlpatterns = [
     path("", views.BoardView.as_view(), name="board"),
-    path("list/", views_list.ListView.as_view(), name="list"),
-    path("list/layout/", views_list.ListLayoutView.as_view(), name="list-layout"),
-    path("list/groups/toggle/", views_list.ListGroupToggleView.as_view(), name="list-group-toggle"),
     path("filter/", views.BoardFilterView.as_view(), name="board-filter"),
     path("filter/add-tag/", views.BoardFilterAddTagView.as_view(), name="board-filter-add-tag"),
     path("filter/exclude-tag/", views.BoardFilterExcludeTagView.as_view(), name="board-filter-exclude-tag"),
