@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     "apps.teams.apps.TeamsConfig",
     "apps.boards.apps.BoardsConfig",
     "apps.tasks.apps.TasksConfig",
+    "apps.attachments.apps.AttachmentsConfig",
     "apps.integrations.apps.IntegrationsConfig",
     "apps.siteadmin.apps.SiteAdminConfig",
     # Django contrib
@@ -270,7 +271,17 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.integrations.tasks.sync_all_google_calendar_connections",
         "schedule": 600.0,  # 10 minutes
     },
+    "purge-vupload-deletions": {
+        "task": "apps.attachments.tasks.purge_vupload_deletions",
+        "schedule": 600.0,
+    },
 }
+
+# vUpload, the suite's internal file store (attachments). No public hostname:
+# http://vupload:8080 on the droplet's Docker network. Either one empty turns
+# attachments off.
+VUPLOAD_URL = env("VUPLOAD_URL", default="")
+VUPLOAD_APP_KEY = env("VUPLOAD_APP_KEY", default="")
 
 # Email
 EMAIL_BACKEND = env(

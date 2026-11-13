@@ -320,6 +320,8 @@ class TaskActivity(models.Model):
     COMMENT_DELETED = "comment_deleted"
     CLAIMED = "claimed"
     RELEASED = "released"
+    ATTACHED = "attached"
+    ATTACHMENT_DELETED = "attachment_deleted"
     ACTION_CHOICES = [
         (CREATED, "Created"),
         (UPDATED, "Updated"),
@@ -331,6 +333,8 @@ class TaskActivity(models.Model):
         (COMMENT_DELETED, "Comment deleted"),
         (CLAIMED, "Claimed"),
         (RELEASED, "Released"),
+        (ATTACHED, "Attached a file"),
+        (ATTACHMENT_DELETED, "Deleted a file"),
     ]
 
     # Who created the row. The workspace owns it, so it outlives this person.

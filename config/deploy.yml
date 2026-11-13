@@ -81,6 +81,8 @@ env:
     # Existing links and the callback URL registered in Pocket ID use this id.
     # Don't change it.
     OIDC_PROVIDER_ID: pocket-id
+    # vUpload (attachments): internal only, on the droplet's Docker network.
+    VUPLOAD_URL: http://vupload:8080
   secret:
     - SECRET_KEY
     - DATABASE_URL
@@ -91,6 +93,8 @@ env:
     - OIDC_CLIENT_ID
     - OIDC_CLIENT_SECRET
     - INTEGRATIONS_ENCRYPTION_KEY
+    # vUpload app key: `kamal app exec --reuse "/vupload apps create vtodo …"` in the vUpload repo
+    - VUPLOAD_APP_KEY
 
 accessories:
   redis:

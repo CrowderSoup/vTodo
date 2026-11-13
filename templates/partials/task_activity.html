@@ -9,6 +9,8 @@
       {% elif entry.action == "created" %}created this task
       {% elif entry.action == "commented" %}commented
       {% elif entry.action == "comment_deleted" %}deleted a comment
+      {% elif entry.action == "attached" %}attached <em>{{ entry.new_value }}</em>
+      {% elif entry.action == "attachment_deleted" %}deleted the file <em>{{ entry.old_value }}</em>
       {% else %}{{ entry.get_action_display|lower }} this task{% endif %}
     </span>
     <span class="field-help activity-meta">{{ entry.created_at|date:"N j, Y g:i a" }}{% if entry.source != "web" %} · via {{ entry.get_source_display }}{% endif %}</span>

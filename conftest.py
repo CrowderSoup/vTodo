@@ -31,3 +31,14 @@ def pytest_runtest_setup(item):
         "it before the next test so asyncio.run() keeps working.",
         pytrace=False,
     )
+
+
+@pytest.fixture
+def fake_vupload(monkeypatch):
+    """Attachments on, backed by an in-memory vUpload (apps/attachments/testing.py)."""
+    from apps.attachments import vupload
+    from apps.attachments.testing import FakeVUpload
+
+    fake = FakeVUpload()
+    monkeypatch.setattr(vupload, "get_client", lambda: fake)
+    return fake
