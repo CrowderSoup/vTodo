@@ -20,10 +20,12 @@ class FakeResponse:
 
 
 class FakeAsyncClient:
-    """Stands in for httpx.AsyncClient; counts whoami round trips."""
+    """Stands in for httpx.AsyncClient; counts whoami round trips. Set
+    `error` to an exception to raise it instead of answering."""
 
     calls = 0
     status_code = 200
+    error = None
 
     async def __aenter__(self):
         return self
@@ -33,6 +35,8 @@ class FakeAsyncClient:
 
     async def get(self, url, headers, timeout):
         type(self).calls += 1
+        if type(self).error is not None:
+            raise type(self).error
         return FakeResponse(type(self).status_code, {"user_id": 1, "username": "u"})
 
 
@@ -40,7 +44,13 @@ class FakeAsyncClient:
 def fake_whoami(monkeypatch):
     FakeAsyncClient.calls = 0
     FakeAsyncClient.status_code = 200
+    FakeAsyncClient.error = None
     monkeypatch.setattr(server.httpx, "AsyncClient", FakeAsyncClient)
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(server.asyncio, "sleep", no_sleep)
     server._whoami_cache.clear()
     yield
     server._whoami_cache.clear()
@@ -108,3 +118,124 @@ def test_client_defaults_to_drf_token_scheme():
     client = VtodoClient("https://vtodo.example.com", "drf-token")
 
     assert client._session.headers["Authorization"] == "Token drf-token"
+
+
+def test_forbidden_token_is_rejected():
+    FakeAsyncClient.status_code = 403
+
+    assert verify("no-scope") is None
+
+
+@pytest.mark.parametrize("status_code", [500, 502, 503, 429])
+def test_whoami_errors_are_not_treated_as_a_bad_token(status_code):
+    """A 401 here would make Claude refresh, and if that also failed, ask to
+    sign in again. Server errors during a deploy must not do that."""
+    FakeAsyncClient.status_code = status_code
+
+    with pytest.raises(server.WhoamiUnavailable):
+        verify("good-token")
+    assert FakeAsyncClient.calls == server._WHOAMI_ATTEMPTS
+    assert server._token_key("good-token") not in server._whoami_cache
+
+
+def test_unreachable_whoami_is_not_treated_as_a_bad_token():
+    FakeAsyncClient.error = server.httpx.ConnectError("connection refused")
+
+    with pytest.raises(server.WhoamiUnavailable):
+        verify("good-token")
+
+
+def test_whoami_is_retried_once(monkeypatch):
+    class FlakyClient(FakeAsyncClient):
+        async def get(self, url, headers, timeout):
+            type(self).calls += 1
+            if type(self).calls == 1:
+                raise server.httpx.ReadTimeout("slow")
+            return FakeResponse(200)
+
+    FlakyClient.calls = 0
+    monkeypatch.setattr(server.httpx, "AsyncClient", FlakyClient)
+
+    assert verify("good-token").token == "good-token"
+    assert FlakyClient.calls == 2
+
+
+def test_api_401_forgets_the_token(monkeypatch):
+    import requests
+
+    verify("replaced-token")
+    key = server._token_key("replaced-token")
+    client = VtodoClient(
+        "https://vtodo.example.com",
+        "replaced-token",
+        scheme="Bearer",
+        on_unauthorized=lambda: server._forget_token(key),
+    )
+    server._vtodo_clients[key] = client
+
+    class Unauthorized:
+        status_code = 401
+        reason = "Unauthorized"
+        text = ""
+
+        def raise_for_status(self):
+            raise requests.HTTPError()
+
+        def json(self):
+            return {"detail": "Invalid token."}
+
+    monkeypatch.setattr(client._session, "request", lambda *a, **kw: Unauthorized())
+
+    with pytest.raises(server.VtodoAPIError):
+        client.list_workspaces()
+    assert key not in server._whoami_cache
+    assert key not in server._vtodo_clients
+
+
+def test_api_timeout_becomes_an_error_result(monkeypatch):
+    import requests
+
+    client = VtodoClient("https://vtodo.example.com", "t", scheme="Bearer")
+
+    def hang(*a, **kw):
+        assert kw["timeout"]
+        raise requests.ReadTimeout()
+
+    monkeypatch.setattr(client._session, "request", hang)
+
+    with pytest.raises(server.VtodoAPIError) as caught:
+        client.list_workspaces()
+    assert caught.value.status_code == 504
+
+
+def test_tools_run_in_a_thread_and_still_see_the_callers_token(monkeypatch):
+    """Tools run off the event loop. The caller's token comes from a
+    contextvar, which has to reach the worker thread."""
+    import threading
+
+    from mcp.server.auth.middleware.auth_context import auth_context_var
+    from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+    from mcp.server.auth.provider import AccessToken
+
+    seen = {}
+
+    def list_workspaces(self):
+        seen["auth"] = self._session.headers["Authorization"]
+        seen["thread"] = threading.current_thread()
+        return []
+
+    monkeypatch.setattr(server, "_stdio_client", None)
+    monkeypatch.setattr(VtodoClient, "list_workspaces", list_workspaces)
+    server._vtodo_clients.clear()
+
+    async def call():
+        auth_context_var.set(
+            AuthenticatedUser(AccessToken(token="caller-token", client_id="vtodo", scopes=["tasks"]))
+        )
+        await server.mcp.call_tool("list_workspaces", {})
+
+    asyncio.run(call())
+
+    assert seen["auth"] == "Bearer caller-token"
+    assert seen["thread"] is not threading.main_thread()
+    server._vtodo_clients.clear()

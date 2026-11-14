@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import asyncio
+import functools
 import hashlib
 import json
+import logging
+import threading
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from datetime import date, datetime
 from typing import Any
 
+import anyio.to_thread
 import httpx
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken
@@ -18,6 +24,8 @@ from .config import load_settings
 
 # Initialised once when the module is imported (i.e. when the process starts).
 _settings = load_settings()
+
+logger = logging.getLogger("vtodo.mcp")
 
 # stdio mode acts as a single fixed vtodo account (VTODO_API_TOKEN); sse mode
 # calls the API as each caller, with their own OAuth access token (checked by
@@ -39,6 +47,14 @@ _whoami_cache: OrderedDict[str, float] = OrderedDict()
 # way; access tokens expire hourly, so old entries are dead weight.
 _VTODO_CLIENTS_MAX_ENTRIES = 256
 _vtodo_clients: OrderedDict[str, VtodoClient] = OrderedDict()
+# Tools run in worker threads (see _tool below), so _vtodo_clients is shared
+# between threads.
+_vtodo_clients_lock = threading.Lock()
+
+# How long one whoami call may take, and how many times to try. A deploy of
+# the web role or a busy gunicorn worker can make one attempt fail.
+_WHOAMI_TIMEOUT_SECONDS = 10
+_WHOAMI_ATTEMPTS = 2
 
 
 def _token_key(token: str) -> str:
@@ -52,27 +68,31 @@ def _remember(cache: OrderedDict, key: str, value: Any, max_entries: int) -> Non
         cache.popitem(last=False)
 
 
+class WhoamiUnavailable(Exception):
+    """vtodo couldn't say whether a token is valid: it was down, timed out,
+    or returned an error. This is not a rejection of the token."""
+
+
 class _VtodoTokenVerifier:
     """Checks a remote MCP client's OAuth access token by asking Django's
     whoami endpoint (apps/api/views.py:WhoAmIView) whether it's valid. Tool
     calls then send that same token to the vtodo API, which enforces scope
-    and audience itself, so no long-lived DRF token is involved."""
+    and audience itself, so no long-lived DRF token is involved.
+
+    Only a 401 or 403 from whoami means the token is bad. That makes the SDK
+    answer 401, and the MCP client refreshes or asks the person to sign in
+    again. If vtodo is unreachable or returns some other error, this raises
+    WhoamiUnavailable, so the request fails with a server error and the token
+    is left alone. Answering 401 for those made Claude refresh during every
+    web deploy, and ask for a new sign-in when the refresh failed too.
+    """
 
     async def verify_token(self, token: str) -> AccessToken | None:
         key = _token_key(token)
         expires_at = _whoami_cache.get(key)
         if expires_at is None or expires_at <= time.monotonic():
             _whoami_cache.pop(key, None)
-            async with httpx.AsyncClient() as http:
-                try:
-                    resp = await http.get(
-                        _settings.whoami_url,
-                        headers={"Authorization": f"Bearer {token}"},
-                        timeout=10,
-                    )
-                except httpx.HTTPError:
-                    return None
-            if resp.status_code != 200:
+            if not await self._ask_whoami(token):
                 return None
             _remember(
                 _whoami_cache,
@@ -83,6 +103,30 @@ class _VtodoTokenVerifier:
 
         return AccessToken(token=token, client_id="vtodo", scopes=["tasks"])
 
+    async def _ask_whoami(self, token: str) -> bool:
+        """True if vtodo accepts the token, False if it rejects it."""
+        problem = ""
+        async with httpx.AsyncClient() as http:
+            for attempt in range(_WHOAMI_ATTEMPTS):
+                if attempt:
+                    await asyncio.sleep(0.5)
+                try:
+                    resp = await http.get(
+                        _settings.whoami_url,
+                        headers={"Authorization": f"Bearer {token}"},
+                        timeout=_WHOAMI_TIMEOUT_SECONDS,
+                    )
+                except httpx.HTTPError as e:
+                    problem = f"{type(e).__name__}: {e}"
+                    continue
+                if resp.status_code == 200:
+                    return True
+                if resp.status_code in (401, 403):
+                    return False
+                problem = f"HTTP {resp.status_code}"
+        logger.warning("whoami check failed, not treating the token as invalid: %s", problem)
+        raise WhoamiUnavailable(problem)
+
 
 def _current_client() -> VtodoClient:
     if _stdio_client is not None:
@@ -90,11 +134,26 @@ def _current_client() -> VtodoClient:
     access_token = get_access_token()
     assert access_token is not None
     key = _token_key(access_token.token)
-    client = _vtodo_clients.get(key)
-    if client is None:
-        client = VtodoClient(_settings.api_url, access_token.token, scheme="Bearer")
-    _remember(_vtodo_clients, key, client, _VTODO_CLIENTS_MAX_ENTRIES)
+    with _vtodo_clients_lock:
+        client = _vtodo_clients.get(key)
+        if client is None:
+            client = VtodoClient(
+                _settings.api_url,
+                access_token.token,
+                scheme="Bearer",
+                on_unauthorized=functools.partial(_forget_token, key),
+            )
+        _remember(_vtodo_clients, key, client, _VTODO_CLIENTS_MAX_ENTRIES)
     return client
+
+
+def _forget_token(key: str) -> None:
+    """The API returned 401 for this token, so it was revoked or replaced
+    within the whoami cache TTL. Drop it from both caches. The client's next
+    request then gets a 401 from the SDK and refreshes."""
+    _whoami_cache.pop(key, None)
+    with _vtodo_clients_lock:
+        _vtodo_clients.pop(key, None)
 
 
 def _resolve_workspace(client: VtodoClient, workspace: int | str | None) -> int | None:
@@ -146,11 +205,60 @@ mcp = FastMCP(
             issuer_url=_settings.issuer_url,
             resource_server_url=_settings.resource_server_url,
             required_scopes=["tasks"],
+            # whoami checks the audience: the API's RESOURCE_SERVER_TOKEN_RESOURCE_VALIDATOR
+            # (apps/api/views.py:validate_api_resource_token). The verifier
+            # doesn't learn the token's resource, so the SDK can't also check it.
+            validate_token_resource=False,
         )
         if _settings.transport == "sse"
         else None
     ),
+    # No per-client sessions. Every tool call here is a separate request to
+    # the API, and nothing is pushed back to the client, so a session has
+    # nothing to hold. Stateful sessions lived in this process's memory. They
+    # ended after 30 idle minutes and on every deploy (each merge to main),
+    # and after that the client's session id got a 404 and the connector
+    # broke mid-conversation. A deploy is also when new tools show up.
+    stateless_http=True,
+    # Each tool result is one JSON response instead of an SSE stream, so
+    # kamal-proxy has no long-lived stream to buffer or time out.
+    json_response=True,
 )
+
+
+def _tool(*args: Any, **kwargs: Any) -> Callable[[Callable[..., str]], Callable[..., str]]:
+    """@mcp.tool() for the sync tools below. They make blocking requests
+    calls to the API. FastMCP calls a sync tool on the event loop, so one
+    slow API call stopped every other request in this process, including
+    other people's token checks. This registers a coroutine that runs the
+    tool in a worker thread (contextvars, so get_access_token, come along)
+    and leaves the plain function in place for tests."""
+    register = mcp.tool(*args, **kwargs)
+
+    def decorator(fn: Callable[..., str]) -> Callable[..., str]:
+        @functools.wraps(fn)
+        async def run(*a: Any, **kw: Any) -> str:
+            return await anyio.to_thread.run_sync(functools.partial(fn, *a, **kw))
+
+        register(run)
+        return fn
+
+    return decorator
+
+
+def _resource(uri: str) -> Callable[[Callable[[], str]], Callable[[], str]]:
+    """@mcp.resource(uri), running the sync function in a worker thread like _tool."""
+    register = mcp.resource(uri)
+
+    def decorator(fn: Callable[[], str]) -> Callable[[], str]:
+        @functools.wraps(fn)
+        async def run() -> str:
+            return await anyio.to_thread.run_sync(fn)
+
+        register(run)
+        return fn
+
+    return decorator
 
 
 def _ok(data: Any) -> str:
@@ -164,7 +272,7 @@ def _err(e: VtodoAPIError) -> str:
 # ── Workspace tools ────────────────────────────────────────────────────────────
 
 
-@mcp.tool()
+@_tool()
 def list_workspaces() -> str:
     """List the workspaces you belong to and your role in each.
 
@@ -183,7 +291,7 @@ def list_workspaces() -> str:
 # ── Task tools ─────────────────────────────────────────────────────────────────
 
 
-@mcp.tool()
+@_tool()
 def list_tasks(
     status: str | None = None,
     tags: list[str] | None = None,
@@ -224,7 +332,7 @@ def list_tasks(
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def get_task(id: int, workspace: int | str | None = None) -> str:
     """Get a single task by its numeric ID.
 
@@ -236,7 +344,7 @@ def get_task(id: int, workspace: int | str | None = None) -> str:
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def create_task(
     title: str,
     notes: str | None = None,
@@ -280,7 +388,7 @@ def create_task(
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def update_task(
     id: int,
     title: str | None = None,
@@ -366,7 +474,7 @@ def update_task(
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def delete_task(id: int, workspace: int | str | None = None) -> str:
     """Delete a task by its numeric ID.
 
@@ -379,7 +487,7 @@ def delete_task(id: int, workspace: int | str | None = None) -> str:
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def move_task(id: int, new_status: str, workspace: int | str | None = None) -> str:
     """Move a task to a different status column (pass the status slug).
 
@@ -391,7 +499,7 @@ def move_task(id: int, new_status: str, workspace: int | str | None = None) -> s
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def reorder_tasks(ids: list[int], workspace: int | str | None = None) -> str:
     """Set the display order of a set of tasks.
 
@@ -409,7 +517,7 @@ def reorder_tasks(ids: list[int], workspace: int | str | None = None) -> str:
 
 
 
-@mcp.tool()
+@_tool()
 def export_tasks(workspace: int | str | None = None) -> str:
     """Export every task in a workspace as an iCalendar (.ics) document.
 
@@ -426,7 +534,7 @@ def export_tasks(workspace: int | str | None = None) -> str:
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def import_tasks(ics: str, dry_run: bool = True, workspace: int | str | None = None) -> str:
     """Import tasks from an iCalendar (.ics) document of VTODOs, e.g. an
     export from vTodo, Todoist, TickTick, Apple Reminders or Thunderbird.
@@ -451,7 +559,7 @@ def import_tasks(ics: str, dry_run: bool = True, workspace: int | str | None = N
 # ── Assignment and claim tools ─────────────────────────────────────────────────
 
 
-@mcp.tool()
+@_tool()
 def list_assignees(workspace: int | str | None = None) -> str:
     """List who tasks can be assigned to: people who can change the
     workspace's tasks (kind "human") and their agents (kind "agent").
@@ -464,7 +572,7 @@ def list_assignees(workspace: int | str | None = None) -> str:
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def claim_task(id: int, lease_seconds: int | None = None, workspace: int | str | None = None) -> str:
     """Claim a task so no one else picks it up, or renew your claim.
 
@@ -480,7 +588,7 @@ def claim_task(id: int, lease_seconds: int | None = None, workspace: int | str |
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def release_task(id: int, workspace: int | str | None = None) -> str:
     """Drop the claim on a task so someone else can pick it up. A person can
     release anyone's claim; an agent only its own.
@@ -493,7 +601,7 @@ def release_task(id: int, workspace: int | str | None = None) -> str:
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def claim_next_task(lease_seconds: int | None = None, workspace: int | str | None = None) -> str:
     """Claim the next open task assigned to you that nobody is working on, in
     board order. Returns the task, or a message when there's nothing waiting.
@@ -513,7 +621,7 @@ def claim_next_task(lease_seconds: int | None = None, workspace: int | str | Non
 # ── Comment tools ──────────────────────────────────────────────────────────────
 
 
-@mcp.tool()
+@_tool()
 def list_comments(task_id: int, workspace: int | str | None = None) -> str:
     """List all comments on a task.
 
@@ -525,7 +633,7 @@ def list_comments(task_id: int, workspace: int | str | None = None) -> str:
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def add_comment(task_id: int, body: str, workspace: int | str | None = None) -> str:
     """Add a comment to a task without editing it.
 
@@ -537,7 +645,7 @@ def add_comment(task_id: int, body: str, workspace: int | str | None = None) -> 
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def delete_comment(comment_id: int, workspace: int | str | None = None) -> str:
     """Delete a task comment by its ID.
 
@@ -550,7 +658,7 @@ def delete_comment(comment_id: int, workspace: int | str | None = None) -> str:
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def list_activity(task_id: int, workspace: int | str | None = None) -> str:
     """List a task's change history, oldest first: who (actor), where from
     (source: web, api, mcp, system), what (action, field) and the old/new
@@ -568,7 +676,7 @@ def list_activity(task_id: int, workspace: int | str | None = None) -> str:
 # ── Status tools ───────────────────────────────────────────────────────────────
 
 
-@mcp.tool()
+@_tool()
 def list_statuses(workspace: int | str | None = None) -> str:
     """List your task statuses.
 
@@ -580,7 +688,7 @@ def list_statuses(workspace: int | str | None = None) -> str:
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def create_status(
     name: str,
     color: str | None = None,
@@ -597,7 +705,7 @@ def create_status(
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def update_status(
     slug: str,
     name: str | None = None,
@@ -622,7 +730,7 @@ def update_status(
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def delete_status(slug: str, workspace: int | str | None = None) -> str:
     """Delete a status column by its slug.
 
@@ -635,7 +743,7 @@ def delete_status(slug: str, workspace: int | str | None = None) -> str:
         return _err(e)
 
 
-@mcp.tool()
+@_tool()
 def reorder_statuses(ids: list[int], workspace: int | str | None = None) -> str:
     """Set the display order of a set of status columns.
 
@@ -654,7 +762,7 @@ def reorder_statuses(ids: list[int], workspace: int | str | None = None) -> str:
 # ── Resources ──────────────────────────────────────────────────────────────────
 
 
-@mcp.resource("vtodo://statuses")
+@_resource("vtodo://statuses")
 def resource_statuses() -> str:
     """All task statuses — useful context before creating or moving tasks."""
     try:
@@ -663,7 +771,7 @@ def resource_statuses() -> str:
         return _err(e)
 
 
-@mcp.resource("vtodo://tasks/today")
+@_resource("vtodo://tasks/today")
 def resource_tasks_today() -> str:
     """Tasks whose due_date is today."""
     try:
@@ -675,7 +783,7 @@ def resource_tasks_today() -> str:
         return _err(e)
 
 
-@mcp.resource("vtodo://tasks/overdue")
+@_resource("vtodo://tasks/overdue")
 def resource_tasks_overdue() -> str:
     """Tasks past their due_date that have not been completed."""
     try:
@@ -692,8 +800,14 @@ def resource_tasks_overdue() -> str:
 
 _CORS_HEADERS = [
     (b"access-control-allow-origin", b"*"),
-    (b"access-control-allow-methods", b"GET, POST, OPTIONS"),
-    (b"access-control-allow-headers", b"Authorization, Content-Type"),
+    (b"access-control-allow-methods", b"GET, POST, DELETE, OPTIONS"),
+    (
+        b"access-control-allow-headers",
+        b"Authorization, Content-Type, Accept, Mcp-Protocol-Version, Mcp-Session-Id, Last-Event-ID",
+    ),
+    # A browser client must be able to read the 401's WWW-Authenticate (it
+    # points at the OAuth metadata) to start or redo sign-in.
+    (b"access-control-expose-headers", b"WWW-Authenticate, Mcp-Session-Id, Mcp-Protocol-Version"),
 ]
 
 

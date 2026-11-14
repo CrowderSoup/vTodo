@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Callable
 from typing import Any
 
 import requests
+
+# (connect, read) seconds for each API call. With no timeout, an API call that
+# never answered held its worker thread, and the tool call, forever.
+REQUEST_TIMEOUT = (5, 60)
 
 
 class VtodoAPIError(Exception):
@@ -14,10 +19,18 @@ class VtodoAPIError(Exception):
 
 
 class VtodoClient:
-    def __init__(self, base_url: str, token: str, scheme: str = "Token") -> None:
+    def __init__(
+        self,
+        base_url: str,
+        token: str,
+        scheme: str = "Token",
+        on_unauthorized: Callable[[], None] | None = None,
+    ) -> None:
         """scheme is "Token" for a DRF API token (stdio mode) or "Bearer" for
-        a remote caller's OAuth access token forwarded by sse mode."""
+        a remote caller's OAuth access token forwarded by sse mode.
+        on_unauthorized is called when the API answers 401."""
         self._base = base_url.rstrip("/") + "/api/v1"
+        self._on_unauthorized = on_unauthorized
         self._session = requests.Session()
         # X-Vtodo-Client labels this traffic as MCP in the task activity log.
         self._session.headers.update({"Authorization": f"{scheme} {token}", "X-Vtodo-Client": "mcp"})
@@ -34,7 +47,15 @@ class VtodoClient:
         return scoped
 
     def _request(self, method: str, path: str, **kwargs: Any) -> requests.Response:
-        r = self._session.request(method, f"{self._base}{path}", headers=self._headers, **kwargs)
+        kwargs.setdefault("timeout", REQUEST_TIMEOUT)
+        try:
+            r = self._session.request(method, f"{self._base}{path}", headers=self._headers, **kwargs)
+        except requests.Timeout:
+            raise VtodoAPIError(504, "vtodo took too long to answer. Try again.") from None
+        except requests.ConnectionError:
+            raise VtodoAPIError(503, "Couldn't reach vtodo. Try again in a moment.") from None
+        if r.status_code == 401 and self._on_unauthorized is not None:
+            self._on_unauthorized()
         self._raise(r)
         return r
 

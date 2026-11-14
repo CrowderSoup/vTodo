@@ -133,15 +133,23 @@ OAUTH2_PROVIDER = {
     },
     "DEFAULT_SCOPES": ["tasks"],
     "ACCESS_TOKEN_EXPIRE_SECONDS": 3600,
+    # Counted from when the grant's access token last expired, so a grant
+    # in use never runs out. Idle for 30 days, it has to be authorized again.
     "REFRESH_TOKEN_EXPIRE_SECONDS": 60 * 60 * 24 * 30,
-    "ROTATE_REFRESH_TOKEN": True,
+    # Refresh tokens don't rotate. With rotation, MCP clients kept getting
+    # signed out mid-session. A client that lost a refresh response, or held
+    # an older copy of the token, sent the old refresh token again minutes
+    # later. Reuse protection took that as theft and revoked the whole grant,
+    # which signed out every session using the connector. No grace period
+    # covers a retry that comes minutes later. Claude stores these refresh
+    # tokens on its own servers.
+    "ROTATE_REFRESH_TOKEN": False,
+    # Only matters for refresh tokens rotated before rotation was turned off.
     "REFRESH_TOKEN_REUSE_PROTECTION": True,
-    # Without a grace window, reuse protection treats any second use of a
-    # just-rotated refresh token as theft and revokes the whole session. MCP
-    # clients do that routinely: sessions sharing one connector all refresh
-    # when the hourly access token expires, and a client retries a refresh
-    # whose response it lost. Older replays are still caught.
+    # Also how long VtodoOAuth2Validator hands back the same access token
+    # when one grant is refreshed several times in a row.
     "REFRESH_TOKEN_GRACE_PERIOD_SECONDS": 120,
+    "OAUTH2_VALIDATOR_CLASS": "apps.api.oauth_validators.VtodoOAuth2Validator",
     # MCP clients (e.g. Claude) self-register via RFC 7591 before any user is
     # logged in, so registration can't require an authenticated session —
     # this is the toolkit's "open registration" permission class.
